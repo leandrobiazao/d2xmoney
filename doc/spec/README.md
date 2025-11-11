@@ -35,7 +35,7 @@ The Portfolio Management System is a full-stack application for managing investm
 
 ```
 project-root/
-├── frontend/          # Angular application (port 4200)
+├── frontend/          # Angular application (port 4400)
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── users/              # User Management App
@@ -61,9 +61,11 @@ project-root/
 │   │   └── wsgi.py
 │   ├── users/         # User Management API
 │   ├── brokerage_notes/ # Brokerage Note Processing API
+│   ├── portfolio_operations/ # Portfolio Summary API
 │   ├── data/          # JSON file storage
 │   │   ├── users.json
-│   │   └── brokerage_notes.json
+│   │   ├── brokerage_notes.json
+│   │   └── portfolio.json
 │   └── media/         # File uploads
 │       └── users/
 └── doc/
@@ -134,7 +136,7 @@ Configure Django settings (backend/portfolio_api/settings.py):
 - Add 'corsheaders' to INSTALLED_APPS
 - Add 'corsheaders.middleware.CorsMiddleware' to MIDDLEWARE (before CommonMiddleware)
 - Configure CORS settings:
-  - CORS_ALLOWED_ORIGINS = ['http://localhost:4200']
+  - CORS_ALLOWED_ORIGINS = ['http://localhost:4400']
   - CORS_ALLOW_CREDENTIALS = True
   - CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
   - CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization']
@@ -258,7 +260,7 @@ npm start
 ```
 
 ### Access the Application:
-- Frontend: http://localhost:4200
+- Frontend: http://localhost:4400
 - Backend API: http://localhost:8000/api/
 - Django Admin: http://localhost:8000/admin/ (if configured)
 
@@ -282,24 +284,27 @@ npm start
 - `GET /api/brokerage-notes/{id}/operations/` - Get operations from note
 
 ### Portfolio Summary API
-- `GET /api/portfolio/{user_id}/` - Get portfolio summary
-- `GET /api/portfolio/{user_id}/positions/` - Get positions
-- `GET /api/portfolio/{user_id}/operations/` - Get operations
+- `GET /api/portfolio/?user_id={user_id}` - Get user's ticker summaries
+- `POST /api/portfolio/refresh/` - Manually refresh portfolio from brokerage notes
+
+**Note**: Portfolio is automatically refreshed after brokerage note upload/delete.
 
 For detailed API documentation, see the respective application specification files.
 
 ## Data Persistence
 
 ### Frontend
-- Portfolio data: localStorage keys `portfolio-{clientId}`
 - Ticker mappings: localStorage key `ticker_mappings`
 - Custom ticker mappings: localStorage key `ticker_mappings_custom`
 
 ### Backend
 - Users: JSON file storage at `backend/data/users.json`
 - Brokerage notes: JSON file storage at `backend/data/brokerage_notes.json`
+- **Portfolio**: JSON file storage at `backend/data/portfolio.json` (aggregated summary)
 - User pictures: File storage at `backend/media/users/`
 - Note PDFs: File storage at `backend/media/brokerage_notes/`
+
+**Important**: Portfolio data is stored on the backend, not in localStorage. The `portfolio.json` file is automatically generated from `brokerage_notes.json` using FIFO calculation.
 
 ## Development Workflow
 
@@ -314,9 +319,12 @@ For detailed API documentation, see the respective application specification fil
 
 - The application uses standalone Angular components throughout
 - User and brokerage note data is stored in JSON files on the Django backend
+- Portfolio data is automatically calculated from brokerage notes using FIFO method
+- Portfolio is automatically refreshed after brokerage note upload/delete
 - PDF parsing supports standard B3 brokerage note format
 - Ticker mappings are automatically saved when new company names are encountered
 - CPF validation follows Brazilian CPF algorithm (11 digits with checksum validation)
+- Frontend runs on port 4400 (not 4200)
 
 ---
 
