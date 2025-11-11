@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'users',
     'brokerage_notes',
     'ticker_mappings',
+    'portfolio_operations',
 ]
 
 MIDDLEWARE = [

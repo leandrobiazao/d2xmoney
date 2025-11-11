@@ -224,6 +224,16 @@
   font-weight: 600;
 }
 
+.positive {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.negative {
+  color: #dc3545;
+  font-weight: 500;
+}
+
 .delete-btn {
   background: #dc3545;
   color: white;

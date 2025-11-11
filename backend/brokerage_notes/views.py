@@ -9,6 +9,7 @@ from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .serializers import BrokerageNoteSerializer
 from .services import BrokerageNoteHistoryService
+from portfolio_operations.services import PortfolioService
 
 
 class BrokerageNoteListView(APIView):
@@ -77,6 +78,12 @@ class BrokerageNoteListView(APIView):
         note_id = BrokerageNoteHistoryService.add_note(note_data)
         note_data['id'] = note_id
         
+        # Refresh portfolio after adding note
+        try:
+            PortfolioService.refresh_portfolio_from_brokerage_notes()
+        except Exception as e:
+            print(f"Warning: Failed to refresh portfolio after note upload: {e}")
+        
         return Response(note_data, status=status.HTTP_201_CREATED)
 
 
@@ -113,6 +120,12 @@ class BrokerageNoteDetailView(APIView):
         
         # Remove from JSON file
         BrokerageNoteHistoryService.delete_note(note_id)
+        
+        # Refresh portfolio after deleting note
+        try:
+            PortfolioService.refresh_portfolio_from_brokerage_notes()
+        except Exception as e:
+            print(f"Warning: Failed to refresh portfolio after note deletion: {e}")
         
         return Response(status=status.HTTP_204_NO_CONTENT)
 

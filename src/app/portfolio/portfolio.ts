@@ -45,6 +45,15 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
   ngOnInit(): void {
     this.loadData();
+    
+    // Expose debug method to window for console access
+    (window as any).debugASAI3 = () => {
+      if (this.userId) {
+        this.portfolioService.debugPositionCalculation(this.userId, 'ASAI3');
+      } else {
+        console.error('No userId set');
+      }
+    };
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -59,14 +68,16 @@ export class PortfolioComponent implements OnInit, OnChanges {
       return;
     }
     
-    // Load from localStorage
-    this.operations = this.portfolioService.getOperations(this.userId);
-    this.positions = this.portfolioService.getPositions(this.userId);
+    // Load from backend API (with localStorage fallback)
+    this.portfolioService.getOperationsAsync(this.userId).subscribe(operations => {
+      this.operations = operations;
+      this.removeDuplicateOperations();
+      this.applyFilters();
+    });
     
-    // Remove duplicates based on note number and date
-    this.removeDuplicateOperations();
-    
-    this.applyFilters();
+    this.portfolioService.getPositionsAsync(this.userId).subscribe(positions => {
+      this.positions = positions;
+    });
   }
   
   private removeDuplicateOperations(): void {

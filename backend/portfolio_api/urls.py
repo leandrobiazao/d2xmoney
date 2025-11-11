@@ -11,6 +11,7 @@ urlpatterns = [
     path('', include('users.urls')),
     path('', include('brokerage_notes.urls')),
     path('', include('ticker_mappings.urls')),
+    path('', include('portfolio_operations.urls')),
 ]
 
 # Serve media files in development

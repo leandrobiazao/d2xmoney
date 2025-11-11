@@ -28,6 +28,7 @@
               <th>Quantidade</th>
               <th>Preço Médio</th>
               <th>Valor Total Investido</th>
+              <th>Lucro Realizado</th>
             </tr>
           </thead>
           <tbody>
@@ -37,6 +38,9 @@
                 <td>{{ position.quantidadeTotal }}</td>
                 <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
                 <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
+                <td [class.positive]="position.lucroRealizado > 0" [class.negative]="position.lucroRealizado < 0">
+                  {{ formatCurrency(position.lucroRealizado || 0) }}
+                </td>
               </tr>
             }
           </tbody>
