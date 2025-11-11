@@ -1,0 +1,75 @@
+<div class="history-detail-container">
+  @if (isLoading) {
+    <div class="loading">Carregando detalhes da nota...</div>
+  } @else if (error) {
+    <div class="error">{{ error }}</div>
+  } @else if (note) {
+    <div class="detail-header">
+      <button class="btn-back" (click)="onBack()">← Voltar</button>
+      <h2>Detalhes da Nota</h2>
+    </div>
+
+    <div class="note-metadata">
+      <div class="metadata-item">
+        <strong>Arquivo:</strong> {{ note.file_name }}
+      </div>
+      <div class="metadata-item">
+        <strong>Data da Nota:</strong> {{ note.note_date }}
+      </div>
+      <div class="metadata-item">
+        <strong>Número da Nota:</strong> {{ note.note_number }}
+      </div>
+      <div class="metadata-item">
+        <strong>Processado em:</strong> {{ note.processed_at | date:'short' }}
+      </div>
+      <div class="metadata-item">
+        <strong>Status:</strong>
+        <span class="badge" [class]="getStatusBadgeClass(note.status)">
+          {{ note.status === 'success' ? 'Sucesso' : note.status === 'partial' ? 'Parcial' : 'Falhou' }}
+        </span>
+      </div>
+      @if (note.error_message) {
+        <div class="metadata-item error-message">
+          <strong>Erro:</strong> {{ note.error_message }}
+        </div>
+      }
+    </div>
+
+    <div class="operations-section">
+      <h3>Operações ({{ note.operations_count }})</h3>
+      @if (note.operations.length === 0) {
+        <p>Nenhuma operação encontrada.</p>
+      } @else {
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Título</th>
+              <th>Tipo</th>
+              <th>Quantidade</th>
+              <th>Preço</th>
+              <th>Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (op of note.operations; track op.id) {
+              <tr [class.sell]="op.tipoOperacao === 'V'">
+                <td>{{ op.data }}</td>
+                <td>{{ op.titulo }}</td>
+                <td>{{ op.tipoOperacao === 'C' ? 'Compra' : 'Venda' }}</td>
+                <td>{{ op.quantidade }}</td>
+                <td>{{ formatCurrency(op.preco) }}</td>
+                <td>{{ formatCurrency(op.valorOperacao) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+
+    <div class="detail-actions">
+      <button class="btn-delete" (click)="onDelete()">Excluir Nota</button>
+    </div>
+  }
+</div>
+

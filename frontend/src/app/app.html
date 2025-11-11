@@ -1,0 +1,23 @@
+<app-header />
+
+<main>
+  <app-user-list
+    (userSelected)="onUserSelected($event)"
+    (createUser)="onCreateUser()"
+  />
+
+  @if (showCreateUser) {
+    <app-create-user
+      (close)="onCloseCreateUser()"
+      (userCreated)="onUserCreated()"
+    />
+  }
+
+  @if (selectedUser) {
+    <app-portfolio [userId]="selectedUser.id" [userName]="selectedUser.name || ''"/>
+  } @else {
+    <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
+  }
+</main>
+
+<router-outlet />

@@ -1,0 +1,57 @@
+<div class="filters-container">
+  <div class="filters-header">
+    <h3>Filtros</h3>
+    @if (activeFilterCount > 0) {
+      <span class="filter-badge">{{ activeFilterCount }} ativo(s)</span>
+    }
+  </div>
+  
+  <div class="filters-grid">
+    <div class="filter-group">
+      <label for="user_id">Usuário:</label>
+      <input
+        type="text"
+        id="user_id"
+        [(ngModel)]="filters.user_id"
+        (ngModelChange)="onFilterChange()"
+        placeholder="ID do usuário"
+      />
+    </div>
+    
+    <div class="filter-group">
+      <label for="date_from">Data Início:</label>
+      <input
+        type="date"
+        id="date_from"
+        [(ngModel)]="filters.date_from"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    
+    <div class="filter-group">
+      <label for="date_to">Data Fim:</label>
+      <input
+        type="date"
+        id="date_to"
+        [(ngModel)]="filters.date_to"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    
+    <div class="filter-group">
+      <label for="note_number">Número da Nota:</label>
+      <input
+        type="text"
+        id="note_number"
+        [(ngModel)]="filters.note_number"
+        (ngModelChange)="onFilterChange()"
+        placeholder="Número da nota"
+      />
+    </div>
+  </div>
+  
+  <div class="filters-actions">
+    <button class="btn-clear" (click)="clearFilters()">Limpar Filtros</button>
+  </div>
+</div>
+
