@@ -1,0 +1,22 @@
+<div class="summary-container">
+  <h3>Resumo</h3>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-label">Total de Notas</div>
+      <div class="summary-value">{{ totalNotes }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Total de Operações</div>
+      <div class="summary-value">{{ totalOperations }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Taxa de Sucesso</div>
+      <div class="summary-value">{{ successRate.toFixed(1) }}%</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Período</div>
+      <div class="summary-value">{{ dateRange || 'N/A' }}</div>
+    </div>
+  </div>
+</div>
+

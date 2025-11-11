@@ -1,0 +1,29 @@
+<div class="processing-status">
+  @if (status === 'processing') {
+    <div class="status processing">
+      <span class="spinner">⏳</span>
+      <span>Processando PDF...</span>
+    </div>
+  } @else if (status === 'success') {
+    <div class="status success">
+      <span>✅</span>
+      <span>{{ operationsCount }} operação(ões) encontrada(s)</span>
+    </div>
+  } @else if (status === 'error') {
+    <div class="status error">
+      <span>❌</span>
+      <span>{{ errorMessage || 'Erro ao processar PDF' }}</span>
+    </div>
+  }
+  
+  <div class="server-status" [class.online]="serverStatus === 'online'" [class.offline]="serverStatus === 'offline'" [class.checking]="serverStatus === 'checking'">
+    @if (serverStatus === 'checking') {
+      <span>🔄 Verificando servidor...</span>
+    } @else if (serverStatus === 'online') {
+      <span>✅ Servidor online</span>
+    } @else {
+      <span>❌ Servidor offline</span>
+    }
+  </div>
+</div>
+
