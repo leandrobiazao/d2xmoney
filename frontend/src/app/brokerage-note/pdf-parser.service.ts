@@ -2,13 +2,15 @@ import { Injectable } from '@angular/core';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Operation } from './operation.model';
 import { TickerMappingService } from '../portfolio/ticker-mapping/ticker-mapping.service';
+import { DebugService } from '../shared/services/debug.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PdfParserService {
   constructor(
-    private tickerMappingService: TickerMappingService
+    private tickerMappingService: TickerMappingService,
+    private debug: DebugService
   ) {
     // Configurar worker do PDF.js usando arquivo local
     if (typeof window !== 'undefined') {
@@ -48,7 +50,7 @@ export class PdfParserService {
             .join(' ');
           fullText += pageText + '\n';
         } catch (pageError) {
-          console.warn(`Erro ao processar página ${pageNum}:`, pageError);
+          this.debug.warn(`Erro ao processar página ${pageNum}:`, pageError);
         }
       }
 
@@ -57,7 +59,7 @@ export class PdfParserService {
       
       return operations;
     } catch (error) {
-      console.error('Error parsing PDF:', error);
+      this.debug.error('Error parsing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida da B3.`);
     }
@@ -200,7 +202,7 @@ export class PdfParserService {
       
       // Validate basic data
       if (!titulo || quantidade === 0 || preco === 0 || valorOperacao === 0) {
-        console.warn('Dados inválidos na linha:', line);
+        this.debug.warn('Dados inválidos na linha:', line);
         return null;
       }
 
@@ -226,7 +228,7 @@ export class PdfParserService {
         clientId: ''
       };
     } catch (error) {
-      console.error('Error parsing Bovespa line:', error, 'Line:', line);
+      this.debug.error('Error parsing Bovespa line:', error, 'Line:', line);
       return null;
     }
   }

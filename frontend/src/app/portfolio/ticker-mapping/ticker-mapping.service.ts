@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { DEFAULT_TICKER_MAPPINGS } from './ticker-mappings';
+import { DebugService } from '../../shared/services/debug.service';
 
 export interface TickerMapping {
   [nome: string]: string;
@@ -16,22 +17,23 @@ export class TickerMappingService {
   private mappings: TickerMapping = {};
   private mappingsLoaded = false;
   
-  // Dicionário inicial com alguns mapeamentos comuns (fallback)
   private defaultMappings: TickerMapping = DEFAULT_TICKER_MAPPINGS;
 
-  constructor(private http: HttpClient) {
+  constructor(
+    private http: HttpClient,
+    private debug: DebugService
+  ) {
     this.loadMappings();
   }
 
   private loadMappings(): void {
-    // Load from backend API
     const url = this.API_URL.endsWith('/') ? this.API_URL : `${this.API_URL}/`;
-    console.log('📥 Carregando ticker mappings do backend:', url);
+    this.debug.log('📥 Loading ticker mappings from backend:', url);
     
     this.http.get<TickerMapping>(url).pipe(
       tap(mappings => {
-        console.log('📥 Backend retornou:', Object.keys(mappings).length, 'mapeamentos');
-        console.log('📥 Mapeamentos do backend:', mappings);
+        this.debug.log('📥 Backend returned:', Object.keys(mappings).length, 'mappings');
+        this.debug.log('📥 Backend mappings:', mappings);
         
         // Normalize backend mappings keys to match frontend normalization
         const normalizedBackendMappings: TickerMapping = {};
@@ -40,17 +42,14 @@ export class TickerMappingService {
           normalizedBackendMappings[normalizedNome] = ticker;
         }
         
-        // Use ONLY backend mappings (not merged with defaults)
-        // Defaults are only used as fallback if backend fails
         this.mappings = normalizedBackendMappings;
         this.mappingsLoaded = true;
-        console.log('✅ Ticker mappings carregados do backend:', Object.keys(this.mappings).length, 'mapeamentos');
-        console.log('✅ Mapeamentos normalizados:', this.mappings);
+        this.debug.log('✅ Ticker mappings loaded from backend:', Object.keys(this.mappings).length, 'mappings');
+        this.debug.log('✅ Normalized mappings:', this.mappings);
       }),
       catchError(error => {
-        console.warn('⚠️ Erro ao carregar mapeamentos do backend, usando defaults:', error);
-        console.warn('⚠️ Error details:', error.status, error.message);
-        // Fallback to defaults if backend fails
+        this.debug.warn('⚠️ Error loading mappings from backend, using defaults:', error);
+        this.debug.warn('⚠️ Error details:', error.status, error.message);
         this.mappings = { ...this.defaultMappings };
         this.mappingsLoaded = true;
         return of(this.defaultMappings);
@@ -59,47 +58,39 @@ export class TickerMappingService {
   }
 
   getTicker(nome: string): string | null {
-    // IMPORTANT: Use complete field (company name + classification code) for lookup
     const nomeNormalizado = this.normalizeNome(nome);
     return this.mappings[nomeNormalizado] || null;
   }
 
   setTicker(nome: string, ticker: string): void {
-    // IMPORTANT: Save using complete field (company name + classification code)
     const nomeNormalizado = this.normalizeNome(nome);
     const tickerUpper = ticker.toUpperCase();
     
-    // Update local cache immediately for responsive UI
     this.mappings[nomeNormalizado] = tickerUpper;
     
-    // Save to backend
     const url = this.API_URL.endsWith('/') ? this.API_URL : `${this.API_URL}/`;
-    console.log('📤 Enviando ticker mapping para backend:', { nome: nomeNormalizado, ticker: tickerUpper, url });
+    this.debug.log('📤 Sending ticker mapping to backend:', { nome: nomeNormalizado, ticker: tickerUpper, url });
     
     this.http.post(url, {
       nome: nomeNormalizado,
       ticker: tickerUpper
     }).pipe(
       tap(response => {
-        console.log('✅ Ticker mapping salvo no backend:', response);
+        this.debug.log('✅ Ticker mapping saved to backend:', response);
         if (response && (response as any).file_path) {
-          console.log('📁 Arquivo salvo em:', (response as any).file_path);
+          this.debug.log('📁 File saved at:', (response as any).file_path);
         }
       }),
       catchError(error => {
-        console.error('❌ Erro ao salvar ticker mapping no backend:', error);
-        console.error('Error status:', error.status);
-        console.error('Error message:', error.message);
-        console.error('Error details:', error.error);
-        // Keep local change even if backend fails
+        this.debug.error('❌ Error saving ticker mapping to backend:', error);
+        this.debug.error('Error status:', error.status);
+        this.debug.error('Error message:', error.message);
+        this.debug.error('Error details:', error.error);
         return of(null);
       })
     ).subscribe();
   }
 
-  /**
-   * Retorna os mapeamentos customizados em formato JSON
-   */
   getCustomMappingsJSON(): string {
     const customMappings: { [nome: string]: string } = {};
     for (const [nome, ticker] of Object.entries(this.mappings)) {
@@ -110,13 +101,10 @@ export class TickerMappingService {
     return JSON.stringify(customMappings, null, 2);
   }
   
-  /**
-   * Get all mappings from backend
-   */
   getAllMappingsFromBackend(): Observable<TickerMapping> {
     return this.http.get<TickerMapping>(this.API_URL).pipe(
       catchError(error => {
-        console.warn('Erro ao carregar mapeamentos do backend:', error);
+        this.debug.warn('Error loading mappings from backend:', error);
         return of(this.defaultMappings);
       })
     );
@@ -128,9 +116,6 @@ export class TickerMappingService {
   }
 
   private normalizeNome(nome: string): string {
-    // Normalizar o nome removendo espaços extras e convertendo para maiúsculas
-    // IMPORTANT: Preserve the complete field including classification code
-    // Replace multiple spaces with single space, then trim and uppercase
     return nome.replace(/\s+/g, ' ').trim().toUpperCase();
   }
 
@@ -138,4 +123,3 @@ export class TickerMappingService {
     return { ...this.mappings };
   }
 }
-

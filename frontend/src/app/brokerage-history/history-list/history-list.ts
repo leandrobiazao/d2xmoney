@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { BrokerageHistoryService } from '../history.service';
 import { BrokerageNote, HistoryFilters } from '../note.model';
 import { HistoryFiltersComponent } from '../history-filters/history-filters';
+import { DebugService } from '../../shared/services/debug.service';
 
 @Component({
   selector: 'app-history-list',
@@ -18,7 +19,10 @@ export class HistoryListComponent implements OnInit {
   error: string | null = null;
   filters: HistoryFilters = {};
 
-  constructor(private historyService: BrokerageHistoryService) {}
+  constructor(
+    private historyService: BrokerageHistoryService,
+    private debug: DebugService
+  ) {}
 
   ngOnInit() {
     this.loadHistory();
@@ -37,7 +41,7 @@ export class HistoryListComponent implements OnInit {
       error: (error) => {
         this.error = 'Erro ao carregar histórico. Tente novamente.';
         this.isLoading = false;
-        console.error('Error loading history:', error);
+        this.debug.error('Error loading history:', error);
       }
     });
   }
@@ -54,7 +58,7 @@ export class HistoryListComponent implements OnInit {
           this.loadHistory();
         },
         error: (error) => {
-          console.error('Error deleting note:', error);
+          this.debug.error('Error deleting note:', error);
           alert('Erro ao excluir nota. Tente novamente.');
         }
       });
@@ -62,9 +66,8 @@ export class HistoryListComponent implements OnInit {
   }
 
   viewNote(noteId: string) {
-    // Navigate to detail view - will be handled by routing
-    console.log('View note:', noteId);
-    // TODO: Implement navigation when routing is set up
+    this.debug.log('View note:', noteId);
+    // Note: Detail view would be shown here if routing was enabled
   }
 
   getStatusBadgeClass(status: string): string {
@@ -80,4 +83,3 @@ export class HistoryListComponent implements OnInit {
     }
   }
 }
-

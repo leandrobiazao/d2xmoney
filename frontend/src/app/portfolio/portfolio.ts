@@ -7,6 +7,8 @@ import { Position } from './position.model';
 import { UploadPdfComponent } from '../brokerage-note/upload-pdf/upload-pdf';
 import { BrokerageHistoryService } from '../brokerage-history/history.service';
 import { BrokerageNote } from '../brokerage-history/note.model';
+import { DebugService } from '../shared/services/debug.service';
+import { parseDate, formatCurrency, compareDate } from '../shared/utils/common-utils';
 
 @Component({
   selector: 'app-portfolio',
@@ -23,14 +25,14 @@ export class PortfolioComponent implements OnInit, OnChanges {
   positions: Position[] = [];
   filteredOperations: Operation[] = [];
   
-  // Filtros
+  // Filters
   filterTitulo: string = '';
   filterTipoOperacao: string = '';
   filterTipoMercado: string = '';
   filterDataInicio: string = '';
   filterDataFim: string = '';
 
-  // Visualização
+  // View settings
   showPositions = true;
   showOperations = true;
   
@@ -40,131 +42,56 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
   constructor(
     private portfolioService: PortfolioService,
-    private historyService: BrokerageHistoryService
+    private historyService: BrokerageHistoryService,
+    private debug: DebugService
   ) {}
 
   ngOnInit(): void {
-    this.loadData();
-    
-    // Expose debug method to window for console access
-    (window as any).debugASAI3 = () => {
-      if (this.userId) {
-        this.portfolioService.debugPositionCalculation(this.userId, 'ASAI3');
-      } else {
-        console.error('No userId set');
-      }
-    };
+    // Load data if userId is already set (when component is created with input)
+    if (this.userId) {
+      this.loadData();
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['userId'] && !changes['userId'].firstChange) {
+    // Load data whenever userId changes (including first change)
+    if (changes['userId'] && this.userId) {
       this.loadData();
-      this.resetFilters();
+      // Only reset filters if this is not the first change
+      if (!changes['userId'].firstChange) {
+        this.resetFilters();
+      }
     }
   }
 
   loadData(): void {
     if (!this.userId) {
+      this.debug.warn('⚠️ loadData() called but userId is not set');
       return;
     }
     
-    // Load from backend API (with localStorage fallback)
-    this.portfolioService.getOperationsAsync(this.userId).subscribe(operations => {
-      this.operations = operations;
-      this.removeDuplicateOperations();
-      this.applyFilters();
+    this.debug.log(`🔄 Loading portfolio data for user: ${this.userId}`);
+    
+    this.portfolioService.getOperationsAsync(this.userId).subscribe({
+      next: (operations) => {
+        this.debug.log(`✅ Loaded ${operations.length} operations`);
+        this.operations = operations;
+        this.applyFilters();
+      },
+      error: (error) => {
+        this.debug.error('❌ Error loading operations:', error);
+      }
     });
     
-    this.portfolioService.getPositionsAsync(this.userId).subscribe(positions => {
-      this.positions = positions;
+    this.portfolioService.getPositionsAsync(this.userId).subscribe({
+      next: (positions) => {
+        this.debug.log(`✅ Loaded ${positions.length} positions`);
+        this.positions = positions;
+      },
+      error: (error) => {
+        this.debug.error('❌ Error loading positions:', error);
+      }
     });
-  }
-  
-  private removeDuplicateOperations(): void {
-    if (!this.userId || this.operations.length === 0) {
-      return;
-    }
-    
-    // Group operations by note number and date
-    const noteGroups = new Map<string, Operation[]>();
-    const operationsWithoutNote: Operation[] = [];
-    
-    for (const op of this.operations) {
-      if (!op.nota || !op.data) {
-        // Keep operations without note number/date
-        operationsWithoutNote.push(op);
-        continue;
-      }
-      
-      const key = `${op.nota}_${op.data}`;
-      if (!noteGroups.has(key)) {
-        noteGroups.set(key, []);
-      }
-      noteGroups.get(key)!.push(op);
-    }
-    
-    // For each note group, keep only unique operations
-    // Use a Set to track unique operations by their key characteristics
-    const uniqueOperations: Operation[] = [...operationsWithoutNote];
-    let duplicatesRemoved = 0;
-    
-    for (const [key, ops] of noteGroups.entries()) {
-      if (ops.length === 0) {
-        continue;
-      }
-      
-      // Create a set to track unique operations
-      // Operations are considered duplicates if they have same:
-      // - nota, data, titulo, tipoOperacao, quantidade, preco
-      const seen = new Set<string>();
-      const uniqueOpsForNote: Operation[] = [];
-      
-      for (const op of ops) {
-        const opKey = `${op.titulo}_${op.tipoOperacao}_${op.quantidade}_${op.preco}_${op.ordem}`;
-        if (!seen.has(opKey)) {
-          seen.add(opKey);
-          uniqueOpsForNote.push(op);
-        }
-      }
-      
-      if (uniqueOpsForNote.length < ops.length) {
-        duplicatesRemoved += ops.length - uniqueOpsForNote.length;
-        const noteNumber = ops[0].nota;
-        const noteDate = ops[0].data;
-        console.log(`⚠️ Removidas ${ops.length - uniqueOpsForNote.length} operações duplicadas da nota ${noteNumber} de ${noteDate}`);
-      }
-      
-      uniqueOperations.push(...uniqueOpsForNote);
-    }
-    
-    if (duplicatesRemoved > 0) {
-      console.log(`✅ Total de ${duplicatesRemoved} operações duplicadas removidas do localStorage`);
-      // Update localStorage with cleaned data
-      this.portfolioService.clearPortfolio(this.userId);
-      if (uniqueOperations.length > 0) {
-        // Re-add unique operations in batches (grouped by note)
-        const noteGroupsToAdd = new Map<string, Operation[]>();
-        for (const op of uniqueOperations) {
-          if (op.nota && op.data) {
-            const key = `${op.nota}_${op.data}`;
-            if (!noteGroupsToAdd.has(key)) {
-              noteGroupsToAdd.set(key, []);
-            }
-            noteGroupsToAdd.get(key)!.push(op);
-          } else {
-            // Operations without note - add immediately
-            this.portfolioService.addOperations(this.userId, [op]);
-          }
-        }
-        // Add operations grouped by note
-        for (const ops of noteGroupsToAdd.values()) {
-          this.portfolioService.addOperations(this.userId, ops);
-        }
-      }
-      // Reload
-      this.operations = this.portfolioService.getOperations(this.userId);
-      this.positions = this.portfolioService.getPositions(this.userId);
-    }
   }
 
   onOperationsAdded(operations: Operation[]): void {
@@ -172,78 +99,15 @@ export class PortfolioComponent implements OnInit, OnChanges {
       return;
     }
     
-    // Extract note metadata to check for duplicates
     const firstOperation = operations[0];
-    const noteDate = firstOperation.data; // DD/MM/YYYY format
-    const noteNumber = firstOperation.nota || '';
-    
-    // Check for duplicate note BEFORE adding operations
-    if (noteNumber && noteDate) {
-      this.checkForDuplicateNote(noteNumber, noteDate, operations);
-    } else {
-      // If no note number/date, proceed normally
-      this.addOperationsToPortfolio(operations);
-    }
-  }
-  
-  private checkForDuplicateNote(noteNumber: string, noteDate: string, operations: Operation[]): void {
-    // Check if note already exists in history (frontend check as first line of defense)
-    this.historyService.getHistory({
-      user_id: this.userId,
-      note_number: noteNumber
-    }).subscribe({
-      next: (notes) => {
-        // Filter notes by exact date match
-        const duplicate = notes.find(n => 
-          n.note_number === noteNumber && 
-          n.note_date === noteDate &&
-          n.user_id === this.userId
-        );
-        
-        if (duplicate) {
-          // Duplicate found - show warning and don't add operations
-          const message = `Esta nota de corretagem (número ${noteNumber} de ${noteDate}) já foi processada anteriormente. As operações não foram adicionadas ao portfólio.`;
-          console.warn('⚠️ Duplicata encontrada no frontend:', message);
-          alert(`⚠️ ${message}`);
-          return;
-        }
-        
-        // No duplicate found in frontend check - proceed to backend save
-        // Backend will do final duplicate check before saving
-        this.addOperationsToPortfolio(operations);
-      },
-      error: (error) => {
-        console.error('Erro ao verificar duplicatas no frontend:', error);
-        // On error checking frontend, still try backend save (backend has final say)
-        // Backend will check for duplicates and prevent if needed
-        console.log('Continuando com salvamento no backend (backend fará verificação final)...');
-        this.addOperationsToPortfolio(operations);
-      }
-    });
-  }
-  
-  private addOperationsToPortfolio(operations: Operation[]): void {
-    // IMPORTANT: Save to backend FIRST, then add to portfolio only if successful
-    // This prevents duplicates from being added to portfolio
-    this.saveToBrokerageHistoryFirst(operations);
-  }
-  
-  private saveToBrokerageHistoryFirst(operations: Operation[]): void {
-    if (operations.length === 0) {
-      return;
-    }
-
-    // Extract note metadata from first operation
-    const firstOperation = operations[0];
-    const noteDate = firstOperation.data; // DD/MM/YYYY format
+    const noteDate = firstOperation.data;
     const noteNumber = firstOperation.nota || '';
 
-    // Create BrokerageNote object
     const note: BrokerageNote = {
-      id: '', // Will be generated by backend
+      id: '',
       user_id: this.userId,
       file_name: `nota_${noteDate.replace(/\//g, '_')}_${noteNumber}.pdf`,
-      original_file_path: `frontend_upload_${Date.now()}.pdf`, // Placeholder path since PDF is parsed in frontend
+      original_file_path: `frontend_upload_${Date.now()}.pdf`,
       processed_at: new Date().toISOString(),
       note_date: noteDate,
       note_number: noteNumber,
@@ -252,60 +116,35 @@ export class PortfolioComponent implements OnInit, OnChanges {
       status: 'success'
     };
 
-    // Save to backend FIRST - backend will check for duplicates
     this.historyService.addNote(note).subscribe({
       next: (savedNote) => {
-        console.log('✅ Nota de corretagem salva no histórico com sucesso:', savedNote);
-        
-        // Only add to portfolio AFTER successful backend save
-        this.portfolioService.addOperations(this.userId, operations);
+        this.debug.log('✅ Brokerage note saved successfully:', savedNote);
         this.loadData();
       },
       error: (error) => {
-        console.error('❌ Erro ao salvar nota no histórico:', error);
-        console.error('Error status:', error.status);
-        console.error('Error details:', error.error);
-        console.error('Note data being sent:', note);
+        this.debug.error('❌ Error saving brokerage note:', error);
         
-        // Handle duplicate note error (409 Conflict)
         if (error.status === 409) {
-          const errorMessage = error.error?.message || 'Esta nota de corretagem já foi processada anteriormente.';
-          console.warn('⚠️ Nota duplicada detectada no backend:', errorMessage);
-          alert(`⚠️ ${errorMessage}\n\nAs operações NÃO foram adicionadas ao portfólio.`);
-          // Don't add operations to portfolio - duplicate detected
+          const errorMessage = error.error?.message || 'This brokerage note has already been processed.';
+          alert(`⚠️ ${errorMessage}\n\nOperations were NOT added to portfolio.`);
         } else if (error.status === 400) {
-          // Validation error - show details
           const validationErrors = error.error?.details || error.error || {};
           const errorDetails = typeof validationErrors === 'string' 
             ? validationErrors 
             : JSON.stringify(validationErrors, null, 2);
-          console.error('Validation errors:', errorDetails);
-          alert(`❌ Erro de validação ao salvar nota:\n\n${errorDetails}\n\nAs operações NÃO foram adicionadas ao portfólio.`);
+          alert(`❌ Validation error:\n\n${errorDetails}\n\nOperations were NOT added to portfolio.`);
         } else {
-          // Other errors - show error but don't add operations
-          const errorMsg = error.error?.error || error.error?.message || error.message || 'Erro desconhecido';
-          console.error('Erro ao salvar no backend:', errorMsg);
-          alert(`❌ Erro ao salvar nota no histórico: ${errorMsg}\n\nAs operações NÃO foram adicionadas ao portfólio.\n\nVerifique se o servidor Django está rodando na porta 8000.`);
+          const errorMsg = error.error?.error || error.error?.message || error.message || 'Unknown error';
+          alert(`❌ Error saving note: ${errorMsg}\n\nOperations were NOT added to portfolio.\n\nMake sure the Django server is running on port 8000.`);
         }
       }
     });
   }
 
-
-  deleteOperation(operationId: string): void {
-    if (confirm('Tem certeza que deseja excluir esta operação?')) {
-      this.portfolioService.deleteOperation(this.userId, operationId);
-      this.loadData();
-    }
-  }
-
   selectSortField(field: string): void {
     if (this.sortField === field) {
-      // Toggle direction if clicking the same field
-      this.sortField = field;
       this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
     } else {
-      // New field - default to ascending
       this.sortField = field;
       this.sortDirection = 'asc';
     }
@@ -314,7 +153,7 @@ export class PortfolioComponent implements OnInit, OnChanges {
   
   getSortIcon(field: string): string {
     if (this.sortField !== field) {
-      return '⇅'; // Neutral icon when not sorted (double arrow)
+      return '⇅';
     }
     return this.sortDirection === 'asc' ? '↑' : '↓';
   }
@@ -331,10 +170,10 @@ export class PortfolioComponent implements OnInit, OnChanges {
         op.tipoMercado.toUpperCase().includes(this.filterTipoMercado.toUpperCase());
       
       const matchesDataInicio = !this.filterDataInicio || 
-        this.compareDate(op.data, this.filterDataInicio) >= 0;
+        compareDate(op.data, this.filterDataInicio) >= 0;
       
       const matchesDataFim = !this.filterDataFim || 
-        this.compareDate(op.data, this.filterDataFim) <= 0;
+        compareDate(op.data, this.filterDataFim) <= 0;
 
       return matchesTitulo && matchesTipoOperacao && matchesTipoMercado && 
              matchesDataInicio && matchesDataFim;
@@ -348,8 +187,8 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
         switch (this.sortField) {
           case 'data':
-            aValue = this.parseDate(a.data).getTime();
-            bValue = this.parseDate(b.data).getTime();
+            aValue = parseDate(a.data).getTime();
+            bValue = parseDate(b.data).getTime();
             break;
           case 'tipo':
             aValue = a.tipoOperacao;
@@ -399,19 +238,6 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
     this.filteredOperations = filtered;
   }
-  
-  private parseDate(dateStr: string): Date {
-    // Formato esperado: DD/MM/YYYY
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1; // Meses são 0-indexed
-      const year = parseInt(parts[2], 10);
-      return new Date(year, month, day);
-    }
-    // Fallback para formato ISO
-    return new Date(dateStr);
-  }
 
   resetFilters(): void {
     this.filterTitulo = '';
@@ -424,17 +250,8 @@ export class PortfolioComponent implements OnInit, OnChanges {
     this.applyFilters();
   }
 
-  private compareDate(dateStr: string, filterDateStr: string): number {
-    const date = this.parseDate(dateStr);
-    const filterDate = this.parseDate(filterDateStr);
-    return date.getTime() - filterDate.getTime();
-  }
-
   formatCurrency(value: number): string {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
+    return formatCurrency(value);
   }
 
   getTotalInvestido(): number {
@@ -445,4 +262,3 @@ export class PortfolioComponent implements OnInit, OnChanges {
     return this.positions.reduce((sum, pos) => sum + pos.quantidadeTotal, 0);
   }
 }
-

@@ -11,8 +11,8 @@
 
   @if (isLoading) {
     <div class="loading">Carregando usuários...</div>
-  } @else if (error) {
-    <div class="error">{{ error }}</div>
+  } @else if (errorMessage) {
+    <div class="error">{{ errorMessage }}</div>
   } @else if (users.length === 0) {
     <div class="empty-state">
       <p>Nenhum usuário cadastrado.</p>
@@ -24,7 +24,7 @@
         <app-user-item
           [user]="user"
           [selected]="user.id === selectedUserId"
-          (select)="onUserSelect($event)"
+          (select)="onSelectUser($event)"
         />
       }
     </div>

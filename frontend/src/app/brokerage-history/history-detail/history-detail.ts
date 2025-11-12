@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { BrokerageHistoryService } from '../history.service';
 import { BrokerageNote } from '../note.model';
+import { DebugService } from '../../shared/services/debug.service';
+import { formatCurrency } from '../../shared/utils/common-utils';
 
 @Component({
   selector: 'app-history-detail',
@@ -18,7 +20,8 @@ export class HistoryDetailComponent implements OnInit {
 
   constructor(
     private route: ActivatedRoute,
-    private historyService: BrokerageHistoryService
+    private historyService: BrokerageHistoryService,
+    private debug: DebugService
   ) {}
 
   ngOnInit() {
@@ -40,7 +43,7 @@ export class HistoryDetailComponent implements OnInit {
       error: (error) => {
         this.error = 'Erro ao carregar nota. Tente novamente.';
         this.isLoading = false;
-        console.error('Error loading note:', error);
+        this.debug.error('Error loading note:', error);
       }
     });
   }
@@ -55,11 +58,10 @@ export class HistoryDetailComponent implements OnInit {
     if (this.note && confirm('Tem certeza que deseja excluir esta nota?')) {
       this.historyService.deleteNote(this.note.id).subscribe({
         next: () => {
-          // Navigate back to list
           this.onBack();
         },
         error: (error) => {
-          console.error('Error deleting note:', error);
+          this.debug.error('Error deleting note:', error);
           alert('Erro ao excluir nota. Tente novamente.');
         }
       });
@@ -67,10 +69,7 @@ export class HistoryDetailComponent implements OnInit {
   }
 
   formatCurrency(value: number): string {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
+    return formatCurrency(value);
   }
 
   getStatusBadgeClass(status: string): string {
@@ -86,4 +85,3 @@ export class HistoryDetailComponent implements OnInit {
     }
   }
 }
-

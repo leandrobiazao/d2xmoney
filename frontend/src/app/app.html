@@ -1,23 +1,28 @@
-<app-header />
+<app-header (showHistory)="onShowHistory()" />
 
 <main>
-  <app-user-list
-    (userSelected)="onUserSelected($event)"
-    (createUser)="onCreateUser()"
-  />
-
-  @if (showCreateUser) {
-    <app-create-user
-      (close)="onCloseCreateUser()"
-      (userCreated)="onUserCreated()"
+  @if (!showBrokerageHistory) {
+    <app-user-list
+      (userSelected)="onUserSelected($event)"
+      (createUser)="onCreateUser()"
     />
-  }
 
-  @if (selectedUser) {
-    <app-portfolio [userId]="selectedUser.id" [userName]="selectedUser.name || ''"/>
+    @if (showCreateUser) {
+      <app-create-user
+        (close)="onCloseCreateUser()"
+        (userCreated)="onUserCreated()"
+      />
+    }
+
+    @if (selectedUser) {
+      <app-portfolio [userId]="selectedUser.id" [userName]="selectedUser.name || ''"/>
+    } @else {
+      <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
+    }
   } @else {
-    <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
+    <div class="brokerage-history-container">
+      <button (click)="onBackToMain()" class="back-button">← Voltar</button>
+      <app-history-list />
+    </div>
   }
 </main>
-
-<router-outlet />

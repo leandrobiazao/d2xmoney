@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { UserService } from '../user.service';
 import { PicturePreviewComponent } from '../picture-preview/picture-preview';
 import { validateCPF, formatCPF } from '../../shared/utils/cpf-validator';
+import { DebugService } from '../../shared/services/debug.service';
 
 @Component({
   selector: 'app-create-user',
@@ -30,7 +31,10 @@ export class CreateUserComponent {
   isSubmitting: boolean = false;
   errorMessage: string = '';
 
-  constructor(private userService: UserService) {}
+  constructor(
+    private userService: UserService,
+    private debug: DebugService
+  ) {}
 
   onCPFInput(event: Event) {
     const input = event.target as HTMLInputElement;
@@ -137,8 +141,8 @@ export class CreateUserComponent {
       },
       error: (error) => {
         this.isSubmitting = false;
-        console.error('Error creating user:', error);
-        console.error('Error details:', error.error);
+        this.debug.error('Error creating user:', error);
+        this.debug.error('Error details:', error.error);
         
         if (error.error?.details) {
           const details = error.error.details;

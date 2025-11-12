@@ -34,10 +34,34 @@ Once the server is running, open your browser and navigate to `http://localhost:
 
 ### Backend
 
-To start the Django backend server:
+To start the Django backend server, navigate to the backend directory:
+
+**First-time setup:**
+
+1. Activate the virtual environment (a `venv` directory already exists in the backend folder):
+   
+   For PowerShell:
+   ```bash
+   cd backend
+   .\venv\Scripts\Activate.ps1
+   ```
+   
+   For Command Prompt (CMD):
+   ```bash
+   cd backend
+   .\venv\Scripts\activate.bat
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+**Starting the server:**
+
+Make sure the virtual environment is activated (you should see `(venv)` in your terminal prompt), then run:
 
 ```bash
-cd backend
 python manage.py runserver
 ```
 

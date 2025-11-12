@@ -1,12 +1,16 @@
-import { Component } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, EventEmitter, Output } from '@angular/core';
 
 @Component({
     selector: 'app-header',
     standalone: true,
-    imports: [RouterModule],
+    imports: [],
     templateUrl: './header.html',
     styleUrl: './header.css'
 })
+export class HeaderComponent {
+  @Output() showHistory = new EventEmitter<void>();
 
-export class HeaderComponent {}
+  onShowHistory(): void {
+    this.showHistory.emit();
+  }
+}

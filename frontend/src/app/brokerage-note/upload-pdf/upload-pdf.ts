@@ -4,6 +4,7 @@ import { PdfParserService } from '../pdf-parser.service';
 import { Operation } from '../operation.model';
 import { TickerDialogComponent } from '../ticker-dialog/ticker-dialog';
 import { TickerMappingService } from '../../portfolio/ticker-mapping/ticker-mapping.service';
+import { DebugService } from '../../shared/services/debug.service';
 
 @Component({
   selector: 'app-upload-pdf',
@@ -34,7 +35,8 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
 
   constructor(
     private pdfParserService: PdfParserService,
-    private tickerMappingService: TickerMappingService
+    private tickerMappingService: TickerMappingService,
+    private debug: DebugService
   ) {}
 
   ngOnInit(): void {
@@ -58,8 +60,6 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      // Check Django backend endpoint for ticker mappings
-      // Use HEAD request to check if endpoint exists without downloading content
       const response = await fetch('/api/ticker-mappings/', {
         method: 'HEAD',
         signal: controller.signal
@@ -67,15 +67,12 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
       
       clearTimeout(timeoutId);
       
-      // If we get any response (even 405 Method Not Allowed), the server is online
-      // The endpoint exists, we just need to check if backend is reachable
       if (response.status === 200 || response.status === 405 || response.status === 404) {
         this.serverStatus = 'online';
       } else {
         this.serverStatus = 'offline';
       }
     } catch (error) {
-      // Try alternative check - just verify backend is reachable
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -84,11 +81,10 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
-        // If users endpoint responds, backend is online
         this.serverStatus = 'online';
       } catch (backendError) {
         this.serverStatus = 'offline';
-        console.warn('Backend não está acessível. Certifique-se de que o Django está rodando na porta 8000.');
+        this.debug.warn('Backend não está acessível. Certifique-se de que o Django está rodando na porta 8000.');
       }
     }
   }
@@ -129,7 +125,6 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
     this.successMessage = null;
 
     try {
-      // Callback for when ticker is required
       const onTickerRequired = async (nome: string, operationData: any): Promise<string | null> => {
         return new Promise((resolve) => {
           this.currentNome = nome;
@@ -147,30 +142,24 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Add clientId to each operation
       const operationsWithClientId = operations.map(op => ({
         ...op,
         clientId: this.clientId
       }));
 
       this.successMessage = `${operations.length} operação(ões) importada(s) com sucesso!`;
-      
-      // Emit operations with file metadata
       this.operationsAdded.emit(operationsWithClientId);
 
-      // Clear file selection
       this.selectedFile = null;
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       if (fileInput) {
         fileInput.value = '';
       }
     } catch (error) {
-      console.error('Error uploading PDF:', error);
+      this.debug.error('Error uploading PDF:', error);
       this.errorMessage = error instanceof Error ? error.message : 'Erro ao processar o PDF. Tente novamente.';
     } finally {
       this.isProcessing = false;
-      // Only clear dialog state if processing is complete and no dialog is showing
-      // Don't force close dialog here - let it close naturally via confirm/cancel
       if (!this.showTickerDialog && this.pendingTickerResolve) {
         this.pendingTickerResolve = null;
       }
@@ -203,4 +192,3 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
     this.currentOperationData = null;
   }
 }
-

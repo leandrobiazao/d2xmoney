@@ -1,56 +1,52 @@
-import { Component, ViewChild, AfterViewInit } from '@angular/core';
-
-import { RouterOutlet } from '@angular/router';
+import { Component } from '@angular/core';
 import { HeaderComponent } from "./header/header";
 import { UserListComponent } from "./users/user-list/user-list";
 import { CreateUserComponent } from "./users/create-user/create-user";
 import { PortfolioComponent } from './portfolio/portfolio';
+import { HistoryListComponent } from './brokerage-history/history-list/history-list';
 import { UserService } from './users/user.service';
 import { User } from './users/user.model';
+import { DebugService } from './shared/services/debug.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent],
+  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
-export class App implements AfterViewInit {
-  @ViewChild(UserListComponent) userListComponent!: UserListComponent;
-  
+export class App {
   selectedUser: User | null = null;
   showCreateUser: boolean = false;
+  showBrokerageHistory: boolean = false;
 
-  constructor(private userService: UserService) {}
+  constructor(
+    private userService: UserService,
+    private debug: DebugService
+  ) {}
 
-  ngAfterViewInit() {
-    // ViewChild is now available
-  }
-
-  onUserSelected(userId: string) {
-    console.log('User selected:', userId);
+  onUserSelected(userId: string): void {
+    this.debug.log('User selected:', userId);
     this.userService.getUserById(userId).subscribe({
       next: (user) => {
-        console.log('User loaded:', user);
+        this.debug.log('User loaded:', user);
         this.selectedUser = user;
       },
       error: (error) => {
-        console.error('Error loading user:', error);
-        console.error('Error details:', error.error);
-        console.error('Error status:', error.status);
+        this.debug.error('Error loading user:', error);
         // Try to find user from the list instead
         this.userService.getUsers().subscribe({
           next: (users) => {
             const foundUser = users.find(u => u.id === userId);
             if (foundUser) {
-              console.log('User found in list:', foundUser);
+              this.debug.log('User found in list:', foundUser);
               this.selectedUser = foundUser;
             } else {
               this.selectedUser = null;
             }
           },
           error: (listError) => {
-            console.error('Error loading users list:', listError);
+            this.debug.error('Error loading users list:', listError);
             this.selectedUser = null;
           }
         });
@@ -58,21 +54,25 @@ export class App implements AfterViewInit {
     });
   }
 
-  onCreateUser() {
+  onCreateUser(): void {
     this.showCreateUser = true;
   }
 
-  onCloseCreateUser() {
+  onCloseCreateUser(): void {
     this.showCreateUser = false;
   }
 
-  onUserCreated() {
+  onUserCreated(): void {
     this.showCreateUser = false;
-    // Refresh the user list - use setTimeout to ensure ViewChild is available
-    setTimeout(() => {
-      if (this.userListComponent) {
-        this.userListComponent.loadUsers();
-      }
-    }, 0);
+    // Trigger user list refresh by emitting a custom event
+    window.dispatchEvent(new CustomEvent('user-created'));
+  }
+
+  onShowHistory(): void {
+    this.showBrokerageHistory = true;
+  }
+
+  onBackToMain(): void {
+    this.showBrokerageHistory = false;
   }
 }

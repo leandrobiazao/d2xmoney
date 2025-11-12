@@ -155,7 +155,6 @@
                     <span class="header-text">Nota</span>
                     <span class="sort-icon">{{ getSortIcon('nota') }}</span>
                   </th>
-                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -175,15 +174,6 @@
                     <td>{{ formatCurrency(operation.valorOperacao) }}</td>
                     <td>{{ operation.corretora }}</td>
                     <td>{{ operation.nota }}</td>
-                    <td>
-                      <button 
-                        class="delete-btn" 
-                        (click)="deleteOperation(operation.id)"
-                        title="Excluir operação"
-                      >
-                        ×
-                      </button>
-                    </td>
                   </tr>
                 }
               </tbody>
