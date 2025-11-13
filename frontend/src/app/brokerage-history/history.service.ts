@@ -40,8 +40,10 @@ export class BrokerageHistoryService {
     return this.http.post<BrokerageNote>(url, note);
   }
 
-  deleteNote(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id}/`);
+  deleteNote(id: string): Observable<any> {
+    const url = `${this.apiUrl}/${id}/`;
+    console.log('🗑️ DELETE request to:', url);
+    return this.http.delete<any>(url);
   }
 }
 

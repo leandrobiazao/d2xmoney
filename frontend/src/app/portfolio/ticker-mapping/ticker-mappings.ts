@@ -1,13 +1,14 @@
 /**
- * Dicionário de mapeamento de nomes de empresas para tickers da B3
- * Este arquivo contém os mapeamentos padrão que são usados quando um nome
- * de empresa é encontrado nas notas de corretagem.
+ * @deprecated This file is deprecated. Ticker mappings are now stored in the database.
+ * The source of truth is backend/data/ticker.json, which is synced to the database.
  * 
- * IMPORTANTE: O mapeamento usa o campo completo (nome da empresa + código de classificação)
- * como chave, pois diferentes códigos de classificação podem mapear para diferentes tickers.
+ * To sync mappings from JSON to database, run:
+ *   python manage.py sync_ticker_mappings
  * 
- * ATUALIZAÇÃO AUTOMÁTICA: Este arquivo foi atualizado automaticamente.
- * Última atualização: 05/11/2025, 08:11:45
+ * Or use the API endpoint:
+ *   PUT /api/ticker-mappings/
+ * 
+ * This file is kept for reference only and will be removed in a future version.
  */
 export const DEFAULT_TICKER_MAPPINGS: { [nome: string]: string } = {
   '3TENTOS': 'TTEN3',
@@ -22,7 +23,9 @@ export const DEFAULT_TICKER_MAPPINGS: { [nome: string]: string } = {
   'GERDAU': 'GGBR4',
   'GRENDENE': 'GRND3',
   'IGUATEMI S.A': 'IGTI11',
-  'ISA ENERGIA': 'MYPK3',
+  'IGUATEMI S.A UNT N1': 'IGTT11',
+  'ISA ENERGIA PN N1': 'ISAE4',
+  'IOCHP-MAXION ON NM': 'MYPK3',
   'JHSF PART   ON': 'JHSF3',
   'KEPLER WEBER': 'KEPL3',
   'LAVVI': 'LAVV3',

@@ -86,7 +86,7 @@ export class PortfolioComponent implements OnInit, OnChanges {
     this.portfolioService.getPositionsAsync(this.userId).subscribe({
       next: (positions) => {
         this.debug.log(`✅ Loaded ${positions.length} positions`);
-        this.positions = positions;
+        this.positions = this.sortPositions(positions);
       },
       error: (error) => {
         this.debug.error('❌ Error loading positions:', error);
@@ -260,5 +260,20 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
   getTotalQuantidade(): number {
     return this.positions.reduce((sum, pos) => sum + pos.quantidadeTotal, 0);
+  }
+
+  getActivePositionsCount(): number {
+    return this.positions.filter(pos => pos.quantidadeTotal > 0).length;
+  }
+
+  sortPositions(positions: Position[]): Position[] {
+    return [...positions].sort((a, b) => {
+      // First sort by Valor Total Investido (descending)
+      if (b.valorTotalInvestido !== a.valorTotalInvestido) {
+        return b.valorTotalInvestido - a.valorTotalInvestido;
+      }
+      // If equal, sort by Lucro Realizado (descending)
+      return (b.lucroRealizado || 0) - (a.lucroRealizado || 0);
+    });
   }
 }

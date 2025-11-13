@@ -54,14 +54,27 @@ export class HistoryListComponent implements OnInit {
 
     this.historyService.getHistory(this.filters).subscribe({
       next: (notes) => {
-        this.notes = notes;
+        this.debug.log('✅ History loaded:', notes.length, 'notes');
+        // Ensure all notes have status field (for backward compatibility)
+        this.notes = notes.map((note: BrokerageNote) => {
+          const statusValue = note.status || 'success';
+          return {
+            ...note,
+            status: (statusValue === 'success' || statusValue === 'partial' || statusValue === 'failed') 
+              ? statusValue 
+              : 'success' as 'success' | 'partial' | 'failed',
+            error_message: note.error_message || undefined
+          } as BrokerageNote;
+        });
         this.applyUserFilter();
         this.isLoadingNotes = false;
       },
       error: (error) => {
-        this.error = 'Erro ao carregar histórico. Tente novamente.';
+        this.debug.error('❌ Error loading history:', error);
+        this.debug.error('❌ Error details:', error.status, error.message, error.error);
+        const errorMsg = error.error?.error || error.error?.message || error.message || 'Erro desconhecido';
+        this.error = `Erro ao carregar histórico: ${errorMsg}`;
         this.isLoadingNotes = false;
-        this.debug.error('Error loading history:', error);
       }
     });
   }
@@ -85,13 +98,17 @@ export class HistoryListComponent implements OnInit {
 
   onDeleteNote(noteId: string) {
     if (confirm('Tem certeza que deseja excluir esta nota?')) {
+      this.debug.log('🗑️ Attempting to delete note:', noteId);
       this.historyService.deleteNote(noteId).subscribe({
-        next: () => {
+        next: (response) => {
+          this.debug.log('✅ Note deleted successfully:', response);
           this.loadHistory();
         },
         error: (error) => {
-          this.debug.error('Error deleting note:', error);
-          alert('Erro ao excluir nota. Tente novamente.');
+          this.debug.error('❌ Error deleting note:', error);
+          this.debug.error('❌ Error details:', error.status, error.message, error.error);
+          const errorMsg = error.error?.error || error.error?.message || error.message || 'Erro desconhecido';
+          alert(`Erro ao excluir nota: ${errorMsg}\n\nVerifique o console para mais detalhes.`);
         }
       });
     }

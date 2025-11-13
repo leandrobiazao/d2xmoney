@@ -67,6 +67,7 @@ export class PdfParserService {
 
   private async parseOperationsFromText(text: string, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<Operation[]> {
     const operations: Operation[] = [];
+    const skippedOperations: string[] = [];
     const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     
     // Extrair data do pregão do PDF
@@ -92,13 +93,63 @@ export class PdfParserService {
       let line = lines[i].trim();
       
       // Pattern to match B3 format with complete field (company name + classification code)
-      // Pattern: 1-BOVESPA   C/V   TIPO_MERCADO   NOME_ACAO_COMPLETO   @   QTD   PRECO   VALOR   D/C
-      const bovespaPattern = /1-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\s]+?)\s{2,}[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
-      const bovespaMatch = line.match(bovespaPattern);
+      // Pattern: 1-BOVESPA   C/V   TIPO_MERCADO   NOME_ACAO   CLASSIFICACAO   @   QTD   PRECO   VALOR   D/C
+      // The company name and classification code may be in separate "columns" (separated by 2+ spaces)
+      // We need to capture both together: "IGUATEMI S.A UNT N1" or "IOCHP-MAXION ON NM"
+      
+      // First, try pattern that captures company name and classification as one field
+      let bovespaPattern = /1-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\.\-\s]+?)\s{2,}[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+      let bovespaMatch = line.match(bovespaPattern);
+      
+      let nomeAcaoCompleto = '';
       
       if (bovespaMatch && bovespaMatch.length >= 8) {
-        // Extract nomeAcaoCompleto (complete field including classification code)
-        const nomeAcaoCompleto = bovespaMatch[3].trim();
+        nomeAcaoCompleto = bovespaMatch[3].trim();
+        this.debug.log(`📄 Line ${i + 1} matched (pattern 1). Captured: "${nomeAcaoCompleto}"`);
+      } else {
+        // Try alternative pattern: company name and classification might be separated by 2+ spaces
+        // Pattern: 1-BOVESPA   C/V   TIPO   COMPANY_NAME    CLASSIFICATION   @   QTD   PRECO   VALOR   D/C
+        bovespaPattern = /1-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\.\-\s]+?)\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))\s+[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+        bovespaMatch = line.match(bovespaPattern);
+        
+        if (bovespaMatch && bovespaMatch.length >= 9) {
+          // Group 3 is company name, group 4 is classification
+          nomeAcaoCompleto = (bovespaMatch[3].trim() + ' ' + bovespaMatch[4].trim()).trim();
+          this.debug.log(`📄 Line ${i + 1} matched (pattern 2). Company: "${bovespaMatch[3].trim()}", Classification: "${bovespaMatch[4].trim()}"`);
+          this.debug.log(`📄 Combined: "${nomeAcaoCompleto}"`);
+          
+          // Adjust match groups for parseBovespaLine (it expects groups 4,5,6,7 for qtd, preco, valor, dc)
+          // But now we have groups 5,6,7,8
+          bovespaMatch = [
+            bovespaMatch[0], // full match
+            bovespaMatch[1], // C/V
+            bovespaMatch[2], // TIPO_MERCADO
+            nomeAcaoCompleto, // combined company + classification
+            bovespaMatch[5], // qtd
+            bovespaMatch[6], // preco
+            bovespaMatch[7], // valor
+            bovespaMatch[8]  // D/C
+          ];
+        }
+      }
+      
+      if (bovespaMatch && nomeAcaoCompleto) {
+        // Debug: log what we captured
+        this.debug.log(`📄 Full line: "${line}"`);
+        
+        // If still no classification code, try to find it after the company name
+        const classificationPattern = /\b(ON|UNT|PN|PNA|PNAB)\s+(NM|N[12]|EJ|ED|EDJ|ATZ)\b/i;
+        if (!classificationPattern.test(nomeAcaoCompleto)) {
+          // Try to find classification code in the next part of the line
+          const afterField = line.substring(line.indexOf(nomeAcaoCompleto.split(/\s{2,}/)[0]) + nomeAcaoCompleto.split(/\s{2,}/)[0].length);
+          const classificationMatch = afterField.match(/\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))/i);
+          if (classificationMatch) {
+            nomeAcaoCompleto = (nomeAcaoCompleto + ' ' + classificationMatch[1]).trim();
+            this.debug.log(`📝 Extended field with classification: "${nomeAcaoCompleto}"`);
+            // Update the match group
+            bovespaMatch[3] = nomeAcaoCompleto;
+          }
+        }
         
         const operation = await this.parseBovespaLine(
           bovespaMatch, 
@@ -112,10 +163,17 @@ export class PdfParserService {
         
         if (operation) {
           operations.push(operation);
+        } else {
+          skippedOperations.push(`Line ${i + 1}: ${nomeAcaoCompleto} - Operation skipped (ticker not found or user cancelled)`);
         }
       }
     }
 
+    if (skippedOperations.length > 0) {
+      this.debug.warn(`⚠️ ${skippedOperations.length} operation(s) were skipped:`, skippedOperations);
+    }
+    
+    this.debug.log(`✅ Parsed ${operations.length} operations successfully${skippedOperations.length > 0 ? `, ${skippedOperations.length} skipped` : ''}`);
     return operations;
   }
 
@@ -146,17 +204,23 @@ export class PdfParserService {
       
       // 1. Try to get ticker from mapping service using complete field
       const tickerMapeado = this.tickerMappingService.getTicker(nomeAcaoCompleto);
+      this.debug.log(`🔍 Looking up ticker for: "${nomeAcaoCompleto}" -> ${tickerMapeado || 'NOT FOUND'}`);
+      
       if (tickerMapeado) {
         titulo = tickerMapeado;
+        this.debug.log(`✅ Found ticker in mapping: ${titulo}`);
       } else {
         // 2. Try to extract ticker pattern (4 letters + 1-2 digits) from the complete field
         const codigoMatch = nomeAcaoCompleto.match(/\b([A-Z]{4}\d{1,2})\b/i);
         if (codigoMatch) {
           titulo = codigoMatch[1].toUpperCase();
+          this.debug.log(`📝 Extracted ticker from field: ${titulo} (from "${nomeAcaoCompleto}")`);
           // Save mapping using complete field
           this.tickerMappingService.setTicker(nomeAcaoCompleto, titulo);
         } else {
           // 3. If not found, ask user via callback
+          this.debug.warn(`⚠️ Ticker not found for "${nomeAcaoCompleto}". ${onTickerRequired ? 'Requesting user input...' : 'No callback provided, skipping operation.'}`);
+          
           if (onTickerRequired) {
             const operationData = {
               tipoOperacao,
@@ -168,15 +232,20 @@ export class PdfParserService {
               linha: line
             };
             
+            this.debug.log(`📞 Calling onTickerRequired for: "${nomeAcaoCompleto}"`);
             const ticker = await onTickerRequired(nomeAcaoCompleto, operationData);
+            
             if (ticker) {
+              this.debug.log(`✅ User provided ticker: ${ticker} for "${nomeAcaoCompleto}"`);
               // Save mapping using complete field
               this.tickerMappingService.setTicker(nomeAcaoCompleto, ticker);
               titulo = ticker;
             } else {
+              this.debug.warn(`⚠️ User cancelled ticker input for "${nomeAcaoCompleto}", skipping operation`);
               return null; // User cancelled
             }
           } else {
+            this.debug.error(`❌ No onTickerRequired callback provided, cannot process "${nomeAcaoCompleto}"`);
             return null;
           }
         }
@@ -249,4 +318,5 @@ export class PdfParserService {
     return `op-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 }
+
 

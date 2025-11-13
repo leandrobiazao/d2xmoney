@@ -19,8 +19,68 @@ class BrokerageNoteHistoryService:
     @staticmethod
     def load_history() -> List[Dict]:
         """Load all notes from database."""
-        notes = BrokerageNote.objects.all()
-        return [BrokerageNoteHistoryService._note_to_dict(note) for note in notes]
+        try:
+            # First, check if status and error_message columns exist in the database
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA table_info(brokerage_notes)")
+                columns = [row[1] for row in cursor.fetchall()]
+                has_status = 'status' in columns
+                has_error_message = 'error_message' in columns
+            
+            # Build list of fields to select (only those that exist in database)
+            fields_to_select = [
+                'id', 'user_id', 'file_name', 'original_file_path',
+                'note_date', 'note_number', 'processed_at',
+                'operations_count', 'operations'
+            ]
+            if has_status:
+                fields_to_select.append('status')
+            if has_error_message:
+                fields_to_select.append('error_message')
+            
+            # Use only() to select only existing fields
+            notes = BrokerageNote.objects.all().only(*fields_to_select)
+            
+            result = []
+            for note in notes:
+                note_dict = {
+                    'id': str(note.id),
+                    'user_id': note.user_id,
+                    'file_name': note.file_name,
+                    'original_file_path': note.original_file_path,
+                    'note_date': note.note_date,
+                    'note_number': note.note_number,
+                    'processed_at': note.processed_at.isoformat() if note.processed_at else None,
+                    'operations_count': note.operations_count,
+                    'operations': note.operations or [],
+                }
+                
+                # Add status and error_message - only access if column exists
+                # If column doesn't exist, use defaults without trying to access
+                if has_status and 'status' in fields_to_select:
+                    # Only access if it was selected
+                    note_dict['status'] = getattr(note, 'status', 'success')
+                else:
+                    note_dict['status'] = 'success'
+                
+                if has_error_message and 'error_message' in fields_to_select:
+                    # Only access if it was selected
+                    note_dict['error_message'] = getattr(note, 'error_message', None)
+                else:
+                    note_dict['error_message'] = None
+                
+                result.append(note_dict)
+            
+            return result
+        except Exception as e:
+            # Final fallback: return empty list with error message
+            import traceback
+            error_msg = str(e)
+            print(f"ERROR: Could not load notes: {error_msg}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            # Return empty list instead of raising - allows UI to load
+            return []
     
     @staticmethod
     def save_history(notes: List[Dict]) -> None:
@@ -32,7 +92,27 @@ class BrokerageNoteHistoryService:
     def get_note_by_id(note_id: str) -> Optional[Dict]:
         """Get note by ID."""
         try:
-            note = BrokerageNote.objects.get(id=note_id)
+            # Check if status and error_message columns exist
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA table_info(brokerage_notes)")
+                columns = [row[1] for row in cursor.fetchall()]
+                has_status = 'status' in columns
+                has_error_message = 'error_message' in columns
+            
+            # Build list of fields to select (only those that exist in database)
+            fields_to_select = [
+                'id', 'user_id', 'file_name', 'original_file_path',
+                'note_date', 'note_number', 'processed_at',
+                'operations_count', 'operations'
+            ]
+            if has_status:
+                fields_to_select.append('status')
+            if has_error_message:
+                fields_to_select.append('error_message')
+            
+            # Use only() to select only existing fields
+            note = BrokerageNote.objects.only(*fields_to_select).get(id=note_id)
             return BrokerageNoteHistoryService._note_to_dict(note)
         except BrokerageNote.DoesNotExist:
             return None
@@ -95,11 +175,24 @@ class BrokerageNoteHistoryService:
     @staticmethod
     def delete_note(note_id: str) -> None:
         """Delete note from history."""
-        try:
-            note = BrokerageNote.objects.get(id=note_id)
-            note.delete()  # This will cascade delete operations
-        except BrokerageNote.DoesNotExist:
-            pass
+        from django.db import connection
+        import uuid
+        
+        # Convert note_id to string and handle UUID format (with or without hyphens)
+        note_id_str = str(note_id).replace('-', '')  # Remove hyphens to match database format
+        
+        # Use raw SQL to delete directly, avoiding any field access issues
+        # Django's SQLite backend uses %s placeholders
+        with connection.cursor() as cursor:
+            # Check if note exists first (try both with and without hyphens)
+            cursor.execute("SELECT id FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
+            if not cursor.fetchone():
+                raise ValueError(f"Note with id {note_id} not found")
+            
+            # First delete operations (cascade) - try both formats
+            cursor.execute("DELETE FROM operations WHERE note_id = %s OR note_id = %s", [note_id_str, str(note_id)])
+            # Then delete the note - try both formats
+            cursor.execute("DELETE FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
     
     @staticmethod
     def generate_note_id() -> str:
@@ -125,6 +218,8 @@ class BrokerageNoteHistoryService:
                 'processed_at': processed_at,
                 'operations_count': note_data.get('operations_count', 0),
                 'operations': note_data.get('operations', []),
+                'status': note_data.get('status', 'success'),
+                'error_message': note_data.get('error_message'),
             }
         )
         
@@ -175,7 +270,7 @@ class BrokerageNoteHistoryService:
     @staticmethod
     def _note_to_dict(note: BrokerageNote) -> Dict:
         """Convert BrokerageNote model instance to dictionary."""
-        return {
+        result = {
             'id': str(note.id),
             'user_id': note.user_id,
             'file_name': note.file_name,
@@ -186,6 +281,22 @@ class BrokerageNoteHistoryService:
             'operations_count': note.operations_count,
             'operations': note.operations or [],
         }
+        
+        # Add status and error_message if they exist (for backward compatibility)
+        # Handle both AttributeError (field doesn't exist on model) and database column errors
+        try:
+            # Try to access the field - this will work if migration has been run
+            result['status'] = getattr(note, 'status', 'success')
+        except Exception:
+            # If any error occurs (including database column errors), use default
+            result['status'] = 'success'
+        
+        try:
+            result['error_message'] = getattr(note, 'error_message', None)
+        except Exception:
+            result['error_message'] = None
+        
+        return result
     
     @staticmethod
     def _parse_datetime(dt_str):

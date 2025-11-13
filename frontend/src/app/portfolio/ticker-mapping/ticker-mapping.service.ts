@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
-import { DEFAULT_TICKER_MAPPINGS } from './ticker-mappings';
 import { DebugService } from '../../shared/services/debug.service';
 
 export interface TickerMapping {
@@ -16,8 +15,6 @@ export class TickerMappingService {
   private readonly API_URL = '/api/ticker-mappings';
   private mappings: TickerMapping = {};
   private mappingsLoaded = false;
-  
-  private defaultMappings: TickerMapping = DEFAULT_TICKER_MAPPINGS;
 
   constructor(
     private http: HttpClient,
@@ -42,17 +39,23 @@ export class TickerMappingService {
           normalizedBackendMappings[normalizedNome] = ticker;
         }
         
+        // Use only database mappings (no defaults fallback)
         this.mappings = normalizedBackendMappings;
+        
         this.mappingsLoaded = true;
-        this.debug.log('✅ Ticker mappings loaded from backend:', Object.keys(this.mappings).length, 'mappings');
-        this.debug.log('✅ Normalized mappings:', this.mappings);
+        this.debug.log('✅ Ticker mappings loaded from database:', Object.keys(this.mappings).length, 'mappings');
+        
+        if (Object.keys(this.mappings).length === 0) {
+          this.debug.warn('⚠️ Database is empty. Run: python manage.py sync_ticker_mappings');
+        }
       }),
       catchError(error => {
-        this.debug.warn('⚠️ Error loading mappings from backend, using defaults:', error);
-        this.debug.warn('⚠️ Error details:', error.status, error.message);
-        this.mappings = { ...this.defaultMappings };
+        this.debug.error('❌ Error loading mappings from backend:', error);
+        this.debug.error('❌ Error details:', error.status, error.message);
+        this.mappings = {};
         this.mappingsLoaded = true;
-        return of(this.defaultMappings);
+        this.debug.warn('⚠️ Mappings not loaded. Ensure backend is running and database is synced.');
+        return of({});
       })
     ).subscribe();
   }
@@ -91,21 +94,28 @@ export class TickerMappingService {
     ).subscribe();
   }
 
-  getCustomMappingsJSON(): string {
-    const customMappings: { [nome: string]: string } = {};
-    for (const [nome, ticker] of Object.entries(this.mappings)) {
-      if (!this.defaultMappings[nome]) {
-        customMappings[nome] = ticker;
-      }
-    }
-    return JSON.stringify(customMappings, null, 2);
+  syncMappingsFromJson(): Observable<any> {
+    const url = this.API_URL.endsWith('/') ? this.API_URL : `${this.API_URL}/`;
+    this.debug.log('🔄 Syncing ticker mappings from JSON to database...');
+    
+    return this.http.put(url, {}).pipe(
+      tap(response => {
+        this.debug.log('✅ Ticker mappings synced:', response);
+        // Reload mappings after sync
+        this.loadMappings();
+      }),
+      catchError(error => {
+        this.debug.error('❌ Error syncing mappings:', error);
+        return of(null);
+      })
+    );
   }
   
   getAllMappingsFromBackend(): Observable<TickerMapping> {
     return this.http.get<TickerMapping>(this.API_URL).pipe(
       catchError(error => {
         this.debug.warn('Error loading mappings from backend:', error);
-        return of(this.defaultMappings);
+        return of({});
       })
     );
   }

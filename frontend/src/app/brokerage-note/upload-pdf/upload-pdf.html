@@ -1,55 +1,33 @@
-<div class="upload-container">
-  <h3>Upload de Nota de Corretagem (PDF)</h3>
-  
-  <div class="file-input-container">
-    <input 
-      type="file" 
-      id="pdf-file" 
-      accept=".pdf" 
-      (change)="onFileSelected($event)"
-      [disabled]="isProcessing"
-    />
-    <label for="pdf-file" class="file-label">
-      {{ selectedFile ? selectedFile.name : 'Selecionar arquivo PDF' }}
-    </label>
-  </div>
-
+<div class="file-input-container">
+  <input 
+    type="file" 
+    id="pdf-file" 
+    accept=".pdf" 
+    (change)="onFileSelected($event)"
+    [disabled]="isProcessing"
+    #fileInput
+  />
   <button 
-    class="upload-button"
-    (click)="onUpload()"
-    [disabled]="!selectedFile || isProcessing || showTickerDialog"
+    type="button"
+    class="btn-primary"
+    (click)="fileInput.click()"
+    [disabled]="isProcessing"
   >
-    {{ isProcessing || showTickerDialog ? 'Processando...' : 'Upload e Processar PDF' }}
+    Carregar Nota de Corretagem
   </button>
-
-  @if (errorMessage) {
-    <div class="message error" (click)="clearMessages()">
-      <strong>Erro:</strong> {{ errorMessage }}
-    </div>
-  }
-
-  @if (successMessage) {
-    <div class="message success" (click)="clearMessages()">
-      {{ successMessage }}
-    </div>
-  }
-
-  <div class="mappings-info">
-    <p class="info-text">
-      <strong>💡 Dica:</strong> Os tickers são salvos automaticamente no arquivo do servidor. 
-    </p>
-    <div class="server-status" [class.online]="serverStatus === 'online'" [class.offline]="serverStatus === 'offline'" [class.checking]="serverStatus === 'checking'">
-      <strong>Status do Servidor:</strong>
-      @if (serverStatus === 'checking') {
-        <span>🔄 Verificando...</span>
-      } @else if (serverStatus === 'online') {
-        <span>✅ Online - Backend Django está rodando</span>
-      } @else {
-        <span>❌ Offline - Certifique-se de que o Django está rodando na porta 8000</span>
-      }
-    </div>
-  </div>
 </div>
+
+@if (errorMessage) {
+  <div class="message error" (click)="clearMessages()">
+    <strong>Erro:</strong> {{ errorMessage }}
+  </div>
+}
+
+@if (successMessage) {
+  <div class="message success" (click)="clearMessages()">
+    {{ successMessage }}
+  </div>
+}
 
 @if (showTickerDialog) {
   <app-ticker-dialog

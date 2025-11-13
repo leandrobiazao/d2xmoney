@@ -16,6 +16,12 @@ class BrokerageNote(models.Model):
     processed_at = models.DateTimeField(null=True, blank=True)
     operations_count = models.IntegerField(default=0)
     operations = models.JSONField(default=list)  # Store operations as JSON
+    status = models.CharField(max_length=20, default='success', choices=[
+        ('success', 'Success'),
+        ('partial', 'Partial'),
+        ('failed', 'Failed')
+    ])
+    error_message = models.TextField(null=True, blank=True)
 
     class Meta:
         db_table = 'brokerage_notes'

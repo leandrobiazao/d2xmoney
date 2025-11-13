@@ -15,6 +15,53 @@ class TickerMappingListView(APIView):
         mappings = TickerMappingService.load_mappings()
         return Response(mappings, status=status.HTTP_200_OK)
     
+    def put(self, request):
+        """Sync ticker mappings from JSON file to database."""
+        from django.conf import settings
+        from pathlib import Path
+        import json
+        
+        data_dir = Path(settings.DATA_DIR)
+        json_file = data_dir / 'ticker.json'
+        
+        if not json_file.exists():
+            return Response(
+                {'error': f'JSON file not found: {json_file}'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                json_mappings = json.load(f)
+            
+            # Sync to database
+            TickerMappingService.save_mappings(json_mappings)
+            
+            # Check for missing entries
+            db_mappings = TickerMappingService.load_mappings()
+            missing = []
+            for company_name, ticker in json_mappings.items():
+                normalized_name = TickerMappingService.normalize_company_name(company_name)
+                if normalized_name not in db_mappings:
+                    missing.append(company_name)
+            
+            return Response({
+                'success': True,
+                'message': f'Synced {len(json_mappings)} mappings from JSON to database',
+                'synced': len(json_mappings),
+                'in_database': len(db_mappings),
+                'missing': len(missing),
+                'missing_entries': missing[:10]  # Return first 10 missing
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            import traceback
+            print(f"ERROR: Exception in PUT handler: {str(e)}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Error syncing mappings: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def post(self, request):
         """Create or update a ticker mapping."""
         nome = request.data.get('nome')

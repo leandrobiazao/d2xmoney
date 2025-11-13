@@ -27,11 +27,6 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
   pendingTickerResolve: ((value: string | null) => void) | null = null;
   currentNome: string = '';
   currentOperationData: any = null;
-  
-  // Server status
-  serverStatus: 'checking' | 'online' | 'offline' = 'checking';
-  
-  private tickerUpdateListener?: (event: CustomEvent) => void;
 
   constructor(
     private pdfParserService: PdfParserService,
@@ -40,59 +35,11 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.checkServerStatus();
-    
-    this.tickerUpdateListener = (event: CustomEvent) => {
-      const detail = event.detail;
-      if (detail.success) {
-        this.serverStatus = 'online';
-      } else {
-        this.serverStatus = 'offline';
-      }
-    };
-    
-    window.addEventListener('ticker-mappings-updated', this.tickerUpdateListener as EventListener);
-  }
-
-  private async checkServerStatus(): Promise<void> {
-    this.serverStatus = 'checking';
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
-      const response = await fetch('/api/ticker-mappings/', {
-        method: 'HEAD',
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (response.status === 200 || response.status === 405 || response.status === 404) {
-        this.serverStatus = 'online';
-      } else {
-        this.serverStatus = 'offline';
-      }
-    } catch (error) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const testResponse = await fetch('/api/users/', {
-          method: 'HEAD',
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        this.serverStatus = 'online';
-      } catch (backendError) {
-        this.serverStatus = 'offline';
-        this.debug.warn('Backend não está acessível. Certifique-se de que o Django está rodando na porta 8000.');
-      }
-    }
+    // Component initialization
   }
 
   ngOnDestroy(): void {
-    if (this.tickerUpdateListener) {
-      window.removeEventListener('ticker-mappings-updated', this.tickerUpdateListener as EventListener);
-    }
+    // Cleanup if needed
   }
 
   onFileSelected(event: Event): void {
@@ -107,6 +54,18 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
       this.selectedFile = file;
       this.errorMessage = null;
       this.successMessage = null;
+      
+      // Show confirmation popup
+      const confirmed = confirm(`Deseja fazer upload e processar o arquivo "${file.name}"?`);
+      if (confirmed) {
+        this.onUpload();
+      } else {
+        // Reset file selection if user cancels
+        this.selectedFile = null;
+        if (input) {
+          input.value = '';
+        }
+      }
     }
   }
 
@@ -147,7 +106,7 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         clientId: this.clientId
       }));
 
-      this.successMessage = `${operations.length} operação(ões) importada(s) com sucesso!`;
+      // Emit operations - success/error will be handled by parent component
       this.operationsAdded.emit(operationsWithClientId);
 
       this.selectedFile = null;

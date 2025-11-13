@@ -18,27 +18,36 @@ class BrokerageNoteListView(APIView):
     
     def get(self, request):
         """Get all notes with optional filters."""
-        notes = BrokerageNoteHistoryService.load_history()
-        
-        # Apply filters
-        user_id = request.query_params.get('user_id')
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        note_number = request.query_params.get('note_number')
-        
-        if user_id:
-            notes = [n for n in notes if n.get('user_id') == user_id]
-        
-        if note_number:
-            notes = [n for n in notes if n.get('note_number') == note_number]
-        
-        if date_from:
-            notes = [n for n in notes if n.get('note_date') >= date_from]
-        
-        if date_to:
-            notes = [n for n in notes if n.get('note_date') <= date_to]
-        
-        return Response(notes, status=status.HTTP_200_OK)
+        try:
+            notes = BrokerageNoteHistoryService.load_history()
+            
+            # Apply filters
+            user_id = request.query_params.get('user_id')
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            note_number = request.query_params.get('note_number')
+            
+            if user_id:
+                notes = [n for n in notes if n.get('user_id') == user_id]
+            
+            if note_number:
+                notes = [n for n in notes if n.get('note_number') == note_number]
+            
+            if date_from:
+                notes = [n for n in notes if n.get('note_date') >= date_from]
+            
+            if date_to:
+                notes = [n for n in notes if n.get('note_date') <= date_to]
+            
+            return Response(notes, status=status.HTTP_200_OK)
+        except Exception as e:
+            import traceback
+            print(f"ERROR: Exception in GET handler: {str(e)}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Error loading notes: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def post(self, request):
         """Create note."""
@@ -106,30 +115,37 @@ class BrokerageNoteDetailView(APIView):
     
     def delete(self, request, note_id):
         """Delete note by ID."""
-        note = BrokerageNoteHistoryService.get_note_by_id(note_id)
-        
-        if not note:
+        try:
+            # Delete note from database (this will check if it exists)
+            BrokerageNoteHistoryService.delete_note(note_id)
+            
+            # Refresh portfolio after deleting note (skip if migration not run)
+            try:
+                PortfolioService.refresh_portfolio_from_brokerage_notes()
+            except Exception as e:
+                # Silently ignore errors during refresh (e.g., missing status column)
+                # The portfolio will be refreshed on next manual refresh or when migration is run
+                print(f"Warning: Failed to refresh portfolio after note deletion: {e}")
+                pass
+            
+            return Response({
+                'success': True,
+                'message': f'Note {note_id} deleted successfully'
+            }, status=status.HTTP_200_OK)
+        except ValueError as e:
+            # Note not found
             return Response(
-                {'error': 'Note not found'},
+                {'error': str(e)},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
-        # Optionally delete original PDF file
-        if note.get('original_file_path'):
-            file_path = note['original_file_path'].replace('/media/', '')
-            if default_storage.exists(file_path):
-                default_storage.delete(file_path)
-        
-        # Remove from JSON file
-        BrokerageNoteHistoryService.delete_note(note_id)
-        
-        # Refresh portfolio after deleting note
-        try:
-            PortfolioService.refresh_portfolio_from_brokerage_notes()
         except Exception as e:
-            print(f"Warning: Failed to refresh portfolio after note deletion: {e}")
-        
-        return Response(status=status.HTTP_204_NO_CONTENT)
+            import traceback
+            print(f"ERROR: Exception in DELETE handler: {str(e)}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Error deleting note: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class BrokerageNoteOperationsView(APIView):

@@ -1,11 +1,12 @@
 @if (userId) {
   <div class="portfolio-container">
-    <h2>Carteira de Investimentos - {{ userName }}</h2>
-
-    <app-upload-pdf 
-      [clientId]="userId!" 
-      (operationsAdded)="onOperationsAdded($event)"
-    />
+    <div class="portfolio-header">
+      <h2>Carteira de Investimentos - {{ userName }}</h2>
+      <app-upload-pdf 
+        [clientId]="userId!" 
+        (operationsAdded)="onOperationsAdded($event)"
+      />
+    </div>
 
     @if (showPositions && positions.length > 0) {
       <section class="positions-section">
@@ -17,7 +18,7 @@
           </div>
           <div class="summary-card">
             <span class="label">Ativos na Carteira:</span>
-            <span class="value">{{ positions.length }}</span>
+            <span class="value">{{ getActivePositionsCount() }}</span>
           </div>
         </div>
         
