@@ -8,8 +8,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from .serializers import UserSerializer
 from .services import UserJsonStorageService
+# Import serializer only when needed (for POST requests)
+# from .serializers import UserSerializer
 
 
 class UserListView(APIView):
@@ -17,12 +18,55 @@ class UserListView(APIView):
     
     def get(self, request):
         """Get all users."""
-        users = UserJsonStorageService.load_users()
-        return Response(users, status=status.HTTP_200_OK)
+        try:
+            # Test if service can be accessed
+            file_path = UserJsonStorageService.get_users_file_path()
+            print(f"DEBUG: Loading users from: {file_path}")
+            print(f"DEBUG: File exists: {file_path.exists()}")
+            
+            users = UserJsonStorageService.load_users()
+            print(f"DEBUG: Loaded {len(users)} users")
+            
+            # Ensure all data is JSON serializable
+            import json
+            try:
+                # Test if data can be serialized
+                json.dumps(users)
+                print("DEBUG: Data is JSON serializable")
+            except (TypeError, ValueError) as json_err:
+                print(f"ERROR: Data not JSON serializable: {json_err}")
+                # Convert any non-serializable objects
+                def make_serializable(obj):
+                    if isinstance(obj, dict):
+                        return {k: make_serializable(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [make_serializable(item) for item in obj]
+                    elif hasattr(obj, 'isoformat'):  # datetime objects
+                        return obj.isoformat()
+                    else:
+                        return str(obj)
+                users = make_serializable(users)
+            
+            return Response(users, status=status.HTTP_200_OK)
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            error_msg = str(e)
+            print(f"ERROR loading users: {error_msg}")
+            print(f"ERROR traceback:\n{error_details}")
+            return Response(
+                {
+                    'error': 'Internal server error',
+                    'details': error_msg,
+                    'type': type(e).__name__
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def post(self, request):
         """Create user."""
         try:
+            from .serializers import UserSerializer
             serializer = UserSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -100,6 +144,7 @@ class UserDetailView(APIView):
             )
         
         # Create serializer with existing data and context to exclude current user from uniqueness checks
+        from .serializers import UserSerializer
         serializer = UserSerializer(
             data=request.data, 
             partial=True,

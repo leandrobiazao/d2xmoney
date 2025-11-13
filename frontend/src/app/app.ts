@@ -4,6 +4,7 @@ import { UserListComponent } from "./users/user-list/user-list";
 import { CreateUserComponent } from "./users/create-user/create-user";
 import { PortfolioComponent } from './portfolio/portfolio';
 import { HistoryListComponent } from './brokerage-history/history-list/history-list';
+import { ClubeDoValorComponent } from './clubedovalor/clubedovalor/clubedovalor';
 import { UserService } from './users/user.service';
 import { User } from './users/user.model';
 import { DebugService } from './shared/services/debug.service';
@@ -11,7 +12,7 @@ import { DebugService } from './shared/services/debug.service';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent],
+  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent, ClubeDoValorComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -19,6 +20,7 @@ export class App {
   selectedUser: User | null = null;
   showCreateUser: boolean = false;
   showBrokerageHistory: boolean = false;
+  showClubeDoValor: boolean = false;
 
   constructor(
     private userService: UserService,
@@ -68,11 +70,24 @@ export class App {
     window.dispatchEvent(new CustomEvent('user-created'));
   }
 
+  onShowHome(): void {
+    this.showBrokerageHistory = false;
+    this.showClubeDoValor = false;
+    this.selectedUser = null;
+  }
+
   onShowHistory(): void {
     this.showBrokerageHistory = true;
+    this.showClubeDoValor = false;
+  }
+
+  onShowClubeDoValor(): void {
+    this.showClubeDoValor = true;
+    this.showBrokerageHistory = false;
   }
 
   onBackToMain(): void {
     this.showBrokerageHistory = false;
+    this.showClubeDoValor = false;
   }
 }

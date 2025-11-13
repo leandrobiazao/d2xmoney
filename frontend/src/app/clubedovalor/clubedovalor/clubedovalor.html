@@ -1,0 +1,193 @@
+<div class="clubedovalor-app">
+  <!-- Modal Dialog -->
+  @if (showUrlDialog) {
+    <div class="modal-overlay" (click)="onUrlDialogCancel()">
+      <div class="modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Atualizar do Google Sheets</h2>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">Cole o link do Google Sheets para atualizar os dados.</p>
+          <input 
+            type="text" 
+            [(ngModel)]="sheetsUrl"
+            placeholder="https://docs.google.com/spreadsheets/..."
+            (keyup.enter)="onUrlDialogConfirm()"
+            (keyup.escape)="onUrlDialogCancel()"
+            autofocus
+            class="modal-input"
+          />
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="onUrlDialogCancel()">Cancelar</button>
+          <button class="btn-primary" (click)="onUrlDialogConfirm()" [disabled]="!sheetsUrl.trim()">
+            Atualizar
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Error Message -->
+  @if (error) {
+    <div class="alert alert-error">
+      <svg class="icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M10 6v4M10 14h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span>{{ error }}</span>
+    </div>
+  }
+
+  <!-- Left Sidebar - Month Selection (like user-list) -->
+  <aside class="month-sidebar">
+    <div class="sidebar-header">
+      <h3>Clube do Valor - AMBB</h3>
+    </div>
+    <nav class="month-list">
+      @for (month of getMonths(); track month.key) {
+        <button 
+          class="month-item"
+          [class.active]="selectedMonth === month.key"
+          (click)="selectMonth(month.key)"
+        >
+          <span class="month-label">{{ month.label }}</span>
+          @if (selectedMonth === month.key) {
+            <svg class="check-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M13 4L6 11L3 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          }
+        </button>
+      }
+    </nav>
+  </aside>
+
+  <!-- Right Content Area - Table -->
+  <main class="content-area">
+    <!-- Content Header - Always visible -->
+    <div class="content-header">
+      <div class="header-title">
+        <h2>Clube do Valor</h2>
+        <p>Recomendações Mensais</p>
+      </div>
+      <div class="header-actions">
+        <button class="menu-button" (click)="refreshFromSheets()" [disabled]="loading">
+          <svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2v4l3-3M8 14v-4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M2 8a6 6 0 0 1 6-6M14 8a6 6 0 0 1-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>{{ loading ? 'Atualizando...' : 'Atualizar' }}</span>
+        </button>
+        @if (timestamp) {
+          <span class="timestamp">
+            <svg class="icon" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Última atualização: {{ formatDate(timestamp) }}
+          </span>
+        }
+      </div>
+    </div>
+
+    <!-- Content Body -->
+    @if (loading && stocks.length === 0) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Carregando dados...</p>
+      </div>
+    } @else if (filteredStocks.length > 0) {
+      <!-- Table -->
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                    <span>Ranking</span>
+                    <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                  </th>
+                  <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                    <span>Código</span>
+                    <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                  </th>
+                  <th class="col-yield sortable" [class.active]="sortField === 'earningYield'" (click)="selectSortField('earningYield')">
+                    <span>Earning Yield</span>
+                    <span class="sort-icon">{{ getSortIcon('earningYield') }}</span>
+                  </th>
+                  <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                    <span>Nome</span>
+                    <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                  </th>
+                  <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                    <span>Setor</span>
+                    <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                  </th>
+                  <th class="col-ev sortable" [class.active]="sortField === 'ev'" (click)="selectSortField('ev')">
+                    <span>EV</span>
+                    <span class="sort-icon">{{ getSortIcon('ev') }}</span>
+                  </th>
+                  <th class="col-ebit sortable" [class.active]="sortField === 'ebit'" (click)="selectSortField('ebit')">
+                    <span>Ebit</span>
+                    <span class="sort-icon">{{ getSortIcon('ebit') }}</span>
+                  </th>
+                  <th class="col-liquidity sortable" [class.active]="sortField === 'liquidez'" (click)="selectSortField('liquidez')">
+                    <span>Liquidez</span>
+                    <span class="sort-icon">{{ getSortIcon('liquidez') }}</span>
+                  </th>
+                  <th class="col-price sortable" [class.active]="sortField === 'cotacaoAtual'" (click)="selectSortField('cotacaoAtual')">
+                    <span>Cotação</span>
+                    <span class="sort-icon">{{ getSortIcon('cotacaoAtual') }}</span>
+                  </th>
+                  <th class="col-notes">Observação</th>
+                  <th class="col-actions">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (stock of filteredStocks; track stock.codigo) {
+                  <tr>
+                    <td class="col-rank">{{ stock.ranking }}</td>
+                    <td class="col-code">
+                      <span class="code-badge">{{ stock.codigo }}</span>
+                    </td>
+                    <td class="col-yield">
+                      <span class="value-positive">{{ formatPercentage(stock.earningYield) }}</span>
+                    </td>
+                    <td class="col-name">{{ stock.nome }}</td>
+                    <td class="col-sector">{{ stock.setor }}</td>
+                    <td class="col-ev">{{ formatCurrency(stock.ev) }}</td>
+                    <td class="col-ebit">{{ formatCurrency(stock.ebit) }}</td>
+                    <td class="col-liquidity">{{ formatCurrency(stock.liquidez) }}</td>
+                    <td class="col-price">{{ formatCurrency(stock.cotacaoAtual) }}</td>
+                    <td class="col-notes">{{ stock.observacao }}</td>
+                    <td class="col-actions">
+                      <button 
+                        class="action-button" 
+                        (click)="deleteStock(stock)"
+                        [disabled]="loading"
+                        title="Remover ação"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                          <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+      <div class="table-footer">
+        <span>{{ filteredStocks.length }} ação{{ filteredStocks.length !== 1 ? 'ões' : '' }}</span>
+      </div>
+    } @else {
+      <div class="empty-state">
+        <svg class="empty-icon" width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/>
+          <path d="M32 20v24M20 32h24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h3>Nenhuma ação disponível</h3>
+        <p>Selecione um mês para visualizar os dados.</p>
+      </div>
+    }
+  </main>
+</div>

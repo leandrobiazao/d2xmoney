@@ -35,6 +35,7 @@ main {
 
 .brokerage-history-container {
   width: 100%;
+  padding: 1rem;
 }
 
 .back-button {

@@ -48,10 +48,25 @@ export class UserListComponent implements OnInit, OnDestroy {
       next: (users) => {
         this.users = users;
         this.isLoading = false;
+        this.errorMessage = null;
       },
       error: (error) => {
-        this.errorMessage = 'Erro ao carregar usuários. Verifique se o servidor está rodando.';
+        console.error('Error loading users:', error);
         this.isLoading = false;
+        
+        // Provide more detailed error messages
+        if (error.status === 0) {
+          // Network error - server not reachable
+          this.errorMessage = 'Erro de conexão. Verifique se o servidor Django está rodando em http://localhost:8000';
+        } else if (error.status === 404) {
+          this.errorMessage = 'Endpoint não encontrado. Verifique a configuração da API.';
+        } else if (error.status >= 500) {
+          // Server error - show backend error details if available
+          const errorDetails = error.error?.details || error.error?.error || 'Erro desconhecido no servidor';
+          this.errorMessage = `Erro no servidor (${error.status}): ${errorDetails}`;
+        } else {
+          this.errorMessage = `Erro ao carregar usuários: ${error.message || 'Erro desconhecido'}`;
+        }
       }
     });
   }

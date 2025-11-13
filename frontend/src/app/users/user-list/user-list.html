@@ -12,7 +12,10 @@
   @if (isLoading) {
     <div class="loading">Carregando usuários...</div>
   } @else if (errorMessage) {
-    <div class="error">{{ errorMessage }}</div>
+    <div class="error">
+      <p>{{ errorMessage }}</p>
+      <button class="retry-btn" (click)="loadUsers()">Tentar Novamente</button>
+    </div>
   } @else if (users.length === 0) {
     <div class="empty-state">
       <p>Nenhum usuário cadastrado.</p>

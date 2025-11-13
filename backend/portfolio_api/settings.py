@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'brokerage_notes',
     'ticker_mappings',
     'portfolio_operations',
+    'clubedovalor',
 ]
 
 MIDDLEWARE = [

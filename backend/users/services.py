@@ -16,7 +16,12 @@ class UserJsonStorageService:
     @staticmethod
     def get_users_file_path() -> Path:
         """Get the path to the users JSON file."""
-        data_dir = Path(settings.DATA_DIR)
+        try:
+            data_dir = Path(settings.DATA_DIR)
+        except Exception:
+            # Fallback if settings not initialized
+            base_dir = Path(__file__).resolve().parent.parent
+            data_dir = base_dir / 'data'
         return data_dir / 'users.json'
     
     @staticmethod

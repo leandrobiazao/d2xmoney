@@ -1,7 +1,7 @@
-<app-header (showHistory)="onShowHistory()" />
+<app-header (showHome)="onShowHome()" (showHistory)="onShowHistory()" (showClubeDoValor)="onShowClubeDoValor()" />
 
 <main>
-  @if (!showBrokerageHistory) {
+  @if (!showBrokerageHistory && !showClubeDoValor) {
     <app-user-list
       (userSelected)="onUserSelected($event)"
       (createUser)="onCreateUser()"
@@ -19,10 +19,13 @@
     } @else {
       <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
     }
-  } @else {
+  } @else if (showBrokerageHistory) {
     <div class="brokerage-history-container">
       <button (click)="onBackToMain()" class="back-button">← Voltar</button>
       <app-history-list />
     </div>
+  } @else if (showClubeDoValor) {
+    <!-- Component with Sidebar + Content -->
+    <app-clubedovalor />
   }
 </main>
