@@ -1,52 +1,174 @@
-<div class="history-list-container">
-  <div class="history-header">
-    <h2>Histórico de Notas de Corretagem</h2>
-  </div>
-
-  <app-history-filters (filtersChange)="onFiltersChange($event)" />
-
-  @if (isLoading) {
-    <div class="loading">Carregando histórico...</div>
-  } @else if (error) {
-    <div class="error">{{ error }}</div>
-  } @else if (filteredNotes.length === 0) {
-    <div class="empty-state">
-      <p>Nenhuma nota de corretagem processada.</p>
+<div class="history-app">
+  <!-- Left Sidebar - User Selection -->
+  <aside class="user-sidebar">
+    <div class="sidebar-header">
+      <h3>Usuários</h3>
     </div>
-  } @else {
-    <table class="history-table">
-      <thead>
-        <tr>
-          <th>Data</th>
-          <th>Número da Nota</th>
-          <th>Arquivo</th>
-          <th>Operações</th>
-          <th>Status</th>
-          <th>Processado em</th>
-          <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (note of filteredNotes; track note.id) {
-          <tr>
-            <td>{{ note.note_date }}</td>
-            <td>{{ note.note_number }}</td>
-            <td>{{ note.file_name }}</td>
-            <td>{{ note.operations_count }}</td>
-            <td>
-              <span class="badge" [class]="getStatusBadgeClass(note.status)">
-                {{ note.status === 'success' ? 'Sucesso' : note.status === 'partial' ? 'Parcial' : 'Falhou' }}
-              </span>
-            </td>
-            <td>{{ note.processed_at | date:'short' }}</td>
-            <td>
-              <button class="btn-view" (click)="viewNote(note.id)">Ver</button>
-              <button class="btn-delete" (click)="onDeleteNote(note.id)">Excluir</button>
-            </td>
-          </tr>
+    <nav class="user-list">
+      @if (isLoadingUsers) {
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Carregando usuários...</p>
+        </div>
+      } @else if (users.length === 0) {
+        <div class="empty-state">
+          <p>Nenhum usuário cadastrado.</p>
+        </div>
+      } @else {
+        <!-- All Users Option -->
+        <button 
+          class="user-item"
+          [class.active]="selectedUserId === null"
+          (click)="selectUser(null)"
+        >
+          <div class="user-avatar-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M17 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="user-info">
+            <h4>Todos os Usuários</h4>
+            <p class="user-count">{{ notes.length }} nota{{ notes.length !== 1 ? 's' : '' }}</p>
+          </div>
+          @if (selectedUserId === null) {
+            <svg class="check-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M13 4L6 11L3 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          }
+        </button>
+
+        <!-- Individual Users -->
+        @for (user of users; track user.id) {
+          <button 
+            class="user-item"
+            [class.active]="selectedUserId === user.id"
+            (click)="selectUser(user.id)"
+          >
+            @if (user.picture) {
+              <img [src]="user.picture" [alt]="user.name" class="user-avatar" />
+            } @else {
+              <div class="user-avatar-placeholder">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            }
+            <div class="user-info">
+              <h4>{{ user.name }}</h4>
+              <p class="user-cpf">CPF: {{ user.cpf }}</p>
+            </div>
+            @if (selectedUserId === user.id) {
+              <svg class="check-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M13 4L6 11L3 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            }
+          </button>
         }
-      </tbody>
-    </table>
-  }
+      }
+    </nav>
+  </aside>
+
+  <!-- Right Content Area - History Table -->
+  <main class="content-area">
+    <!-- Content Header -->
+    <div class="content-header">
+      <div class="header-title">
+        <h2>Histórico de Notas de Corretagem</h2>
+        <p>
+          @if (selectedUserId) {
+            {{ getUserById(selectedUserId)?.name }}
+          } @else {
+            Todas as notas processadas
+          }
+        </p>
+      </div>
+    </div>
+
+    <!-- Content Body -->
+    @if (error) {
+      <div class="alert alert-error">
+        <svg class="icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10 6v4M10 14h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span>{{ error }}</span>
+      </div>
+    }
+
+    @if (isLoadingNotes) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Carregando histórico...</p>
+      </div>
+    } @else if (filteredNotes.length === 0) {
+      <div class="empty-state">
+        <svg class="empty-icon" width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/>
+          <path d="M32 20v24M20 32h24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h3>Nenhuma nota de corretagem</h3>
+        <p>
+          @if (selectedUserId) {
+            Este usuário ainda não possui notas processadas.
+          } @else {
+            Nenhuma nota foi processada ainda.
+          }
+        </p>
+      </div>
+    } @else {
+      <!-- Table Container -->
+      <div class="table-container">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Número da Nota</th>
+              <th>Arquivo</th>
+              <th>Operações</th>
+              <th>Status</th>
+              <th>Processado em</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (note of filteredNotes; track note.id) {
+              <tr>
+                <td>{{ note.note_date }}</td>
+                <td>{{ note.note_number }}</td>
+                <td class="file-name">{{ note.file_name }}</td>
+                <td class="text-center">{{ note.operations_count }}</td>
+                <td>
+                  <span class="badge" [class]="getStatusBadgeClass(note.status)">
+                    {{ note.status === 'success' ? 'Sucesso' : note.status === 'partial' ? 'Parcial' : 'Falhou' }}
+                  </span>
+                </td>
+                <td>{{ note.processed_at | date:'short' }}</td>
+                <td>
+                  <div class="action-buttons">
+                    <button class="btn-view" (click)="viewNote(note.id)" title="Ver detalhes">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M7 3c-3 0-5.5 2.5-6 5 .5 2.5 3 5 6 5s5.5-2.5 6-5c-.5-2.5-3-5-6-5Z" stroke="currentColor" stroke-width="1.5"/>
+                        <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.5"/>
+                      </svg>
+                    </button>
+                    <button class="btn-delete" (click)="onDeleteNote(note.id)" title="Excluir">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer -->
+      <div class="table-footer">
+        <span>{{ filteredNotes.length }} nota{{ filteredNotes.length !== 1 ? 's' : '' }}</span>
+      </div>
+    }
+  </main>
 </div>
 

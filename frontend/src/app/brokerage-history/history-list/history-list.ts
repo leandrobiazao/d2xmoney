@@ -2,53 +2,85 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BrokerageHistoryService } from '../history.service';
 import { BrokerageNote, HistoryFilters } from '../note.model';
-import { HistoryFiltersComponent } from '../history-filters/history-filters';
+import { UserService } from '../../users/user.service';
+import { User } from '../../users/user.model';
 import { DebugService } from '../../shared/services/debug.service';
 
 @Component({
   selector: 'app-history-list',
   standalone: true,
-  imports: [CommonModule, HistoryFiltersComponent],
+  imports: [CommonModule],
   templateUrl: './history-list.html',
   styleUrl: './history-list.css'
 })
 export class HistoryListComponent implements OnInit {
   notes: BrokerageNote[] = [];
   filteredNotes: BrokerageNote[] = [];
-  isLoading: boolean = false;
+  users: User[] = [];
+  selectedUserId: string | null = null;
+  isLoadingNotes: boolean = false;
+  isLoadingUsers: boolean = false;
   error: string | null = null;
   filters: HistoryFilters = {};
 
   constructor(
     private historyService: BrokerageHistoryService,
+    private userService: UserService,
     private debug: DebugService
   ) {}
 
   ngOnInit() {
+    this.loadUsers();
     this.loadHistory();
   }
 
+  loadUsers() {
+    this.isLoadingUsers = true;
+    this.userService.getUsers().subscribe({
+      next: (users) => {
+        this.users = users;
+        this.isLoadingUsers = false;
+      },
+      error: (error) => {
+        this.debug.error('Error loading users:', error);
+        this.isLoadingUsers = false;
+      }
+    });
+  }
+
   loadHistory() {
-    this.isLoading = true;
+    this.isLoadingNotes = true;
     this.error = null;
 
     this.historyService.getHistory(this.filters).subscribe({
       next: (notes) => {
         this.notes = notes;
-        this.filteredNotes = notes;
-        this.isLoading = false;
+        this.applyUserFilter();
+        this.isLoadingNotes = false;
       },
       error: (error) => {
         this.error = 'Erro ao carregar histórico. Tente novamente.';
-        this.isLoading = false;
+        this.isLoadingNotes = false;
         this.debug.error('Error loading history:', error);
       }
     });
   }
 
-  onFiltersChange(filters: HistoryFilters) {
-    this.filters = filters;
-    this.loadHistory();
+  selectUser(userId: string | null) {
+    this.selectedUserId = userId;
+    this.applyUserFilter();
+  }
+
+  applyUserFilter() {
+    if (this.selectedUserId) {
+      this.filteredNotes = this.notes.filter(note => note.user_id === this.selectedUserId);
+    } else {
+      this.filteredNotes = this.notes;
+    }
+  }
+
+  getUserById(userId: string): User | undefined {
+    return this.users.find(u => u.id === userId);
   }
 
   onDeleteNote(noteId: string) {
