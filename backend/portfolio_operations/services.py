@@ -2,58 +2,78 @@
 Portfolio service for managing aggregated portfolio summaries.
 This service manages portfolio summaries per user per ticker, including realized profit calculations using FIFO method.
 """
-import json
-from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-from django.conf import settings
+from .models import PortfolioPosition
 from brokerage_notes.services import BrokerageNoteHistoryService
 
 
 class PortfolioService:
-    """Service for managing portfolio summaries in JSON file storage."""
+    """Service for managing portfolio summaries using Django ORM."""
     
     @staticmethod
-    def get_portfolio_file_path() -> Path:
-        """Get the path to the portfolio JSON file."""
-        data_dir = Path(settings.DATA_DIR)
-        return data_dir / 'portfolio.json'
+    def get_portfolio_file_path():
+        """Legacy method - kept for backward compatibility."""
+        # This method is no longer used but kept for compatibility
+        pass
     
     @staticmethod
     def load_portfolio() -> Dict[str, List[Dict]]:
-        """Load portfolio from JSON file."""
-        file_path = PortfolioService.get_portfolio_file_path()
+        """Load portfolio from database."""
+        positions = PortfolioPosition.objects.all()
         
-        if not file_path.exists():
-            return {}
+        portfolio = {}
+        for position in positions:
+            user_id = position.user_id
+            if user_id not in portfolio:
+                portfolio[user_id] = []
+            
+            portfolio[user_id].append({
+                'titulo': position.ticker,
+                'quantidade': position.quantidade,
+                'precoMedio': float(position.preco_medio),
+                'valorTotalInvestido': float(position.valor_total_investido),
+                'lucroRealizado': float(position.lucro_realizado),
+            })
         
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Error loading portfolio: {e}")
-            return {}
+        # Sort each user's positions by ticker
+        for user_id in portfolio:
+            portfolio[user_id].sort(key=lambda x: x['titulo'])
+        
+        return portfolio
     
     @staticmethod
     def save_portfolio(portfolio: Dict[str, List[Dict]]) -> None:
-        """Save portfolio to JSON file."""
-        file_path = PortfolioService.get_portfolio_file_path()
+        """Save portfolio to database."""
+        # Delete all existing positions
+        PortfolioPosition.objects.all().delete()
         
-        try:
-            # Ensure directory exists
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(portfolio, f, indent=2, ensure_ascii=False)
-        except IOError as e:
-            print(f"Error saving portfolio: {e}")
-            raise
+        # Create new positions
+        for user_id, ticker_summaries in portfolio.items():
+            for summary in ticker_summaries:
+                PortfolioPosition.objects.create(
+                    user_id=user_id,
+                    ticker=summary.get('titulo', ''),
+                    quantidade=summary.get('quantidade', 0),
+                    preco_medio=summary.get('precoMedio', 0.0),
+                    valor_total_investido=summary.get('valorTotalInvestido', 0.0),
+                    lucro_realizado=summary.get('lucroRealizado', 0.0),
+                )
     
     @staticmethod
     def get_user_portfolio(user_id: str) -> List[Dict]:
         """Get ticker summaries for a user."""
-        portfolio = PortfolioService.load_portfolio()
-        return portfolio.get(user_id, [])
+        positions = PortfolioPosition.objects.filter(user_id=user_id).order_by('ticker')
+        
+        return [
+            {
+                'titulo': position.ticker,
+                'quantidade': position.quantidade,
+                'precoMedio': float(position.preco_medio),
+                'valorTotalInvestido': float(position.valor_total_investido),
+                'lucroRealizado': float(position.lucro_realizado),
+            }
+            for position in positions
+        ]
     
     @staticmethod
     def parse_date(date_str: str) -> Tuple[int, int, int]:
@@ -210,8 +230,8 @@ class PortfolioService:
     @staticmethod
     def refresh_portfolio_from_brokerage_notes() -> None:
         """
-        Rebuild entire portfolio.json from all brokerage notes.
-        This function processes all operations from brokerage_notes.json chronologically
+        Rebuild entire portfolio from all brokerage notes.
+        This function processes all operations from brokerage notes chronologically
         and rebuilds the complete portfolio summary.
         """
         # Load all brokerage notes
@@ -276,6 +296,6 @@ class PortfolioService:
             
             portfolio[user_id] = ticker_list
         
-        # Save portfolio
+        # Save portfolio to database
         PortfolioService.save_portfolio(portfolio)
         print(f"Portfolio refreshed: {len(portfolio)} users, {sum(len(tickers) for tickers in portfolio.values())} total ticker positions")

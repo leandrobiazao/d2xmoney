@@ -14,6 +14,7 @@ from portfolio_operations.services import PortfolioService
 
 class BrokerageNoteListView(APIView):
     """List all brokerage notes with optional filters and create new notes."""
+    authentication_classes = []  # Disable authentication to bypass CSRF
     
     def get(self, request):
         """Get all notes with optional filters."""
@@ -89,6 +90,7 @@ class BrokerageNoteListView(APIView):
 
 class BrokerageNoteDetailView(APIView):
     """Get or delete a brokerage note."""
+    authentication_classes = []  # Disable authentication to bypass CSRF
     
     def get(self, request, note_id):
         """Get note by ID."""

@@ -152,6 +152,9 @@ CORS_ALLOW_METHODS = [
 CORS_ALLOW_HEADERS = [
     'Content-Type',
     'Authorization',
+    'X-CSRFToken',
+    'X-CSRF-Token',
+    'X-Requested-With',
 ]
 
 # Media files

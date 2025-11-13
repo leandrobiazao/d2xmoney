@@ -36,6 +36,11 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
     return this.availableMonths;
   }
 
+  getCurrentMonthLabel(): string {
+    const currentMonth = this.availableMonths.find(m => m.key === this.selectedMonth);
+    return currentMonth ? currentMonth.label : '';
+  }
+
   selectMonth(monthKey: string): void {
     this.selectedMonth = monthKey;
     this.loadStocks(monthKey);
@@ -60,7 +65,10 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
           
           if (!monthSet.has(monthKey)) {
             monthSet.add(monthKey);
-            const monthLabel = date.toLocaleDateString('pt-BR', { year: 'numeric', month: 'long' });
+            // Format as "Novembro/2025" instead of "novembro de 2025"
+            const monthName = date.toLocaleDateString('pt-BR', { month: 'long' });
+            const year = date.getFullYear();
+            const monthLabel = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
             monthMap.set(monthKey, monthLabel);
           }
         });
@@ -196,8 +204,10 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
         this.sheetsUrl = ''; // Clear URL after successful refresh
       },
       error: (error) => {
-        this.error = error.error?.details || error.error?.error || 'Erro ao atualizar dados do Google Sheets.';
+        const errorMsg = error.error?.details || error.error?.error || error.message || 'Erro ao atualizar dados do Google Sheets.';
+        this.error = errorMsg;
         console.error('Error refreshing from sheets:', error);
+        console.error('Error details:', error.error);
         this.loading = false;
       }
     });

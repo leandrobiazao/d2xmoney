@@ -19,13 +19,7 @@ class UserListView(APIView):
     def get(self, request):
         """Get all users."""
         try:
-            # Test if service can be accessed
-            file_path = UserJsonStorageService.get_users_file_path()
-            print(f"DEBUG: Loading users from: {file_path}")
-            print(f"DEBUG: File exists: {file_path.exists()}")
-            
             users = UserJsonStorageService.load_users()
-            print(f"DEBUG: Loaded {len(users)} users")
             
             # Ensure all data is JSON serializable
             import json

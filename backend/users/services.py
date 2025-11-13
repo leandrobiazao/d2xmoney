@@ -1,70 +1,55 @@
 """
-JSON file storage service for users.
+Service for managing user data using Django ORM.
 """
-import json
-import os
 import re
 import uuid
-from pathlib import Path
 from typing import List, Dict, Optional
-from django.conf import settings
+from .models import User
 
 
 class UserJsonStorageService:
-    """Service for managing user data in JSON file storage."""
+    """Service for managing user data using Django ORM."""
     
     @staticmethod
-    def get_users_file_path() -> Path:
-        """Get the path to the users JSON file."""
-        try:
-            data_dir = Path(settings.DATA_DIR)
-        except Exception:
-            # Fallback if settings not initialized
-            base_dir = Path(__file__).resolve().parent.parent
-            data_dir = base_dir / 'data'
-        return data_dir / 'users.json'
+    def get_users_file_path():
+        """Legacy method - kept for backward compatibility."""
+        # This method is no longer used but kept for compatibility
+        pass
     
     @staticmethod
     def load_users() -> List[Dict]:
-        """Load all users from JSON file."""
-        file_path = UserJsonStorageService.get_users_file_path()
-        
-        if not file_path.exists():
-            return []
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Error loading users: {e}")
-            return []
+        """Load all users from database."""
+        users = User.objects.all()
+        return [UserJsonStorageService._user_to_dict(user) for user in users]
     
     @staticmethod
     def save_users(users: List[Dict]) -> None:
-        """Save users list to JSON file."""
-        file_path = UserJsonStorageService.get_users_file_path()
-        
-        try:
-            # Ensure directory exists
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(users, f, indent=2, ensure_ascii=False)
-        except IOError as e:
-            print(f"Error saving users: {e}")
-            raise
+        """Save users list to database."""
+        for user_data in users:
+            User.objects.update_or_create(
+                id=user_data.get('id'),
+                defaults={
+                    'name': user_data.get('name', ''),
+                    'cpf': user_data.get('cpf', ''),
+                    'account_provider': user_data.get('account_provider', ''),
+                    'account_number': user_data.get('account_number', ''),
+                    'picture': user_data.get('picture'),
+                }
+            )
     
     @staticmethod
     def get_user_by_id(user_id: str) -> Optional[Dict]:
         """Get user by ID."""
-        users = UserJsonStorageService.load_users()
-        return next((u for u in users if u.get('id') == user_id), None)
+        try:
+            user = User.objects.get(id=user_id)
+            return UserJsonStorageService._user_to_dict(user)
+        except User.DoesNotExist:
+            return None
     
     @staticmethod
     def user_exists(user_id: str) -> bool:
         """Check if user exists."""
-        return UserJsonStorageService.get_user_by_id(user_id) is not None
+        return User.objects.filter(id=user_id).exists()
     
     @staticmethod
     def generate_user_id() -> str:
@@ -88,14 +73,14 @@ class UserJsonStorageService:
             User dict if found, None otherwise
         """
         normalized_cpf = UserJsonStorageService.normalize_cpf(cpf)
-        users = UserJsonStorageService.load_users()
+        users = User.objects.all()
         
         for user in users:
-            if exclude_user_id and user.get('id') == exclude_user_id:
+            if exclude_user_id and str(user.id) == exclude_user_id:
                 continue
-            user_cpf = user.get('cpf', '')
+            user_cpf = user.cpf or ''
             if UserJsonStorageService.normalize_cpf(user_cpf) == normalized_cpf:
-                return user
+                return UserJsonStorageService._user_to_dict(user)
         
         return None
     
@@ -110,13 +95,29 @@ class UserJsonStorageService:
         Returns:
             User dict if found, None otherwise
         """
-        users = UserJsonStorageService.load_users()
+        queryset = User.objects.filter(account_number=account_number)
+        if exclude_user_id:
+            queryset = queryset.exclude(id=exclude_user_id)
         
-        for user in users:
-            if exclude_user_id and user.get('id') == exclude_user_id:
-                continue
-            if user.get('account_number') == account_number:
-                return user
+        try:
+            user = queryset.first()
+            if user:
+                return UserJsonStorageService._user_to_dict(user)
+        except Exception:
+            pass
         
         return None
-
+    
+    @staticmethod
+    def _user_to_dict(user: User) -> Dict:
+        """Convert User model instance to dictionary."""
+        return {
+            'id': str(user.id),
+            'name': user.name,
+            'cpf': user.cpf,
+            'account_provider': user.account_provider,
+            'account_number': user.account_number,
+            'picture': user.picture,
+            'created_at': user.created_at.isoformat() if user.created_at else None,
+            'updated_at': user.updated_at.isoformat() if user.updated_at else None,
+        }

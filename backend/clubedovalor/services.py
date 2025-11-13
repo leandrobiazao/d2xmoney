@@ -1,16 +1,14 @@
 """
 Service for managing Clube do Valor stock recommendations from Google Sheets.
 """
-import json
 import re
 import csv
 import io
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Optional
-from django.conf import settings
 import requests
 from bs4 import BeautifulSoup
+from .models import StockSnapshot, Stock
 
 
 class ClubeDoValorService:
@@ -20,10 +18,10 @@ class ClubeDoValorService:
     GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/u/0/d/1-C7tynYu9CHbQzg-bCAH4StLGfYqDcKWWqSvHbWxrCw/export?format=csv&gid=0"
     
     @staticmethod
-    def get_ambb_file_path() -> Path:
-        """Get the path to the ambb JSON file."""
-        data_dir = Path(settings.DATA_DIR)
-        return data_dir / 'ambb.json'
+    def get_ambb_file_path():
+        """Legacy method - kept for backward compatibility."""
+        # This method is no longer used but kept for compatibility
+        pass
     
     @staticmethod
     def parse_brazilian_date(date_str: str) -> str:
@@ -69,40 +67,65 @@ class ClubeDoValorService:
     @staticmethod
     def fetch_from_google_sheets_url(url: str) -> str:
         """Fetch content from a specific Google Sheets URL."""
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Charset': 'UTF-8',
+            'Accept-Encoding': 'gzip, deflate, br',
+        }
+        
         try:
             # Try with SSL verification first
             response = requests.get(
                 url, 
                 timeout=30,
                 verify=True,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
+                headers=headers,
+                allow_redirects=True  # Follow redirects automatically
             )
             response.raise_for_status()
-            return response.text
-        except requests.exceptions.SSLError as ssl_err:
-            print(f"SSL Error, trying without verification: {ssl_err}")
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as ssl_err:
+            print(f"SSL/Connection Error, trying without verification: {ssl_err}")
             # Fallback: try without SSL verification (for development only)
-            try:
-                import urllib3
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                response = requests.get(
-                    url,
-                    timeout=30,
-                    verify=False,
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                )
-                response.raise_for_status()
-                return response.text
-            except Exception as e2:
-                print(f"Error fetching Google Sheets (fallback): {e2}")
-                raise
+            response = requests.get(
+                url,
+                timeout=30,
+                verify=False,
+                headers=headers,
+                allow_redirects=True  # Follow redirects automatically
+            )
+            response.raise_for_status()
         except Exception as e:
             print(f"Error fetching Google Sheets: {e}")
             raise
+        
+        # Always decode from raw bytes as UTF-8 to preserve Portuguese accents
+        # Don't trust response.encoding as it may be incorrectly detected
+        try:
+            # Try UTF-8 first
+            content = response.content.decode('utf-8')
+            return content
+        except UnicodeDecodeError:
+            try:
+                # Try UTF-8 with BOM
+                content = response.content.decode('utf-8-sig')
+                return content
+            except UnicodeDecodeError:
+                # Fallback: use response.text but force UTF-8 if possible
+                print(f"Warning: UTF-8 decode failed, trying detected encoding: {response.encoding}")
+                # Re-encode and decode to fix encoding issues
+                if response.encoding and response.encoding.lower() == 'iso-8859-1':
+                    # If detected as ISO-8859-1 but content is actually UTF-8, fix it
+                    try:
+                        content = response.text.encode('iso-8859-1').decode('utf-8')
+                        return content
+                    except:
+                        pass
+                return response.text
     
     @staticmethod
     def parse_html_table(html_content: str) -> tuple:
@@ -110,6 +133,10 @@ class ClubeDoValorService:
         Parse HTML table and extract stock data.
         Returns tuple of (timestamp, stocks_list).
         """
+        # Ensure the content is properly decoded as UTF-8
+        if isinstance(html_content, bytes):
+            html_content = html_content.decode('utf-8')
+        # Use 'html.parser' with explicit encoding handling
         soup = BeautifulSoup(html_content, 'html.parser')
         table = soup.find('table')
         
@@ -126,6 +153,7 @@ class ClubeDoValorService:
             row2 = rows[1]
             cells = row2.find_all(['td', 'th'])
             if len(cells) > 0:
+                # Use get_text with proper encoding handling
                 date_cell = cells[0].get_text(strip=True)
                 if date_cell:
                     timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
@@ -139,11 +167,12 @@ class ClubeDoValorService:
             if len(cells) < 10:
                 continue
             
-            # Extract data from cells
+            # Extract data from cells with proper encoding handling
             try:
                 ranking_str = cells[0].get_text(strip=True)
                 codigo = cells[1].get_text(strip=True)
                 earning_yield_str = cells[2].get_text(strip=True)
+                # Ensure proper UTF-8 encoding for text fields with Portuguese accents
                 nome = cells[3].get_text(strip=True)
                 setor = cells[4].get_text(strip=True)
                 ev_str = cells[5].get_text(strip=True)
@@ -190,6 +219,21 @@ class ClubeDoValorService:
         Parse CSV content and extract stock data.
         Returns tuple of (timestamp, stocks_list).
         """
+        # Ensure the content is properly decoded as UTF-8
+        if isinstance(csv_content, bytes):
+            # Try UTF-8 first, then try other encodings
+            try:
+                csv_content = csv_content.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    csv_content = csv_content.decode('utf-8-sig')  # Handle BOM
+                except UnicodeDecodeError:
+                    try:
+                        csv_content = csv_content.decode('latin-1')  # Fallback
+                    except UnicodeDecodeError:
+                        csv_content = csv_content.decode('utf-8', errors='replace')
+        
+        # Use csv.reader with proper encoding handling
         reader = csv.reader(io.StringIO(csv_content))
         rows = list(reader)
         
@@ -203,7 +247,7 @@ class ClubeDoValorService:
             if date_cell:
                 timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
         
-        # Parse stock data starting from row 5 (index 4)
+        # Parse stock data starting from row 5 (index 4) - row 4 is first data row
         stocks = []
         for i in range(4, len(rows)):
             row = rows[i]
@@ -224,8 +268,8 @@ class ClubeDoValorService:
                 cotacao_str = row[8].strip() if len(row) > 8 else ''
                 observacao = row[9].strip() if len(row) > 9 else ''
                 
-                # Skip if no codigo (empty row)
-                if not codigo:
+                # Skip if no codigo or if codigo looks like a header (not a valid ticker)
+                if not codigo or codigo.lower() in ['código', 'codigo', 'ranking']:
                     continue
                 
                 # Parse values
@@ -258,71 +302,66 @@ class ClubeDoValorService:
     
     @staticmethod
     def load_ambb_data() -> Dict:
-        """Load ambb.json data."""
-        file_path = ClubeDoValorService.get_ambb_file_path()
+        """Load ambb data from database."""
+        # Get all snapshots
+        snapshots = StockSnapshot.objects.filter(is_current=False).order_by('-timestamp')
+        snapshots_data = []
+        for snapshot in snapshots:
+            stocks = Stock.objects.filter(snapshot=snapshot).order_by('ranking')
+            snapshots_data.append({
+                'timestamp': snapshot.timestamp,
+                'data': [ClubeDoValorService._stock_to_dict(stock) for stock in stocks]
+            })
         
-        if not file_path.exists():
-            return {
-                'snapshots': [],
-                'current': {
-                    'timestamp': '',
-                    'data': []
-                }
-            }
+        # Get current snapshot
+        current_snapshot = StockSnapshot.objects.filter(is_current=True).first()
+        current_data = {
+            'timestamp': current_snapshot.timestamp if current_snapshot else '',
+            'data': []
+        }
+        if current_snapshot:
+            stocks = Stock.objects.filter(snapshot=current_snapshot).order_by('ranking')
+            current_data['data'] = [ClubeDoValorService._stock_to_dict(stock) for stock in stocks]
         
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if isinstance(data, dict) else {
-                    'snapshots': [],
-                    'current': {
-                        'timestamp': '',
-                        'data': []
-                    }
-                }
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Error loading ambb data: {e}")
-            return {
-                'snapshots': [],
-                'current': {
-                    'timestamp': '',
-                    'data': []
-                }
-            }
+        return {
+            'snapshots': snapshots_data,
+            'current': current_data
+        }
     
     @staticmethod
     def save_ambb_data(data: Dict) -> None:
-        """Save ambb.json data."""
-        file_path = ClubeDoValorService.get_ambb_file_path()
-        
-        try:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except IOError as e:
-            print(f"Error saving ambb data: {e}")
-            raise
+        """Save ambb data to database (legacy method for compatibility)."""
+        # This method is kept for backward compatibility but doesn't do anything
+        # Use add_monthly_snapshot instead
+        pass
     
     @staticmethod
     def add_monthly_snapshot(timestamp: str, stocks: List[Dict]) -> None:
-        """Add a new monthly snapshot to ambb.json."""
-        data = ClubeDoValorService.load_ambb_data()
+        """Add a new monthly snapshot to database."""
+        # Mark all existing snapshots as not current
+        StockSnapshot.objects.filter(is_current=True).update(is_current=False)
         
-        # Add to snapshots
-        snapshot = {
-            'timestamp': timestamp,
-            'data': stocks
-        }
-        data['snapshots'].append(snapshot)
+        # Create new snapshot
+        snapshot = StockSnapshot.objects.create(
+            timestamp=timestamp,
+            is_current=True
+        )
         
-        # Update current
-        data['current'] = {
-            'timestamp': timestamp,
-            'data': stocks
-        }
-        
-        ClubeDoValorService.save_ambb_data(data)
+        # Create stocks for this snapshot
+        for stock_data in stocks:
+            Stock.objects.create(
+                snapshot=snapshot,
+                ranking=stock_data.get('ranking', 0),
+                codigo=stock_data.get('codigo', ''),
+                earning_yield=ClubeDoValorService._parse_decimal(stock_data.get('earningYield', 0)),
+                nome=stock_data.get('nome', ''),
+                setor=stock_data.get('setor', ''),
+                ev=ClubeDoValorService._parse_decimal(stock_data.get('ev', 0)),
+                ebit=ClubeDoValorService._parse_decimal(stock_data.get('ebit', 0)),
+                liquidez=ClubeDoValorService._parse_decimal(stock_data.get('liquidez', 0)),
+                cotacao_atual=ClubeDoValorService._parse_decimal(stock_data.get('cotacaoAtual', 0)),
+                observacao=stock_data.get('observacao', ''),
+            )
     
     @staticmethod
     def refresh_from_google_sheets(sheets_url: Optional[str] = None) -> Dict:
@@ -330,14 +369,31 @@ class ClubeDoValorService:
         # Use provided URL or default
         if sheets_url:
             # Extract URLs from provided URL
-            if '/export?format=csv' in sheets_url or '/pubhtml' in sheets_url:
-                # User provided full URL, extract base
+            if '/export?format=csv' in sheets_url:
+                # User provided CSV URL
+                csv_url = sheets_url
+                # Extract base URL and construct HTML URL
                 if '/export?format=csv' in sheets_url:
-                    csv_url = sheets_url
-                    html_url = sheets_url.replace('/export?format=csv', '/pubhtml/sheet?headers=false')
+                    base = sheets_url.split('/export?format=csv')[0]
+                    gid_param = ''
+                    if '&gid=' in sheets_url:
+                        gid_param = '&gid=' + sheets_url.split('&gid=')[1].split('&')[0]
+                    elif '?gid=' in sheets_url:
+                        gid_param = '?gid=' + sheets_url.split('?gid=')[1].split('&')[0]
+                    html_url = f"{base}/pubhtml/sheet?headers=false{gid_param}"
                 else:
-                    html_url = sheets_url
-                    csv_url = sheets_url.replace('/pubhtml/sheet?headers=false', '/export?format=csv')
+                    html_url = sheets_url.replace('/export?format=csv', '/pubhtml/sheet?headers=false')
+            elif '/pubhtml' in sheets_url:
+                # User provided HTML URL
+                html_url = sheets_url
+                # Extract base URL and construct CSV URL
+                base = sheets_url.split('/pubhtml')[0]
+                gid_param = ''
+                if '&gid=' in sheets_url:
+                    gid_param = '&gid=' + sheets_url.split('&gid=')[1].split('&')[0]
+                elif '?gid=' in sheets_url:
+                    gid_param = '&gid=' + sheets_url.split('?gid=')[1].split('&')[0]
+                csv_url = f"{base}/export?format=csv{gid_param}"
             else:
                 # Assume it's a base URL, construct both
                 base_url = sheets_url.rstrip('/')
@@ -347,20 +403,37 @@ class ClubeDoValorService:
             csv_url = ClubeDoValorService.GOOGLE_SHEETS_CSV_URL
             html_url = ClubeDoValorService.GOOGLE_SHEETS_URL
         
+        csv_error = None
+        html_error = None
+        
+        # Try CSV first (more reliable, no SSL issues usually)
         try:
-            # Try CSV first (more reliable, no SSL issues usually)
             print(f"Attempting to fetch from Google Sheets as CSV: {csv_url}")
             csv_content = ClubeDoValorService.fetch_from_google_sheets_url(csv_url)
             timestamp, stocks = ClubeDoValorService.parse_csv_table(csv_content)
             print(f"Successfully parsed {len(stocks)} stocks from CSV")
         except Exception as csv_err:
-            print(f"CSV fetch failed: {csv_err}, trying HTML...")
+            csv_error = str(csv_err)
+            print(f"CSV fetch failed: {csv_error}, trying HTML...")
             # Fallback to HTML
-            html_content = ClubeDoValorService.fetch_from_google_sheets_url(html_url)
-            timestamp, stocks = ClubeDoValorService.parse_html_table(html_content)
-            print(f"Successfully parsed {len(stocks)} stocks from HTML")
+            try:
+                html_content = ClubeDoValorService.fetch_from_google_sheets_url(html_url)
+                timestamp, stocks = ClubeDoValorService.parse_html_table(html_content)
+                print(f"Successfully parsed {len(stocks)} stocks from HTML")
+            except Exception as html_err:
+                html_error = str(html_err)
+                error_msg = f"Both CSV and HTML fetch failed. CSV error: {csv_error}. HTML error: {html_error}"
+                print(error_msg)
+                raise Exception(error_msg)
         
-        ClubeDoValorService.add_monthly_snapshot(timestamp, stocks)
+        # Save to database
+        try:
+            ClubeDoValorService.add_monthly_snapshot(timestamp, stocks)
+        except Exception as db_err:
+            error_msg = f"Failed to save data to database: {str(db_err)}"
+            print(error_msg)
+            raise Exception(error_msg)
+        
         return {
             'timestamp': timestamp,
             'stocks': stocks,
@@ -370,63 +443,80 @@ class ClubeDoValorService:
     @staticmethod
     def get_current_stocks() -> List[Dict]:
         """Get current month's stocks."""
-        data = ClubeDoValorService.load_ambb_data()
-        return data.get('current', {}).get('data', [])
+        current_snapshot = StockSnapshot.objects.filter(is_current=True).first()
+        if not current_snapshot:
+            return []
+        
+        stocks = Stock.objects.filter(snapshot=current_snapshot).order_by('ranking')
+        return [ClubeDoValorService._stock_to_dict(stock) for stock in stocks]
     
     @staticmethod
     def get_historical_snapshots() -> List[Dict]:
-        """Get all historical snapshots."""
-        data = ClubeDoValorService.load_ambb_data()
-        return data.get('snapshots', [])
+        """Get all snapshots (including current)."""
+        # Include all snapshots, not just historical ones, so the current month is also shown
+        snapshots = StockSnapshot.objects.all().order_by('-timestamp')
+        result = []
+        for snapshot in snapshots:
+            stocks = Stock.objects.filter(snapshot=snapshot).order_by('ranking')
+            result.append({
+                'timestamp': snapshot.timestamp,
+                'data': [ClubeDoValorService._stock_to_dict(stock) for stock in stocks]
+            })
+        return result
     
     @staticmethod
     def delete_stock(codigo: str) -> bool:
         """Delete a stock from current data and reorder rankings."""
-        data = ClubeDoValorService.load_ambb_data()
-        current_data = data.get('current', {}).get('data', [])
+        current_snapshot = StockSnapshot.objects.filter(is_current=True).first()
+        if not current_snapshot:
+            return False
         
-        # Find and remove stock
-        original_count = len(current_data)
-        current_data = [s for s in current_data if s.get('codigo') != codigo]
-        
-        if len(current_data) == original_count:
-            return False  # Stock not found
+        # Delete the stock
+        deleted_count = Stock.objects.filter(snapshot=current_snapshot, codigo=codigo).delete()[0]
+        if deleted_count == 0:
+            return False
         
         # Reorder rankings
-        for i, stock in enumerate(current_data, start=1):
-            stock['ranking'] = i
-        
-        # Update current data
-        data['current']['data'] = current_data
-        
-        # Also update the latest snapshot if it exists
-        if data.get('snapshots'):
-            latest_snapshot = data['snapshots'][-1]
-            if latest_snapshot.get('timestamp') == data['current'].get('timestamp'):
-                latest_snapshot['data'] = current_data
-        
-        ClubeDoValorService.save_ambb_data(data)
+        ClubeDoValorService.reorder_rankings()
         return True
     
     @staticmethod
     def reorder_rankings() -> None:
         """Reorder rankings in current data (called after deletion)."""
-        data = ClubeDoValorService.load_ambb_data()
-        current_data = data.get('current', {}).get('data', [])
+        current_snapshot = StockSnapshot.objects.filter(is_current=True).first()
+        if not current_snapshot:
+            return
         
-        # Sort by current ranking to maintain order, then renumber
-        current_data.sort(key=lambda x: x.get('ranking', 0))
-        
-        for i, stock in enumerate(current_data, start=1):
-            stock['ranking'] = i
-        
-        data['current']['data'] = current_data
-        
-        # Also update the latest snapshot if it exists
-        if data.get('snapshots'):
-            latest_snapshot = data['snapshots'][-1]
-            if latest_snapshot.get('timestamp') == data['current'].get('timestamp'):
-                latest_snapshot['data'] = current_data
-        
-        ClubeDoValorService.save_ambb_data(data)
+        stocks = Stock.objects.filter(snapshot=current_snapshot).order_by('ranking')
+        for i, stock in enumerate(stocks, start=1):
+            stock.ranking = i
+            stock.save()
+    
+    @staticmethod
+    def _stock_to_dict(stock: Stock) -> Dict:
+        """Convert Stock model instance to dictionary."""
+        return {
+            'ranking': stock.ranking,
+            'codigo': stock.codigo,
+            'earningYield': float(stock.earning_yield),
+            'nome': stock.nome,
+            'setor': stock.setor,
+            'ev': float(stock.ev),
+            'ebit': float(stock.ebit),
+            'liquidez': float(stock.liquidez),
+            'cotacaoAtual': float(stock.cotacao_atual),
+            'observacao': stock.observacao,
+        }
+    
+    @staticmethod
+    def _parse_decimal(value):
+        """Parse value to Decimal-compatible format."""
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
 

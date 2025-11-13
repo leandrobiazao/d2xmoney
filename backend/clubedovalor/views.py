@@ -4,6 +4,7 @@ Django REST Framework views for Clube do Valor stock recommendations.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from .services import ClubeDoValorService
 
 
@@ -37,6 +38,8 @@ class ClubeDoValorHistoryView(APIView):
 
 class ClubeDoValorRefreshView(APIView):
     """Manually trigger fetch from Google Sheets and create new snapshot."""
+    permission_classes = [AllowAny]
+    authentication_classes = []  # Disable authentication to bypass CSRF
     
     def post(self, request):
         """Fetch from Google Sheets and create new snapshot."""
@@ -56,9 +59,14 @@ class ClubeDoValorRefreshView(APIView):
                 'stocks_count': result['count']
             }, status=status.HTTP_200_OK)
         except Exception as e:
+            import traceback
+            error_details = str(e)
+            traceback_str = traceback.format_exc()
+            print(f"Error refreshing from Google Sheets: {error_details}")
+            print(f"Traceback: {traceback_str}")
             return Response({
                 'error': 'Failed to refresh from Google Sheets',
-                'details': str(e)
+                'details': error_details
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

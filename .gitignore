@@ -43,7 +43,9 @@ testem.log
 .DS_Store
 Thumbs.db
 .playwright-mcp/*.png
+.playwright-mcp/*.csv
 .playwright-mcp/doc/spec/*.png
+
 doc/spec/*.png
 
 # Sensitive data files

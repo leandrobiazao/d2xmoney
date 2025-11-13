@@ -31,11 +31,11 @@ graph TB
     end
     subgraph Grid["Main Container - Grid: 380px | 1fr"]
         subgraph Sidebar["Left Sidebar - 380px"]
-            SidebarHeader["Sidebar Header<br/>Title: 'Mês'<br/>Border bottom"]
+            SidebarHeader["Sidebar Header<br/>Title: 'Clube do Valor'<br/>Border bottom"]
             MonthList["Month List<br/>Scrollable vertical list<br/>Only loaded months shown<br/>Active month highlighted<br/>Check icon for active"]
         end
         subgraph Content["Right Content Area - 1fr"]
-            ContentHeader["Content Header Bar<br/>Title: 'Clube do Valor'<br/>Subtitle: 'Recomendações Mensais'<br/>Update Button + Timestamp"]
+            ContentHeader["Content Header Bar<br/>Title: 'Ações Mais Baratas da Bolsa - <Month>'<br/>Subtitle: 'Recomendações Mensais'<br/>Update Button + Timestamp"]
             TableContainer["Table Container<br/>White background<br/>Scrollable both directions<br/>Sticky header<br/>Sticky first column Ranking"]
             TableFooter["Table Footer<br/>Row count display"]
         end
@@ -97,14 +97,15 @@ graph TB
 │  (380px fixed)   │  (1fr - fills remaining space)                  │
 │                  │                                                  │
 │  ┌────────────┐  │  ┌──────────────────────────────────────────┐   │
-│  │ Mês        │  │  │ Clube do Valor                           │   │
-│  └────────────┘  │  │ Recomendações Mensais                    │   │
-│                  │  │                    [Atualizar] [Timestamp]│   │
+│  │ Clube do   │  │  │ Ações Mais Baratas da Bolsa - Nov/2025  │   │
+│  │ Valor      │  │  │ Recomendações Mensais                    │   │
+│  └────────────┘  │  │                    [Atualizar] [Timestamp]│   │
+│                  │                                                  │
 │  ┌────────────┐  │                                                  │
-│  │ Jan 2024 ✓ │  │                                                  │
-│  │ Feb 2024   │  │                                                  │
-│  │ Mar 2024   │  │                                                  │
-│  │ Apr 2024   │  │                                                  │
+│  │ Nov/2025 ✓ │  │                                                  │
+│  │ Out/2025   │  │                                                  │
+│  │ Set/2025   │  │                                                  │
+│  │ Ago/2025   │  │                                                  │
 │  │ ...        │  │                                                  │
 │  │ (only      │  │                                                  │
 │  │  loaded)   │  │                                                  │
@@ -244,7 +245,8 @@ interface ClubeDoValorHistoryResponse {
 #### Month Extraction
 - Extract month from timestamp: `YYYY-MM` format
 - Example: `"2024-01-15T10:30:00Z"` → `"2024-01"`
-- Display format: `"Janeiro 2024"` (Portuguese locale)
+- Display format: `"Janeiro/2024"` (Portuguese locale with slash separator)
+- The main heading dynamically displays the selected month: `"Ações Mais Baratas da Bolsa - Janeiro/2024"`
 
 ## CSS Grid Layout
 

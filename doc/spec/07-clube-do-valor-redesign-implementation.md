@@ -182,12 +182,21 @@ Applied `-webkit-font-smoothing: antialiased` to all buttons and text.
 
 ### 2. `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.html`
 **Changes:**
-- Updated sidebar title from "Clube do Valor - AMBB" to "Mês"
+- Updated sidebar title from "Clube do Valor - AMBB" to "Clube do Valor"
+- Updated main heading from "Clube do Valor" to "Ações Mais Baratas da Bolsa - {{ getCurrentMonthLabel() }}"
+- Fixed footer typo: "açãoões" → "ações" (correct Portuguese plural)
 - No structural changes (HTML already matched the spec)
 
-### 3. No Changes Required
-- `clubedovalor.ts` - Logic already implements the spec correctly
-- No changes to component structure or functionality
+### 3. `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.ts`
+**Changes:**
+- Updated month label format from "novembro de 2025" to "Novembro/2025"
+- Added `getCurrentMonthLabel()` method to retrieve current month label for dynamic heading display
+- Month label generation now uses slash separator instead of "de" (of)
+
+### 4. `backend/clubedovalor/services.py`
+**Changes:**
+- Fixed CSV parsing loop to start from row index 4 instead of 5 (resolved missing first stock issue)
+- Updated `get_historical_snapshots()` to include all snapshots (including current) instead of only historical ones
 
 ## Design System Consistency
 
@@ -344,8 +353,83 @@ The redesign maintains the existing functionality while significantly improving 
 
 ---
 
-**Document Version**: 1.0  
+## Recent Updates (November 2025)
+
+### Bug Fixes
+
+#### 1. CSV Parsing Fix
+**Issue**: First stock (JHSF3, ranking 1) was being skipped during Google Sheets import, causing all rankings to be off by one.
+
+**Fix**: Updated parsing loop in `parse_csv_table()` method to start from row index 4 instead of 5, correctly identifying the first data row.
+
+**Files Modified**:
+- `backend/clubedovalor/services.py` (line 250-252)
+
+**Impact**: All 126 stocks now parse correctly with proper rankings (1-126).
+
+#### 2. History API Enhancement
+**Issue**: Month filter list was empty because `get_historical_snapshots()` only returned snapshots with `is_current=False`, excluding the current month.
+
+**Fix**: Updated method to return all snapshots (including current) so the current month appears in the month filter list.
+
+**Files Modified**:
+- `backend/clubedovalor/services.py` (line 454-465)
+
+**Impact**: Month filter now displays all available months, including the current one.
+
+### UI Improvements
+
+#### 3. Month Label Format
+**Change**: Updated month label format from "novembro de 2025" to "Novembro/2025" for cleaner, more compact display.
+
+**Files Modified**:
+- `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.ts` (line 63-66)
+
+**Impact**: Month labels are now more concise and easier to read.
+
+#### 4. Sidebar Header
+**Change**: Updated sidebar header from "Clube do Valor - AMBB" to "Clube do Valor" for simplicity.
+
+**Files Modified**:
+- `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.html` (line 45)
+
+**Impact**: Cleaner, more focused sidebar header.
+
+#### 5. Main Heading
+**Change**: Updated main heading from static "Clube do Valor" to dynamic "Ações Mais Baratas da Bolsa - {{ getCurrentMonthLabel() }}" which displays the selected month.
+
+**Files Modified**:
+- `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.html` (line 70)
+- `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.ts` (line 39-42)
+
+**Impact**: Users can now see which month's data they are viewing directly in the main heading.
+
+#### 6. Footer Typo Fix
+**Change**: Fixed Portuguese plural typo from "açãoões" to "ações" in the table footer.
+
+**Files Modified**:
+- `frontend/src/app/clubedovalor/clubedovalor/clubedovalor.html` (line 180)
+
+**Impact**: Correct Portuguese grammar in footer display.
+
+### Summary of Changes
+
+| Change Type | Description | Files Affected | Date |
+|------------|-------------|----------------|------|
+| Bug Fix | CSV parsing row index correction | `backend/clubedovalor/services.py` | November 2025 |
+| Bug Fix | History API include current snapshots | `backend/clubedovalor/services.py` | November 2025 |
+| UI Update | Month label format (slash separator) | `frontend/.../clubedovalor.ts` | November 2025 |
+| UI Update | Sidebar header text | `frontend/.../clubedovalor.html` | November 2025 |
+| UI Update | Dynamic main heading with month | `frontend/.../clubedovalor.html`, `.ts` | November 2025 |
+| UI Fix | Footer typo correction | `frontend/.../clubedovalor.html` | November 2025 |
+
+All changes maintain backward compatibility with the API. No breaking changes to data structures. UI improvements enhance user experience without changing core functionality.
+
+---
+
+**Document Version**: 1.1  
 **Implementation Date**: November 2024  
+**Last Updated**: November 2025  
 **Status**: Completed  
 **Based On**: 06-home-page-design-system.md  
 **Specification**: 05-clube-do-valor-redesign.md

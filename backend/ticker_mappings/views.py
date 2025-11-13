@@ -27,23 +27,13 @@ class TickerMappingListView(APIView):
             )
         
         try:
-            print(f"DEBUG: Received POST request - nome: {nome}, ticker: {ticker}")
             TickerMappingService.set_ticker(nome, ticker)
-            print(f"DEBUG: Ticker mapping saved successfully")
-            
-            # Verify file was created
-            file_path = TickerMappingService.get_mappings_file_path()
-            if file_path.exists():
-                print(f"DEBUG: File exists at: {file_path}")
-            else:
-                print(f"DEBUG: WARNING - File does not exist after save!")
             
             return Response({
                 'success': True,
                 'message': f'Mapeamento salvo: {nome.strip().upper()} -> {ticker.strip().upper()}',
                 'nome': nome.strip().upper(),
                 'ticker': ticker.strip().upper(),
-                'file_path': str(file_path)
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
             import traceback

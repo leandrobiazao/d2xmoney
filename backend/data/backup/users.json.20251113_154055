@@ -1,0 +1,22 @@
+[
+  {
+    "id": "dde480b0-d47c-48ac-9a2e-e157faba275a",
+    "name": "Aurelio Avanzi",
+    "cpf": "024.537.739-50",
+    "account_provider": "XP Investimentos",
+    "account_number": "8755035",
+    "picture": null,
+    "created_at": "2025-11-10T19:49:02.205299",
+    "updated_at": "2025-11-10T19:49:02.205299"
+  },
+  {
+    "id": "0da85584-abd4-4463-af64-c1f9e18c0b4f",
+    "name": "Test User",
+    "cpf": "111.444.777-35",
+    "account_provider": "Test Broker",
+    "account_number": "12345678",
+    "picture": null,
+    "created_at": "2025-11-12T09:17:08.852761",
+    "updated_at": "2025-11-12T09:17:08.852761"
+  }
+]

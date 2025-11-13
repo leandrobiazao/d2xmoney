@@ -1,0 +1,193 @@
+{
+  "dde480b0-d47c-48ac-9a2e-e157faba275a": [
+    {
+      "titulo": "ANIM3",
+      "quantidade": 951,
+      "precoMedio": 3.2,
+      "valorTotalInvestido": 3043.93,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "ARML3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 451.91
+    },
+    {
+      "titulo": "ASAI3",
+      "quantidade": 338,
+      "precoMedio": 9.89,
+      "valorTotalInvestido": 3342.24,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "BERK34",
+      "quantidade": 304,
+      "precoMedio": 132.07,
+      "valorTotalInvestido": 40148.14,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "BLAU3",
+      "quantidade": 270,
+      "precoMedio": 12.69,
+      "valorTotalInvestido": 3425.62,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "CMIN3",
+      "quantidade": 594,
+      "precoMedio": 5.21,
+      "valorTotalInvestido": 3092.19,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "CPFE3",
+      "quantidade": 106,
+      "precoMedio": 39.29,
+      "valorTotalInvestido": 4164.7,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "CYRE3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 156.41
+    },
+    {
+      "titulo": "GGBR4",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": -21.27
+    },
+    {
+      "titulo": "GRND3",
+      "quantidade": 620,
+      "precoMedio": 5.11,
+      "valorTotalInvestido": 3168.0,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "ISAE4",
+      "quantidade": 123,
+      "precoMedio": 23.61,
+      "valorTotalInvestido": 2904.33,
+      "lucroRealizado": 11.6
+    },
+    {
+      "titulo": "JHSF3",
+      "quantidade": 481,
+      "precoMedio": 5.6,
+      "valorTotalInvestido": 2693.63,
+      "lucroRealizado": 17.26
+    },
+    {
+      "titulo": "KEPL3",
+      "quantidade": 325,
+      "precoMedio": 7.68,
+      "valorTotalInvestido": 2496.07,
+      "lucroRealizado": 193.98
+    },
+    {
+      "titulo": "LAVV3",
+      "quantidade": 121,
+      "precoMedio": 13.17,
+      "valorTotalInvestido": 1593.17,
+      "lucroRealizado": 377.4
+    },
+    {
+      "titulo": "LEVE3",
+      "quantidade": 108,
+      "precoMedio": 28.84,
+      "valorTotalInvestido": 3114.92,
+      "lucroRealizado": -0.16
+    },
+    {
+      "titulo": "MDNE3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 17.16
+    },
+    {
+      "titulo": "PLPL3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 264.75
+    },
+    {
+      "titulo": "POMO4",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 236.72
+    },
+    {
+      "titulo": "POSI3",
+      "quantidade": 756,
+      "precoMedio": 4.38,
+      "valorTotalInvestido": 3309.0,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "RECV3",
+      "quantidade": 341,
+      "precoMedio": 13.63,
+      "valorTotalInvestido": 4648.83,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "SBSP3",
+      "quantidade": 24,
+      "precoMedio": 118.59,
+      "valorTotalInvestido": 2846.23,
+      "lucroRealizado": 0.0
+    },
+    {
+      "titulo": "TGMA3",
+      "quantidade": 85,
+      "precoMedio": 35.49,
+      "valorTotalInvestido": 3016.26,
+      "lucroRealizado": -3.48
+    },
+    {
+      "titulo": "TTEN3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": -16.26
+    },
+    {
+      "titulo": "UGPA3",
+      "quantidade": 0,
+      "precoMedio": 0.0,
+      "valorTotalInvestido": 0.0,
+      "lucroRealizado": 392.8
+    },
+    {
+      "titulo": "VALE3",
+      "quantidade": 51,
+      "precoMedio": 54.97,
+      "valorTotalInvestido": 2803.3,
+      "lucroRealizado": 34.21
+    },
+    {
+      "titulo": "VAMO3",
+      "quantidade": 930,
+      "precoMedio": 3.72,
+      "valorTotalInvestido": 3461.86,
+      "lucroRealizado": -25.84
+    },
+    {
+      "titulo": "VLID3",
+      "quantidade": 148,
+      "precoMedio": 23.12,
+      "valorTotalInvestido": 3421.39,
+      "lucroRealizado": -10.95
+    }
+  ]
+}

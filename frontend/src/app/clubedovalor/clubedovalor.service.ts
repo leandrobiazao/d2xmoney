@@ -21,7 +21,11 @@ export class ClubeDoValorService {
   }
 
   refreshFromSheets(sheetsUrl: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/refresh/`, { sheets_url: sheetsUrl });
+    return this.http.post(`${this.apiUrl}/refresh/`, { sheets_url: sheetsUrl }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   }
 
   deleteStock(codigo: string): Observable<any> {

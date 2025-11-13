@@ -42,7 +42,7 @@
   <!-- Left Sidebar - Month Selection (like user-list) -->
   <aside class="month-sidebar">
     <div class="sidebar-header">
-      <h3>Clube do Valor - AMBB</h3>
+      <h3>Clube do Valor</h3>
     </div>
     <nav class="month-list">
       @for (month of getMonths(); track month.key) {
@@ -67,7 +67,7 @@
     <!-- Content Header - Always visible -->
     <div class="content-header">
       <div class="header-title">
-        <h2>Clube do Valor</h2>
+        <h2>Ações Mais Baratas da Bolsa - {{ getCurrentMonthLabel() }}</h2>
         <p>Recomendações Mensais</p>
       </div>
       <div class="header-actions">
@@ -177,7 +177,7 @@
             </table>
           </div>
       <div class="table-footer">
-        <span>{{ filteredStocks.length }} ação{{ filteredStocks.length !== 1 ? 'ões' : '' }}</span>
+        <span>{{ filteredStocks.length }} {{ filteredStocks.length === 1 ? 'ação' : 'ações' }}</span>
       </div>
     } @else {
       <div class="empty-state">
