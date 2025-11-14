@@ -7,7 +7,13 @@
     "start:dev": "concurrently \"cd ../backend && python manage.py runserver\" \"ng serve --port 4400 --proxy-config proxy.conf.json\"",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "test:coverage": "ng test --code-coverage",
+    "e2e": "node scripts/run-e2e.js",
+    "e2e:ui": "node scripts/run-e2e.js --ui",
+    "e2e:headed": "node scripts/run-e2e.js --headed",
+    "e2e:debug": "node scripts/run-e2e.js --debug",
+    "test:all": "npm run test && npm run e2e"
   },
   "prettier": {
     "overrides": [

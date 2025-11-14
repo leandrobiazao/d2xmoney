@@ -58,6 +58,12 @@ export class HistoryDetailComponent implements OnInit {
     if (this.note && confirm('Tem certeza que deseja excluir esta nota?')) {
       this.historyService.deleteNote(this.note.id).subscribe({
         next: () => {
+          // Dispatch event to notify portfolio component to refresh
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('brokerage-note-deleted', {
+              detail: { noteId: this.note!.id }
+            }));
+          }
           this.onBack();
         },
         error: (error) => {

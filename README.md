@@ -2,6 +2,8 @@
 
 This project is a full-stack portfolio management system with Angular frontend and Django backend.
 
+> **⚠️ Important**: Before running any backend commands, always activate the Python virtual environment first! See [Project Setup](./.project-setup.md) for details.
+
 ## Project Structure
 
 ```
@@ -94,23 +96,77 @@ ng build
 
 This will compile your project and store the build artifacts in the `frontend/dist/` directory. By default, the production build optimizes your application for performance and speed.
 
-## Running unit tests
+## Testing
+
+### Running unit tests
 
 To execute unit tests with the [Karma](https://karma-runner.github.io) test runner:
 
 ```bash
 cd frontend
-ng test
+npm test
 ```
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing:
+To run tests with code coverage:
 
 ```bash
 cd frontend
-ng e2e
+npm run test:coverage
 ```
+
+### Running end-to-end tests
+
+The project uses [Playwright](https://playwright.dev/) for E2E testing. Make sure both frontend and backend servers are running before executing E2E tests.
+
+**Prerequisites:**
+- Frontend running on `http://localhost:4400`
+- Backend running on `http://localhost:8000`
+
+**Run E2E tests:**
+
+```bash
+cd frontend
+npm run e2e
+```
+
+**Run E2E tests with UI (interactive mode):**
+
+```bash
+cd frontend
+npm run e2e:ui
+```
+
+**Run E2E tests in headed mode (see browser):**
+
+```bash
+cd frontend
+npm run e2e:headed
+```
+
+**Run E2E tests in debug mode:**
+
+```bash
+cd frontend
+npm run e2e:debug
+```
+
+**Run all tests (unit + E2E):**
+
+```bash
+cd frontend
+npm run test:all
+```
+
+### Test Coverage
+
+The E2E test suite covers all major application features:
+- User management (creation, validation, CPF checks)
+- Portfolio operations (display, filtering, deletion)
+- Brokerage note processing (PDF upload, ticker mapping)
+- History management (list, detail, deletion)
+- UI/UX features (error handling, responsive design, currency formatting)
+
+For detailed test documentation, see [Testing Guide](doc/spec/TESTING.md) and [E2E Test Plan](doc/spec/e2e-test-plan.md).
 
 ## Additional Resources
 

@@ -9,12 +9,11 @@ from rest_framework import status
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from .services import UserJsonStorageService
-# Import serializer only when needed (for POST requests)
-# from .serializers import UserSerializer
 
 
 class UserListView(APIView):
     """List all users and create new users."""
+    authentication_classes = []  # Disable authentication to bypass CSRF
     
     def get(self, request):
         """Get all users."""
@@ -114,6 +113,7 @@ class UserListView(APIView):
 
 class UserDetailView(APIView):
     """Get, update, or delete a user."""
+    authentication_classes = []  # Disable authentication to bypass CSRF
     
     def get(self, request, user_id):
         """Get user by ID."""
@@ -185,24 +185,24 @@ class UserDetailView(APIView):
     
     def delete(self, request, user_id):
         """Delete user."""
-        user = UserJsonStorageService.get_user_by_id(user_id)
+        from .models import User
         
-        if not user:
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
             return Response(
                 {'error': 'User not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
         # Delete picture file if exists
-        if user.get('picture'):
-            picture_path = user['picture'].replace('/media/', '')
+        if user.picture:
+            picture_path = user.picture.replace('/media/', '')
             if default_storage.exists(picture_path):
                 default_storage.delete(picture_path)
         
-        # Remove from JSON file
-        users = UserJsonStorageService.load_users()
-        users = [u for u in users if u.get('id') != user_id]
-        UserJsonStorageService.save_users(users)
+        # Delete from database
+        user.delete()
         
         return Response(status=status.HTTP_204_NO_CONTENT)
 

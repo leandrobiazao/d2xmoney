@@ -1,7 +1,6 @@
 """
 Service for managing Clube do Valor stock recommendations from Google Sheets.
 """
-import re
 import csv
 import io
 from datetime import datetime
@@ -16,12 +15,6 @@ class ClubeDoValorService:
     
     GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/u/0/d/1-C7tynYu9CHbQzg-bCAH4StLGfYqDcKWWqSvHbWxrCw/pubhtml/sheet?headers=false&gid=0"
     GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/u/0/d/1-C7tynYu9CHbQzg-bCAH4StLGfYqDcKWWqSvHbWxrCw/export?format=csv&gid=0"
-    
-    @staticmethod
-    def get_ambb_file_path():
-        """Legacy method - kept for backward compatibility."""
-        # This method is no longer used but kept for compatibility
-        pass
     
     @staticmethod
     def parse_brazilian_date(date_str: str) -> str:
@@ -327,13 +320,6 @@ class ClubeDoValorService:
             'snapshots': snapshots_data,
             'current': current_data
         }
-    
-    @staticmethod
-    def save_ambb_data(data: Dict) -> None:
-        """Save ambb data to database (legacy method for compatibility)."""
-        # This method is kept for backward compatibility but doesn't do anything
-        # Use add_monthly_snapshot instead
-        pass
     
     @staticmethod
     def add_monthly_snapshot(timestamp: str, stocks: List[Dict]) -> None:

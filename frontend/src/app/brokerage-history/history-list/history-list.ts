@@ -103,6 +103,13 @@ export class HistoryListComponent implements OnInit {
         next: (response) => {
           this.debug.log('✅ Note deleted successfully:', response);
           this.loadHistory();
+          
+          // Dispatch event to notify portfolio component to refresh
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('brokerage-note-deleted', {
+              detail: { noteId }
+            }));
+          }
         },
         error: (error) => {
           this.debug.error('❌ Error deleting note:', error);

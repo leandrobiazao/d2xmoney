@@ -422,3 +422,45 @@
 - Frontend runs on port 4400
 - All tests should verify no console errors
 
+## Running the Tests
+
+### Prerequisites
+
+1. **Start Backend Server**:
+   ```bash
+   cd backend
+   .\venv\Scripts\Activate.ps1  # Windows PowerShell
+   python manage.py runserver
+   ```
+
+2. **Start Frontend Server**:
+   ```bash
+   cd frontend
+   npm start
+   ```
+
+### Execute E2E Tests
+
+The E2E tests are automated using Playwright. Run them with:
+
+```bash
+cd frontend
+npm run e2e
+```
+
+### Test Execution Options
+
+- **Interactive UI**: `npm run e2e:ui` - Opens Playwright UI for interactive test execution
+- **Headed Mode**: `npm run e2e:headed` - Run tests with visible browser
+- **Debug Mode**: `npm run e2e:debug` - Opens Playwright Inspector for step-by-step debugging
+
+### Test Reports
+
+After running tests, view the HTML report:
+
+```bash
+npx playwright show-report
+```
+
+For more information, see the [Testing Guide](./TESTING.md).
+

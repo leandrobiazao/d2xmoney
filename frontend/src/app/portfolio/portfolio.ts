@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { PortfolioService } from './portfolio.service';
@@ -17,7 +17,7 @@ import { parseDate, formatCurrency, compareDate } from '../shared/utils/common-u
   templateUrl: './portfolio.html',
   styleUrl: './portfolio.css'
 })
-export class PortfolioComponent implements OnInit, OnChanges {
+export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   @Input() userId!: string;
   @Input() userName!: string;
 
@@ -39,6 +39,9 @@ export class PortfolioComponent implements OnInit, OnChanges {
   // Sorting
   sortField: string = '';
   sortDirection: 'asc' | 'desc' = 'asc';
+  
+  // Store bound event handler for cleanup
+  private noteDeletedHandler = (event: Event) => this.onNoteDeleted(event);
 
   constructor(
     private portfolioService: PortfolioService,
@@ -48,6 +51,30 @@ export class PortfolioComponent implements OnInit, OnChanges {
 
   ngOnInit(): void {
     // Load data if userId is already set (when component is created with input)
+    if (this.userId) {
+      this.loadData();
+    }
+    
+    // Listen for note deletion events to refresh portfolio
+    if (typeof window !== 'undefined') {
+      window.addEventListener('brokerage-note-deleted', this.noteDeletedHandler);
+    }
+  }
+  
+  ngOnDestroy(): void {
+    // Clean up event listener
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('brokerage-note-deleted', this.noteDeletedHandler);
+    }
+  }
+  
+  onNoteDeleted(event: Event): void {
+    const customEvent = event as CustomEvent;
+    this.debug.log('📢 Note deleted event received, refreshing portfolio:', customEvent.detail);
+    
+    // Refresh portfolio data if this component is for the affected user
+    // Note: We refresh regardless of user since we don't know which user's note was deleted
+    // The backend refresh will update all users' portfolios correctly
     if (this.userId) {
       this.loadData();
     }
