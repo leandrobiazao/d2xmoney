@@ -1,36 +1,27 @@
 # See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
+# ============================================
 # Compiled output
+# ============================================
 /dist
 /tmp
 /out-tsc
 /bazel-out
+*.tsbuildinfo
 
-# Node
-/node_modules
-npm-debug.log
+# ============================================
+# Node / Angular
+# ============================================
+node_modules/
+npm-debug.log*
 yarn-error.log
+yarn-debug.log*
+yarn.lock
+lerna-debug.log*
+.pnpm-debug.log*
 
-# IDEs and editors
-.idea/
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-
-# Visual Studio Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.history/*
-
-# Miscellaneous
+# Angular specific
 /.angular/cache
-frontend/.angular/cache
 .angular/cache
 .sass-cache/
 /connect.lock
@@ -39,29 +30,16 @@ frontend/.angular/cache
 testem.log
 /typings
 
-# System files
-.DS_Store
-Thumbs.db
-.playwright-mcp/*.png
-.playwright-mcp/*.csv
-.playwright-mcp/doc/spec/*.png
-
-doc/spec/*.png
-
-# Sensitive data files
-backend/data/*.json
-backend/db.sqlite3
-backend/venv/
-backend/media/brokerage_notes/*.pdf
-*.env
-.env.local
-.env.*.local
-
-# Python
+# ============================================
+# Python / Django
+# ============================================
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -75,6 +53,127 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Django specific
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+/static
+
+# Django migrations (keep structure, ignore if you want to track migrations)
+# Uncomment the next line if you want to ignore migrations
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# ============================================
+# IDEs and editors
+# ============================================
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/*
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ============================================
+# System files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ============================================
+# Testing
+# ============================================
+/coverage
+.nyc_output
+/test-results
+/playwright-report
+.playwright/
+
+# ============================================
+# Environment and secrets
+# ============================================
+*.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+secrets.json
+config.local.json
+
+# ============================================
+# Project specific
+# ============================================
+# Sensitive data files
+backend/data/*.json
+!backend/data/backup/
+backend/db.sqlite3
+backend/media/brokerage_notes/*.pdf
+backend/media/users/*.jpg
+backend/media/users/*.png
+
+# Playwright MCP
+.playwright-mcp/*.png
+.playwright-mcp/*.csv
+.playwright-mcp/doc/spec/*.png
+doc/spec/*.png
+
+# Service management
+.service-jobs.txt
+
+# ============================================
+# Build artifacts
+# ============================================
+*.min.js
+*.min.css
+*.map
+*.bundle.js
+
+# ============================================
+# Temporary files
+# ============================================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
