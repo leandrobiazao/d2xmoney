@@ -11,12 +11,15 @@ import {
   SubTypeAllocation
 } from './allocation-strategy.service';
 import { UserItemComponent } from '../users/user-item/user-item';
+import { ConfigurationService, InvestmentType } from '../configuration/configuration.service';
 
-interface DraftSubTypeAllocation extends SubTypeAllocation {
+interface DraftSubTypeAllocation extends Omit<SubTypeAllocation, 'id'> {
+  id?: number;
   sub_type_id?: number;
 }
 
-interface DraftTypeAllocation extends InvestmentTypeAllocation {
+interface DraftTypeAllocation extends Omit<InvestmentTypeAllocation, 'id' | 'sub_type_allocations'> {
+  id?: number;
   investment_type_id: number;
   sub_type_allocations?: DraftSubTypeAllocation[];
 }
@@ -44,7 +47,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   constructor(
     private userService: UserService,
-    private allocationStrategyService: AllocationStrategyService
+    private allocationStrategyService: AllocationStrategyService,
+    private configurationService: ConfigurationService
   ) {}
 
   ngOnInit(): void {
@@ -198,8 +202,50 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       return;
     }
     
-    // Reload strategy to ensure we have the latest data
-    this.loadStrategy(this.selectedUser.id);
+    // If strategy doesn't exist, create a new one with investment types
+    if (!this.strategy) {
+      this.createNewStrategy();
+    } else {
+      // Reload strategy to ensure we have the latest data
+      this.loadStrategy(this.selectedUser.id);
+    }
+  }
+
+  createNewStrategy(): void {
+    if (!this.selectedUser) {
+      return;
+    }
+
+    this.isLoadingStrategy = true;
+    this.errorMessage = null;
+
+    // Load investment types to initialize the draft
+    this.configurationService.getInvestmentTypes(true).subscribe({
+      next: (investmentTypes) => {
+        // Initialize draft allocations with all active investment types
+        this.draftTypeAllocations = investmentTypes.map((type, index) => ({
+          investment_type_id: type.id,
+          investment_type: {
+            id: type.id,
+            name: type.name,
+            code: type.code
+          },
+          target_percentage: 0,
+          display_order: index,
+          sub_type_allocations: []
+        }));
+
+        // Initialize total portfolio value if available from pie chart data
+        this.totalPortfolioValueInput = null;
+        
+        this.isLoadingStrategy = false;
+      },
+      error: (error) => {
+        console.error('Error loading investment types:', error);
+        this.errorMessage = 'Erro ao carregar tipos de investimento';
+        this.isLoadingStrategy = false;
+      }
+    });
   }
 
   onSaveStrategy(): void {

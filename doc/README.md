@@ -20,6 +20,7 @@ doc/
     ├── 06-home-page-design-system.md         # Home page design system
     ├── 07-clube-do-valor-redesign-implementation.md  # Implementation details
     ├── 08-history-redesign-implementation.md # History redesign implementation
+    ├── 09-database-data-model.md            # Database data model documentation
     └── TESTING.md                            # Testing guide
 ```
 
@@ -107,6 +108,7 @@ The application includes comprehensive E2E test coverage for:
 - **[06-home-page-design-system.md](spec/06-home-page-design-system.md)** - Home page design
 - **[07-clube-do-valor-redesign-implementation.md](spec/07-clube-do-valor-redesign-implementation.md)** - Implementation details
 - **[08-history-redesign-implementation.md](spec/08-history-redesign-implementation.md)** - History redesign
+- **[09-database-data-model.md](spec/09-database-data-model.md)** - Database schema and data model
 
 ## 📊 Application Environment
 

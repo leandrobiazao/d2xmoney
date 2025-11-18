@@ -2,7 +2,10 @@
 Service for managing ticker mappings using Django ORM.
 """
 import re
+import time
 from typing import Dict, Optional
+from django.db import transaction
+from django.db.utils import OperationalError
 from .models import TickerMapping
 
 
@@ -48,14 +51,29 @@ class TickerMappingService:
     
     @staticmethod
     def set_ticker(nome: str, ticker: str) -> None:
-        """Set ticker mapping for a company name."""
+        """Set ticker mapping for a company name with retry logic for SQLite locking."""
         nome_normalizado = TickerMappingService.normalize_company_name(nome)
         ticker_upper = ticker.strip().upper()
         
-        TickerMapping.objects.update_or_create(
-            company_name=nome_normalizado,
-            defaults={'ticker': ticker_upper}
-        )
+        max_retries = 5
+        retry_delay = 0.1  # 100ms
+        
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    TickerMapping.objects.update_or_create(
+                        company_name=nome_normalizado,
+                        defaults={'ticker': ticker_upper}
+                    )
+                    return
+            except OperationalError as e:
+                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                    # Wait before retrying
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    # Re-raise if it's not a lock error or we've exhausted retries
+                    raise
     
     @staticmethod
     def has_mapping(nome: str) -> bool:

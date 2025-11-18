@@ -314,6 +314,7 @@ For detailed API documentation, see the respective application specification fil
 4. **Brokerage Note Processing**: Implement note processing (see 02-brokerage-note-processing.md)
 5. **Brokerage History**: Implement history tracking (see 03-brokerage-history.md)
 6. **Portfolio Summary**: Implement portfolio summary (see 04-portfolio-summary.md)
+7. **Database Schema**: Reference database models and relationships (see 09-database-data-model.md)
 
 ## Notes
 
