@@ -5,6 +5,8 @@ import { CreateUserComponent } from "./users/create-user/create-user";
 import { PortfolioComponent } from './portfolio/portfolio';
 import { HistoryListComponent } from './brokerage-history/history-list/history-list';
 import { ClubeDoValorComponent } from './clubedovalor/clubedovalor/clubedovalor';
+import { ConfigurationComponent } from './configuration/configuration.component';
+import { AllocationStrategyComponent } from './allocation-strategies/allocation-strategy.component';
 import { UserService } from './users/user.service';
 import { User } from './users/user.model';
 import { DebugService } from './shared/services/debug.service';
@@ -12,7 +14,7 @@ import { DebugService } from './shared/services/debug.service';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent, ClubeDoValorComponent],
+  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent, ClubeDoValorComponent, ConfigurationComponent, AllocationStrategyComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
@@ -21,6 +23,8 @@ export class App {
   showCreateUser: boolean = false;
   showBrokerageHistory: boolean = false;
   showClubeDoValor: boolean = false;
+  showConfiguration: boolean = false;
+  showAllocationStrategy: boolean = false;
 
   constructor(
     private userService: UserService,
@@ -73,21 +77,43 @@ export class App {
   onShowHome(): void {
     this.showBrokerageHistory = false;
     this.showClubeDoValor = false;
+    this.showConfiguration = false;
+    this.showAllocationStrategy = false;
     this.selectedUser = null;
   }
 
   onShowHistory(): void {
     this.showBrokerageHistory = true;
     this.showClubeDoValor = false;
+    this.showConfiguration = false;
+    this.showAllocationStrategy = false;
   }
 
   onShowClubeDoValor(): void {
     this.showClubeDoValor = true;
     this.showBrokerageHistory = false;
+    this.showConfiguration = false;
+    this.showAllocationStrategy = false;
+  }
+
+  onShowConfiguration(): void {
+    this.showConfiguration = true;
+    this.showBrokerageHistory = false;
+    this.showClubeDoValor = false;
+    this.showAllocationStrategy = false;
+  }
+
+  onShowAllocationStrategy(): void {
+    this.showAllocationStrategy = true;
+    this.showBrokerageHistory = false;
+    this.showClubeDoValor = false;
+    this.showConfiguration = false;
   }
 
   onBackToMain(): void {
     this.showBrokerageHistory = false;
     this.showClubeDoValor = false;
+    this.showConfiguration = false;
+    this.showAllocationStrategy = false;
   }
 }

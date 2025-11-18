@@ -1,0 +1,153 @@
+@if (isLoading) {
+  <div class="loading-state">
+    <p>Carregando detalhes do CDB...</p>
+  </div>
+} @else if (errorMessage) {
+  <div class="error-state">
+    <p>{{ errorMessage }}</p>
+  </div>
+} @else if (position) {
+  <div class="cdb-detail-container">
+    <!-- Top Header Row -->
+    <div class="header-row">
+      <div class="header-cell">
+        <span class="label">Ativo</span>
+        <span class="value">{{ position.asset_name }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Aplicação</span>
+        <span class="value">{{ formatDate(position.application_date) }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Carência</span>
+        <span class="value">{{ formatDate(position.grace_period_end) }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Vencimento</span>
+        <span class="value">{{ formatDate(position.maturity_date) }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Taxa</span>
+        <span class="value">{{ position.rate || '-' }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Disponível</span>
+        <span class="value">{{ position.available_quantity }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Garantia</span>
+        <span class="value">{{ position.guarantee_quantity }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Valor aplicado</span>
+        <span class="value">{{ formatCurrency(position.applied_value) }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Posição</span>
+        <span class="value">{{ formatCurrency(position.position_value) }}</span>
+      </div>
+      <div class="header-cell">
+        <span class="label">Valor líquido</span>
+        <span class="value">{{ formatCurrency(position.net_value) }}</span>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="content-grid">
+      <!-- Left Panel - Investment Details -->
+      <div class="left-panel">
+        <div class="detail-item">
+          <span class="detail-label">Rating</span>
+          <span class="detail-value">{{ position.rating || '-' }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Liquidez</span>
+          <span class="detail-value">{{ position.liquidity || '-' }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Preço</span>
+          <span class="detail-value">{{ formatCurrency(position.price) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Ativo</span>
+          <span class="detail-value">{{ position.asset_code }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Data Preço</span>
+          <span class="detail-value">{{ formatDate(position.price_date) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Juros</span>
+          <span class="detail-value">{{ position.interest || '-' }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Aplicação</span>
+          <span class="detail-value">{{ formatDate(position.application_date) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Quantidade</span>
+          <span class="detail-value">{{ position.quantity }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">IR</span>
+          <span class="detail-value">{{ formatCurrency(position.income_tax) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">IOF</span>
+          <span class="detail-value">{{ formatCurrency(position.iof) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Valor líquido</span>
+          <span class="detail-value">{{ formatCurrency(position.net_value) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Rendimento bruto</span>
+          <span class="detail-value">{{ formatCurrency(position.gross_yield) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Rendimento líquido</span>
+          <span class="detail-value">{{ formatCurrency(position.net_yield) }}</span>
+        </div>
+      </div>
+
+      <!-- Right Panel - Evolution Chart -->
+      <div class="right-panel">
+        <div class="chart-tabs">
+          <button 
+            class="tab-button" 
+            [class.active]="activeTab === 'evolucao'"
+            (click)="setTab('evolucao')"
+          >
+            Evolução
+          </button>
+          <button 
+            class="tab-button" 
+            [class.active]="activeTab === 'rendimento'"
+            (click)="setTab('rendimento')"
+          >
+            Rendimento
+          </button>
+        </div>
+        
+        <div class="chart-container">
+          @if (activeTab === 'evolucao') {
+            <div class="chart-placeholder">
+              <p>Gráfico de Evolução</p>
+              <p>Posição: {{ formatCurrency(position.position_value) }}</p>
+              <p>Valor Aplicado: {{ formatCurrency(position.applied_value) }}</p>
+              <p class="note">Chart.js integration pending</p>
+            </div>
+          } @else {
+            <div class="chart-placeholder">
+              <p>Gráfico de Rendimento</p>
+              <p>Rendimento Bruto: {{ formatCurrency(position.gross_yield) }}</p>
+              <p>Rendimento Líquido: {{ formatCurrency(position.net_yield) }}</p>
+              <p class="note">Chart.js integration pending</p>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+

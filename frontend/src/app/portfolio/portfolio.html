@@ -2,54 +2,98 @@
   <div class="portfolio-container">
     <div class="portfolio-header">
       <h2>Carteira de Investimentos - {{ userName }}</h2>
-      <app-upload-pdf 
-        [clientId]="userId!" 
-        (operationsAdded)="onOperationsAdded($event)"
-      />
     </div>
 
-    @if (showPositions && positions.length > 0) {
-      <section class="positions-section">
-        <h3>Posições Atuais</h3>
-        <div class="summary-cards">
-          <div class="summary-card">
-            <span class="label">Total Investido:</span>
-            <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
-          </div>
-          <div class="summary-card">
-            <span class="label">Ativos na Carteira:</span>
-            <span class="value">{{ getActivePositionsCount() }}</span>
-          </div>
-        </div>
-        
-        <table class="positions-table">
-          <thead>
-            <tr>
-              <th>Título</th>
-              <th>Quantidade</th>
-              <th>Preço Médio</th>
-              <th>Valor Total Investido</th>
-              <th>Lucro Realizado</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (position of positions; track position.titulo) {
-              <tr>
-                <td>{{ position.titulo }}</td>
-                <td>{{ position.quantidadeTotal }}</td>
-                <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
-                <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
-                <td [class.positive]="position.lucroRealizado > 0" [class.negative]="position.lucroRealizado < 0">
-                  {{ formatCurrency(position.lucroRealizado || 0) }}
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </section>
-    }
+    <!-- Tabs -->
+    <div class="portfolio-tabs">
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'acoes'"
+        (click)="activeTab = 'acoes'"
+      >
+        Ações
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'renda-fixa'"
+        (click)="activeTab = 'renda-fixa'"
+      >
+        Renda Fixa
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'historico'"
+        (click)="activeTab = 'historico'"
+      >
+        Histórico de Notas
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'import'"
+        (click)="activeTab = 'import'"
+      >
+        Importar Portfólio
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'allocation-strategy'"
+        (click)="activeTab = 'allocation-strategy'"
+      >
+        Estratégia de Alocação
+      </button>
+    </div>
 
-    @if (showOperations) {
+    <!-- Ações Tab Content -->
+    @if (activeTab === 'acoes') {
+      <section class="positions-section">
+        <div class="section-header-with-action">
+          <h3>Posições Atuais</h3>
+          <app-upload-pdf 
+            [clientId]="userId!" 
+            (operationsAdded)="onOperationsAdded($event)"
+          />
+        </div>
+
+        @if (showPositions && positions.length > 0) {
+          <div class="summary-cards">
+            <div class="summary-card">
+              <span class="label">Total Investido:</span>
+              <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
+            </div>
+            <div class="summary-card">
+              <span class="label">Ativos na Carteira:</span>
+              <span class="value">{{ getActivePositionsCount() }}</span>
+            </div>
+          </div>
+        
+          <table class="positions-table">
+            <thead>
+              <tr>
+                <th>Título</th>
+                <th>Quantidade</th>
+                <th>Preço Médio</th>
+                <th>Valor Total Investido</th>
+                <th>Lucro Realizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (position of positions; track position.titulo) {
+                <tr>
+                  <td>{{ position.titulo }}</td>
+                  <td>{{ position.quantidadeTotal }}</td>
+                  <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
+                  <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
+                  <td [class.positive]="position.lucroRealizado > 0" [class.negative]="position.lucroRealizado < 0">
+                    {{ formatCurrency(position.lucroRealizado || 0) }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+
+      @if (showOperations) {
       <section class="operations-section">
         <div class="section-header">
           <h3>Operações</h3>
@@ -184,6 +228,27 @@
           <p class="no-data">Nenhuma operação encontrada.</p>
         }
       </section>
+      }
+    }
+
+    <!-- Renda Fixa Tab Content -->
+    @if (activeTab === 'renda-fixa') {
+      <app-fixed-income-list [userId]="userId" />
+    }
+
+    <!-- Histórico Tab Content -->
+    @if (activeTab === 'historico') {
+      <app-history-list [userId]="userId" />
+    }
+
+    <!-- Import Tab Content -->
+    @if (activeTab === 'import') {
+      <app-portfolio-import [userId]="userId" />
+    }
+
+    <!-- Estratégia de Alocação Tab Content -->
+    @if (activeTab === 'allocation-strategy') {
+      <app-allocation-strategy [userId]="userId" />
     }
   </div>
 } @else {

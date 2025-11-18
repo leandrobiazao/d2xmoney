@@ -179,3 +179,4 @@ doc/spec/*.png
 *.swo
 *~
 .cache/
+backend/media/portafolio_wallet/*.xlsx

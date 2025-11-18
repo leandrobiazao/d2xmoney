@@ -1,0 +1,61 @@
+<div class="portfolio-import-container">
+  <h3>Importar Portfólio do Excel</h3>
+  
+  <div class="form-group">
+    <label>Arquivo Excel</label>
+    <input type="file" accept=".xlsx,.xls" (change)="onFileSelected($event)" />
+    @if (selectedFile) {
+      <p class="file-name">{{ selectedFile.name }}</p>
+    }
+  </div>
+
+  <button class="btn btn-primary" (click)="onImport()" [disabled]="!selectedFile || isImporting">
+    @if (isImporting) {
+      Importando...
+    } @else {
+      Importar Portfólio
+    }
+  </button>
+
+  @if (errorMessage) {
+    <div class="error-message">
+      <pre>{{ errorMessage }}</pre>
+    </div>
+  }
+
+  @if (importResult) {
+    <div class="import-summary">
+      <h4>Resultado da Importação</h4>
+      <div class="summary-stats">
+        <div class="stat-item">
+          <span class="stat-label">Criados:</span>
+          <span class="stat-value">{{ importResult.created }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Atualizados:</span>
+          <span class="stat-value">{{ importResult.updated }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">CDBs:</span>
+          <span class="stat-value">{{ importResult.cdb_count }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Tesouro Direto:</span>
+          <span class="stat-value">{{ importResult.tesouro_count }}</span>
+        </div>
+      </div>
+      @if (importResult.errors && importResult.errors.length > 0) {
+        <div class="errors-list">
+          <h5>Erros:</h5>
+          <ul>
+            @for (error of importResult.errors; track $index) {
+              <li>{{ error }}</li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+

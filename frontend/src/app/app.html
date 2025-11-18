@@ -1,7 +1,12 @@
-<app-header (showHome)="onShowHome()" (showHistory)="onShowHistory()" (showClubeDoValor)="onShowClubeDoValor()" />
+<app-header 
+  (showHome)="onShowHome()" 
+  (showHistory)="onShowHistory()" 
+  (showClubeDoValor)="onShowClubeDoValor()"
+  (showConfiguration)="onShowConfiguration()"
+  (showAllocationStrategy)="onShowAllocationStrategy()" />
 
 <main>
-  @if (!showBrokerageHistory && !showClubeDoValor) {
+  @if (!showBrokerageHistory && !showClubeDoValor && !showConfiguration && !showAllocationStrategy) {
     <app-user-list
       (userSelected)="onUserSelected($event)"
       (createUser)="onCreateUser()"
@@ -24,5 +29,9 @@
   } @else if (showClubeDoValor) {
     <!-- Component with Sidebar + Content -->
     <app-clubedovalor />
+  } @else if (showConfiguration) {
+    <app-configuration />
+  } @else if (showAllocationStrategy) {
+    <app-allocation-strategy />
   }
 </main>

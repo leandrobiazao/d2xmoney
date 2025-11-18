@@ -1,0 +1,101 @@
+<div class="fixed-income-list-container">
+  <div class="header-section">
+    <h2>Renda Fixa</h2>
+    <div class="filters">
+      <input 
+        type="text" 
+        placeholder="Buscar..." 
+        [(ngModel)]="searchTerm"
+        (input)="onSearchChange()"
+        class="search-input"
+      />
+      <select [(ngModel)]="filterType" (change)="onFilterChange()" class="type-filter">
+        <option value="all">Todos os Tipos</option>
+        @for (group of groupedPositions; track group.type) {
+          <option [value]="group.typeName">{{ group.typeName }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  @if (isLoading) {
+    <div class="loading-state">
+      <p>Carregando posições...</p>
+    </div>
+  } @else if (errorMessage) {
+    <div class="error-state">
+      <p>{{ errorMessage }}</p>
+    </div>
+  } @else if (groupedPositions.length === 0) {
+    <div class="empty-state">
+      <p>Nenhuma posição de Renda Fixa encontrada.</p>
+    </div>
+  } @else {
+    <!-- Grouped Positions -->
+    @for (group of groupedPositions; track group.type) {
+      @if (filterType === 'all' || filterType === group.typeName) {
+        <div class="group-section">
+          <div class="group-header">
+            <h3>{{ group.percentage.toFixed(1) }}% | {{ group.typeName }}</h3>
+            <span class="group-total">{{ formatCurrency(group.totalValue) }}</span>
+          </div>
+          
+          <div class="positions-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ativo</th>
+                  <th>Aplicação</th>
+                  <th>Vencimento</th>
+                  <th>Taxa</th>
+                  <th>Quantidade</th>
+                  <th>Valor Aplicado</th>
+                  <th>Posição</th>
+                  <th>Valor Líquido</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (position of group.positions; track position.id) {
+                  @if (filterType === 'all' || filterType === group.typeName) {
+                    @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
+                      <tr (click)="selectPosition(position)" class="position-row">
+                        <td>
+                          <strong>{{ position.asset_name }}</strong>
+                          <br>
+                          <small>{{ position.asset_code }}</small>
+                        </td>
+                        <td>{{ formatDate(position.application_date) }}</td>
+                        <td>{{ formatDate(position.maturity_date) }}</td>
+                        <td>{{ position.rate || '-' }}</td>
+                        <td>{{ position.quantity }}</td>
+                        <td>{{ formatCurrency(position.applied_value) }}</td>
+                        <td>{{ formatCurrency(position.position_value) }}</td>
+                        <td>{{ formatCurrency(position.net_value) }}</td>
+                      </tr>
+                    }
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    }
+  }
+
+  <!-- Detail Modal -->
+  @if (selectedPosition) {
+    <div class="modal-overlay" (click)="closeDetail()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>Detalhes do CDB</h3>
+          <button class="btn-close" (click)="closeDetail()">×</button>
+        </div>
+        <div class="modal-body">
+          <app-cdb-detail [position]="selectedPosition" />
+        </div>
+      </div>
+    </div>
+  }
+</div>
+

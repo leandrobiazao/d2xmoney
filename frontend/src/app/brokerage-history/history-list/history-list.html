@@ -1,5 +1,6 @@
 <div class="history-app">
-  <!-- Left Sidebar - User Selection -->
+  <!-- Left Sidebar - User Selection (only shown when userId is not provided) -->
+  @if (!userId) {
   <aside class="user-sidebar">
     <div class="sidebar-header">
       <h3>Usuários</h3>
@@ -67,6 +68,7 @@
       }
     </nav>
   </aside>
+  }
 
   <!-- Right Content Area - History Table -->
   <main class="content-area">

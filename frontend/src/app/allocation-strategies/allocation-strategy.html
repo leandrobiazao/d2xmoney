@@ -1,0 +1,167 @@
+<div class="allocation-strategy-app">
+  <!-- Sidebar (only shown when userId is not provided) -->
+  @if (!userId) {
+  <aside class="user-sidebar">
+    <div class="sidebar-header">
+      <h2>Estratégia de Alocação</h2>
+      <p>Selecione um usuário para configurar sua estratégia</p>
+    </div>
+
+    @if (isLoading) {
+      <div class="sidebar-fallback">
+        <p>Carregando usuários...</p>
+      </div>
+    } @else if (users.length === 0) {
+      <div class="sidebar-fallback">
+        <p>Nenhum usuário cadastrado.</p>
+      </div>
+    } @else {
+      <div class="user-grid">
+        @for (user of users; track user.id) {
+          <app-user-item
+            [user]="user"
+            [selected]="selectedUser?.id === user.id"
+            (select)="onUserSelected($event)"
+          />
+        }
+      </div>
+    }
+  </aside>
+  }
+
+  <!-- Content -->
+  <section class="content-area">
+    @if (isLoadingStrategy) {
+      <div class="status-card">
+        <p>Carregando estratégia de alocação...</p>
+      </div>
+    } @else if (!selectedUser) {
+      <div class="fallback-message">
+        <p>Selecione um usuário para visualizar a estratégia.</p>
+      </div>
+    } @else if (errorMessage) {
+      <div class="error-card">
+        <p>{{ errorMessage }}</p>
+        <button class="btn btn-primary" (click)="loadStrategy(selectedUser.id)">Tentar novamente</button>
+      </div>
+    } @else {
+      <div class="strategy-content">
+        <header class="content-header">
+          <div>
+            <p class="eyebrow">Usuário selecionado</p>
+            <h3>{{ selectedUser.name }}</h3>
+            <p class="sub-text">{{ selectedUser.cpf }}</p>
+          </div>
+          <button class="btn btn-primary" (click)="onConfigureStrategy()">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+              <path d="M8 3V13M3 8H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Configurar Estratégia
+          </button>
+        </header>
+
+        @if (strategy) {
+          <section class="details-card">
+            <h4>Detalhes da Estratégia</h4>
+            <div class="detail-row">
+              <span class="detail-label">Valor total do portfólio</span>
+              <div class="percentage-input">
+                <input
+                  type="number"
+                  step="0.01"
+                  [(ngModel)]="totalPortfolioValueInput"
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Criado em</span>
+              <span class="detail-value">{{ strategy.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Última atualização</span>
+              <span class="detail-value">{{ strategy.updated_at | date:'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+          </section>
+
+          @if (draftTypeAllocations.length > 0) {
+            <section class="allocations-panel">
+              <h4>Alocações por tipo</h4>
+              <div class="validation-banner" [class.invalid]="!isTypeTotalValid">
+                <span>Total: {{ typeAllocationTotal | number:'1.0-2' }}%</span>
+                @if (!isTypeTotalValid) {
+                  <span>As alocações por tipo precisam somar 100%</span>
+                }
+              </div>
+              <div class="allocations-list">
+                @for (typeAlloc of draftTypeAllocations; track typeAlloc.id || typeAlloc.investment_type.id; let typeIndex = $index) {
+                  <article class="allocation-card">
+                    <div class="allocation-header">
+                      <div>
+                        <p class="eyebrow">Tipo</p>
+                        <h5>{{ typeAlloc.investment_type.name }}</h5>
+                      </div>
+                      <div class="percentage-input">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          [ngModel]="typeAlloc.target_percentage"
+                          (ngModelChange)="onTypePercentageChange(typeIndex, $event)"
+                        />
+                        <span>%</span>
+                      </div>
+                    </div>
+
+                    @if (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0) {
+                      <div class="sub-allocations">
+                        <div class="validation-banner small" [class.invalid]="!isSubTypeTotalValid(typeAlloc)">
+                          <span>Total por subtipo: {{ getSubTypeTotal(typeAlloc) | number:'1.0-2' }}%</span>
+                          @if (!isSubTypeTotalValid(typeAlloc)) {
+                            <span>Os subtipos precisam somar 100%</span>
+                          }
+                        </div>
+                        @for (subAlloc of typeAlloc.sub_type_allocations; track subAlloc.id || subAlloc.sub_type?.id || subAlloc.custom_name; let subIndex = $index) {
+                          <div class="sub-allocation-row">
+                            <span>{{ subAlloc.sub_type?.name || subAlloc.custom_name }}</span>
+                            <div class="percentage-input">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                [ngModel]="subAlloc.target_percentage"
+                                (ngModelChange)="onSubTypePercentageChange(typeIndex, subIndex, $event)"
+                              />
+                              <span>%</span>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </article>
+                }
+              </div>
+            </section>
+          } @else {
+            <div class="empty-card">
+              <p>Nenhuma estratégia configurada. Clique em “Configurar Estratégia” para começar.</p>
+            </div>
+          }
+        } @else {
+          <div class="empty-card">
+            <p>Este usuário ainda não possui estratégia definida.</p>
+            <button class="btn btn-primary" (click)="onConfigureStrategy()">Criar Estratégia</button>
+          </div>
+        }
+
+        <div class="actions-bar">
+          <button class="btn btn-primary" (click)="onSaveStrategy()" [disabled]="isSaving || !isTypeTotalValid">
+            {{ isSaving ? 'Salvando...' : 'Salvar Estratégia' }}
+          </button>
+        </div>
+      </div>
+    }
+  </section>
+</div>

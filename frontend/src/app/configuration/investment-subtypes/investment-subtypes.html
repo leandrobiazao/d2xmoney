@@ -1,0 +1,97 @@
+<div class="investment-subtypes-container">
+  <div class="header-actions">
+    <div class="header-title-section">
+      <h3>Sub-Tipos de Investimento</h3>
+      <select [(ngModel)]="selectedTypeId" (change)="onTypeChange()" class="type-select">
+        @for (type of investmentTypes; track type.id) {
+          <option [value]="type.id">{{ type.name }}</option>
+        }
+      </select>
+    </div>
+    <button class="btn btn-primary" (click)="onCreate()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+        <path d="M8 3V13M3 8H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Novo Sub-Tipo
+    </button>
+  </div>
+
+  @if (isLoading) {
+    <div class="loading">Carregando...</div>
+  } @else if (subTypes.length === 0) {
+    <div class="empty-state">
+      <p>Nenhum sub-tipo cadastrado para este tipo de investimento.</p>
+    </div>
+  } @else {
+    <div class="subtypes-list">
+      @for (subType of subTypes; track subType.id) {
+        <div class="subtype-item">
+          <div class="subtype-info">
+            <h4>{{ subType.name }}</h4>
+            <p class="code">Código: {{ subType.code }}</p>
+            <p class="order">Ordem: {{ subType.display_order }}</p>
+            <span class="badge" [class.active]="subType.is_active" [class.predefined]="subType.is_predefined">
+              {{ subType.is_predefined ? 'Predefinido' : 'Personalizado' }}
+            </span>
+          </div>
+          <div class="subtype-actions">
+            <button class="btn-icon" (click)="onEdit(subType)" title="Editar">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button class="btn-icon btn-danger" (click)="onDelete(subType)" title="Excluir">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M6 4V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7.333v4M10 7.333v4M3.333 4l.667 9.333a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1L12.667 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+@if (showCreateModal) {
+  <div class="modal-overlay" (click)="onCloseModal()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ editingSubType ? 'Editar' : 'Criar' }} Sub-Tipo de Investimento</h3>
+        <button class="btn-close" (click)="onCloseModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Tipo de Investimento</label>
+          <select [(ngModel)]="formData.investment_type" [disabled]="!!editingSubType" class="form-select">
+            @for (type of investmentTypes; track type.id) {
+              <option [value]="type.id">{{ type.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Nome</label>
+          <input type="text" [(ngModel)]="formData.name" placeholder="Ex: CDB" />
+        </div>
+        <div class="form-group">
+          <label>Código</label>
+          <input type="text" [(ngModel)]="formData.code" placeholder="Ex: CDB" />
+        </div>
+        <div class="form-group">
+          <label>Ordem de Exibição</label>
+          <input type="number" [(ngModel)]="formData.display_order" />
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" [(ngModel)]="formData.is_active" />
+            Ativo
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="onCloseModal()">Cancelar</button>
+        <button class="btn btn-primary" (click)="onSave()">Salvar</button>
+      </div>
+    </div>
+  </div>
+}
+

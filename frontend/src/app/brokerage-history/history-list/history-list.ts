@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BrokerageHistoryService } from '../history.service';
 import { BrokerageNote, HistoryFilters } from '../note.model';
@@ -13,7 +13,9 @@ import { DebugService } from '../../shared/services/debug.service';
   templateUrl: './history-list.html',
   styleUrl: './history-list.css'
 })
-export class HistoryListComponent implements OnInit {
+export class HistoryListComponent implements OnInit, OnChanges {
+  @Input() userId?: string;
+  
   notes: BrokerageNote[] = [];
   filteredNotes: BrokerageNote[] = [];
   users: User[] = [];
@@ -30,8 +32,21 @@ export class HistoryListComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.loadUsers();
+    // Only load users if userId is not provided (standalone mode)
+    if (!this.userId) {
+      this.loadUsers();
+    } else {
+      // When userId is provided, set it as selected
+      this.selectedUserId = this.userId;
+    }
     this.loadHistory();
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['userId'] && !changes['userId'].firstChange) {
+      this.selectedUserId = this.userId || null;
+      this.applyUserFilter();
+    }
   }
 
   loadUsers() {

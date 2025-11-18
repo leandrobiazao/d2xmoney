@@ -164,16 +164,27 @@ export class PdfParserService {
         if (operation) {
           operations.push(operation);
         } else {
-          skippedOperations.push(`Line ${i + 1}: ${nomeAcaoCompleto} - Operation skipped (ticker not found or user cancelled)`);
+          skippedOperations.push(`Linha ${i + 1}: "${nomeAcaoCompleto}" - Operação ignorada (ticker não encontrado ou usuário cancelou)`);
+          this.debug.warn(`⚠️ Operation skipped for "${nomeAcaoCompleto}" on line ${i + 1}`);
         }
       }
     }
 
     if (skippedOperations.length > 0) {
       this.debug.warn(`⚠️ ${skippedOperations.length} operation(s) were skipped:`, skippedOperations);
+      // Throw error if all operations were skipped
+      if (operations.length === 0 && skippedOperations.length > 0) {
+        const skippedDetails = skippedOperations.join('\n');
+        throw new Error(`Nenhuma operação foi processada. ${skippedOperations.length} operação(ões) foram ignoradas:\n\n${skippedDetails}\n\nVerifique se os tickers estão mapeados corretamente.`);
+      }
     }
     
     this.debug.log(`✅ Parsed ${operations.length} operations successfully${skippedOperations.length > 0 ? `, ${skippedOperations.length} skipped` : ''}`);
+    
+    if (operations.length === 0) {
+      throw new Error('Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3 e se contém operações no formato esperado.');
+    }
+    
     return operations;
   }
 
@@ -242,7 +253,7 @@ export class PdfParserService {
               titulo = ticker;
             } else {
               this.debug.warn(`⚠️ User cancelled ticker input for "${nomeAcaoCompleto}", skipping operation`);
-              return null; // User cancelled
+              return null; // User cancelled - will be added to skippedOperations list
             }
           } else {
             this.debug.error(`❌ No onTickerRequired callback provided, cannot process "${nomeAcaoCompleto}"`);

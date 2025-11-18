@@ -19,6 +19,16 @@
   .history-app {
     grid-template-columns: 380px 1fr;
   }
+  
+  /* When sidebar is hidden (userId provided), content takes full width */
+  .history-app:has(.user-sidebar:not(:defined)) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Alternative: when sidebar is conditionally hidden via @if */
+.history-app:not(:has(.user-sidebar)) {
+  grid-template-columns: 1fr;
 }
 
 /* ============================================

@@ -93,7 +93,17 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         });
       };
       
-      const operations = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
+      let operations: Operation[] = [];
+      try {
+        operations = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
+      } catch (parseError) {
+        // If parsing fails, the error message is already set by the parser
+        const errorMsg = parseError instanceof Error ? parseError.message : 'Erro desconhecido ao processar PDF';
+        this.errorMessage = errorMsg;
+        this.isProcessing = false;
+        this.debug.error('PDF parsing error:', parseError);
+        return;
+      }
 
       if (operations.length === 0) {
         this.errorMessage = 'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3.';

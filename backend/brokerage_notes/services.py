@@ -2,8 +2,11 @@
 Service for managing brokerage note history using Django ORM.
 """
 import uuid
+import time
 from datetime import datetime
 from typing import List, Dict, Optional
+from django.db import transaction
+from django.db.utils import OperationalError
 from .models import BrokerageNote, Operation
 
 
@@ -201,38 +204,52 @@ class BrokerageNoteHistoryService:
     
     @staticmethod
     def _save_note_data(note_data: Dict) -> BrokerageNote:
-        """Save note data to database."""
+        """Save note data to database with retry logic for SQLite locking."""
         note_id = note_data.get('id')
         processed_at = None
         if note_data.get('processed_at'):
             processed_at = BrokerageNoteHistoryService._parse_datetime(note_data['processed_at'])
         
-        note, created = BrokerageNote.objects.update_or_create(
-            id=note_id,
-            defaults={
-                'user_id': note_data.get('user_id', ''),
-                'file_name': note_data.get('file_name', ''),
-                'original_file_path': note_data.get('original_file_path'),
-                'note_date': note_data.get('note_date', ''),
-                'note_number': note_data.get('note_number', ''),
-                'processed_at': processed_at,
-                'operations_count': note_data.get('operations_count', 0),
-                'operations': note_data.get('operations', []),
-                'status': note_data.get('status', 'success'),
-                'error_message': note_data.get('error_message'),
-            }
-        )
+        max_retries = 5
+        retry_delay = 0.1  # 100ms
         
-        # Save operations
-        operations = note_data.get('operations', [])
-        if operations:
-            # Delete existing operations for this note
-            Operation.objects.filter(note=note).delete()
-            # Create new operations
-            for op_data in operations:
-                BrokerageNoteHistoryService._create_operation(note, op_data)
-        
-        return note
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    note, created = BrokerageNote.objects.update_or_create(
+                        id=note_id,
+                        defaults={
+                            'user_id': note_data.get('user_id', ''),
+                            'file_name': note_data.get('file_name', ''),
+                            'original_file_path': note_data.get('original_file_path'),
+                            'note_date': note_data.get('note_date', ''),
+                            'note_number': note_data.get('note_number', ''),
+                            'processed_at': processed_at,
+                            'operations_count': note_data.get('operations_count', 0),
+                            'operations': note_data.get('operations', []),
+                            'status': note_data.get('status', 'success'),
+                            'error_message': note_data.get('error_message'),
+                        }
+                    )
+                    
+                    # Save operations
+                    operations = note_data.get('operations', [])
+                    if operations:
+                        # Delete existing operations for this note
+                        Operation.objects.filter(note=note).delete()
+                        # Create new operations
+                        for op_data in operations:
+                            BrokerageNoteHistoryService._create_operation(note, op_data)
+                    
+                    return note
+            except OperationalError as e:
+                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                    # Wait before retrying
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    # Re-raise if it's not a lock error or we've exhausted retries
+                    raise
     
     @staticmethod
     def _create_operation(note: BrokerageNote, op_data: Dict) -> Operation:

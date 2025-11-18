@@ -84,9 +84,23 @@ class BrokerageNoteListView(APIView):
                     status=status.HTTP_409_CONFLICT
                 )
         
-        # Save to JSON file
-        note_id = BrokerageNoteHistoryService.add_note(note_data)
-        note_data['id'] = note_id
+        # Save to database
+        try:
+            note_id = BrokerageNoteHistoryService.add_note(note_data)
+            note_data['id'] = note_id
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR: Failed to save brokerage note: {str(e)}")
+            print(f"ERROR: Traceback: {error_details}")
+            return Response(
+                {
+                    'error': 'Erro ao salvar nota de corretagem',
+                    'message': f'Erro ao salvar no banco de dados: {str(e)}',
+                    'details': error_details if 'database is locked' in str(e).lower() else None
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         # Refresh portfolio after adding note
         try:

@@ -37,6 +37,12 @@ INSTALLED_APPS = [
     'ticker_mappings',
     'portfolio_operations',
     'clubedovalor',
+    'configuration',
+    'stocks',
+    'allocation_strategies',
+    'ambb_strategy',
+    'rebalancing',
+    'fixed_income',
 ]
 
 MIDDLEWARE = [
