@@ -276,5 +276,27 @@ class AllocationStrategyService:
                 'colors': target_colors[:len(current_labels)]
             }
         }
+    
+    @staticmethod
+    @transaction.atomic
+    def create_default_strategy(user: User) -> UserAllocationStrategy:
+        """
+        Create a default empty allocation strategy for a new user.
+        This creates the strategy object but without any allocations,
+        allowing the user to configure it later.
+        
+        Args:
+            user: User instance
+        
+        Returns:
+            UserAllocationStrategy instance
+        """
+        # Create strategy if it doesn't exist
+        strategy, created = UserAllocationStrategy.objects.get_or_create(
+            user=user,
+            defaults={'total_portfolio_value': None}
+        )
+        
+        return strategy
 
 

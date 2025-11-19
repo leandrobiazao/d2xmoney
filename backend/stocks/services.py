@@ -4,6 +4,7 @@ Service for managing stock catalog.
 from typing import List, Dict, Optional
 from datetime import datetime
 import requests
+import yfinance as yf
 from django.db import models as django_models
 from django.utils import timezone
 from .models import Stock
@@ -47,24 +48,34 @@ class StockService:
     @staticmethod
     def fetch_price_from_google_finance(ticker: str, market: str = 'B3') -> Optional[float]:
         """
-        Fetch stock price from Google Finance.
+        Fetch stock price from Google Finance via yfinance library.
         
-        Note: Google Finance API is not officially available.
-        This is a placeholder that would need to be implemented with
-        an actual finance API (e.g., Alpha Vantage, Yahoo Finance, etc.)
+        For Brazilian stocks (B3 market), appends .SA suffix to ticker.
+        Example: BERK34 -> BERK34.SA
+        
+        Args:
+            ticker: Stock ticker symbol
+            market: Financial market (default 'B3' for Brazilian stocks)
+        
+        Returns:
+            Current stock price as float, or None if fetch fails
         """
-        # Placeholder implementation
-        # In production, use a proper finance API
         try:
-            # Example: Using yfinance or similar library
-            # import yfinance as yf
-            # stock = yf.Ticker(f"{ticker}.SA" if market == 'B3' else ticker)
-            # data = stock.history(period="1d")
-            # if not data.empty:
-            #     return float(data['Close'].iloc[-1])
+            # For Brazilian stocks on B3, append .SA suffix
+            yfinance_ticker = f"{ticker}.SA" if market == 'B3' else ticker
+            
+            stock = yf.Ticker(yfinance_ticker)
+            # Fetch last day's data
+            data = stock.history(period="1d")
+            
+            if not data.empty and 'Close' in data.columns:
+                # Return the last closing price
+                price = float(data['Close'].iloc[-1])
+                return price
+            
             return None
         except Exception as e:
-            print(f"Error fetching price for {ticker}: {e}")
+            print(f"Error fetching price for {ticker} (market: {market}): {e}")
             return None
     
     @staticmethod

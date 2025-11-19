@@ -8,4 +8,5 @@ urlpatterns = [
     # Portfolio endpoints
     path('api/portfolio/', views.PortfolioListView.as_view(), name='portfolio-list'),
     path('api/portfolio/refresh/', views.PortfolioRefreshView.as_view(), name='portfolio-refresh'),
+    path('api/portfolio/prices/', views.PortfolioPricesView.as_view(), name='portfolio-prices'),
 ]

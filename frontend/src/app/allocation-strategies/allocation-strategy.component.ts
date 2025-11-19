@@ -142,9 +142,30 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   initializeDraftAllocations(): void {
-    if (!this.strategy?.type_allocations) {
-      this.draftTypeAllocations = [];
+    // If strategy exists but has no type_allocations, initialize with all investment types at 0%
+    if (!this.strategy?.type_allocations || this.strategy.type_allocations.length === 0) {
       this.totalPortfolioValueInput = this.strategy?.total_portfolio_value || null;
+      
+      // Load all investment types and initialize them at 0%
+      this.configurationService.getInvestmentTypes(true).subscribe({
+        next: (investmentTypes) => {
+          this.draftTypeAllocations = investmentTypes.map((type, index) => ({
+            investment_type_id: type.id,
+            investment_type: {
+              id: type.id,
+              name: type.name,
+              code: type.code
+            },
+            target_percentage: 0,
+            display_order: index,
+            sub_type_allocations: []
+          }));
+        },
+        error: (error) => {
+          console.error('Error loading investment types:', error);
+          this.draftTypeAllocations = [];
+        }
+      });
       return;
     }
 

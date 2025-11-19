@@ -99,6 +99,18 @@ class UserListView(APIView):
             users.append(user_data)
             UserJsonStorageService.save_users(users)
             
+            # Create default allocation strategy for new user
+            try:
+                from users.models import User as UserModel
+                from allocation_strategies.services import AllocationStrategyService
+                user_obj = UserModel.objects.get(id=user_id)
+                AllocationStrategyService.create_default_strategy(user_obj)
+            except Exception as e:
+                # Log error but don't fail user creation if strategy creation fails
+                import traceback
+                print(f"Warning: Failed to create default allocation strategy for user {user_id}: {e}")
+                print(traceback.format_exc())
+            
             return Response(user_data, status=status.HTTP_201_CREATED)
         except Exception as e:
             import traceback

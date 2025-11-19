@@ -139,6 +139,114 @@ class PortfolioService:
         return (realized_profit, updated_queue)
     
     @staticmethod
+    def calculate_average_cost_profit(sale_quantity: int, sale_price: float, average_cost: float) -> float:
+        """
+        Calculate realized profit using Average Cost method.
+        
+        Args:
+            sale_quantity: Quantity being sold
+            sale_price: Price per unit of sale
+            average_cost: Current weighted average cost per unit
+        
+        Returns:
+            Realized profit (sale_price - average_cost) × sale_quantity
+        """
+        if average_cost <= 0:
+            # No average cost, assume zero cost basis
+            return 0.0
+        
+        realized_profit = (sale_price - average_cost) * sale_quantity
+        return realized_profit
+    
+    @staticmethod
+    def process_operations_average_cost(operations: List[Dict]) -> Dict[str, Dict]:
+        """
+        Process operations using Average Cost method and return ticker summaries.
+        
+        Average Cost method uses the current weighted average price for all sales,
+        regardless of which specific purchases are being sold.
+        
+        Args:
+            operations: List of operations sorted chronologically
+        
+        Returns:
+            Dict mapping ticker to summary: {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
+        """
+        ticker_summaries = {}  # {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
+        
+        for operation in operations:
+            ticker = operation.get('titulo', '').strip()
+            if not ticker:
+                continue
+            
+            tipo_operacao = operation.get('tipoOperacao', '').upper()
+            quantidade = abs(operation.get('quantidade', 0))
+            preco = operation.get('preco', 0.0)
+            valor_operacao = operation.get('valorOperacao', 0.0)
+            
+            # Initialize ticker summary if not exists
+            if ticker not in ticker_summaries:
+                ticker_summaries[ticker] = {
+                    'quantidade': 0,
+                    'precoMedio': 0.0,
+                    'valorTotalInvestido': 0.0,
+                    'lucroRealizado': 0.0,
+                }
+            
+            summary = ticker_summaries[ticker]
+            
+            if tipo_operacao == 'C':  # Purchase
+                # Calculate new weighted average price
+                current_quantity = summary['quantidade']
+                current_value = summary['valorTotalInvestido']
+                
+                new_quantity = current_quantity + quantidade
+                new_value = current_value + valor_operacao
+                
+                # Update quantity and total invested value
+                summary['quantidade'] = new_quantity
+                summary['valorTotalInvestido'] = new_value
+                
+                # Recalculate weighted average price
+                summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                
+            elif tipo_operacao == 'V':  # Sale
+                # Calculate realized profit using current average cost
+                current_average_cost = summary['precoMedio']
+                realized_profit = PortfolioService.calculate_average_cost_profit(
+                    quantidade, preco, current_average_cost
+                )
+                
+                # Update realized profit (cumulative)
+                summary['lucroRealizado'] += realized_profit
+                
+                # Update quantity and total invested value
+                current_quantity = summary['quantidade']
+                new_quantity = current_quantity - quantidade
+                if new_quantity < 0:
+                    new_quantity = 0
+                
+                # Recalculate value invested (proportional reduction)
+                if current_quantity > 0:
+                    reduction_ratio = quantidade / current_quantity
+                    summary['valorTotalInvestido'] *= (1 - reduction_ratio)
+                    if summary['valorTotalInvestido'] < 0:
+                        summary['valorTotalInvestido'] = 0.0
+                else:
+                    summary['valorTotalInvestido'] = 0.0
+                
+                summary['quantidade'] = new_quantity
+                
+                # Update average cost (should remain the same if using average cost method correctly)
+                # But recalculate to ensure accuracy after rounding
+                if new_quantity > 0 and summary['valorTotalInvestido'] > 0:
+                    summary['precoMedio'] = summary['valorTotalInvestido'] / new_quantity
+                else:
+                    summary['precoMedio'] = 0.0
+        
+        return ticker_summaries
+    
+    @staticmethod
     def process_operations_fifo(operations: List[Dict]) -> Dict[str, Dict]:
         """
         Process operations using FIFO method and return ticker summaries.
@@ -279,8 +387,8 @@ class PortfolioService:
         # Process each user's operations
         portfolio = {}
         for user_id, user_operations in operations_by_user.items():
-            # Process operations using FIFO
-            ticker_summaries = PortfolioService.process_operations_fifo(user_operations)
+            # Process operations using Average Cost method
+            ticker_summaries = PortfolioService.process_operations_average_cost(user_operations)
             
             # Convert to list format sorted by ticker
             ticker_list = [

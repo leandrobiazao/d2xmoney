@@ -61,6 +61,10 @@
               <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
             </div>
             <div class="summary-card">
+              <span class="label">Valor Atual:</span>
+              <span class="value">{{ formatCurrency(getTotalValorAtual()) }}</span>
+            </div>
+            <div class="summary-card">
               <span class="label">Ativos na Carteira:</span>
               <span class="value">{{ getActivePositionsCount() }}</span>
             </div>
@@ -73,7 +77,9 @@
                 <th>Quantidade</th>
                 <th>Preço Médio</th>
                 <th>Valor Total Investido</th>
-                <th>Lucro Realizado</th>
+                <th>Preço Atual</th>
+                <th>Valor Atual</th>
+                <th>Lucro</th>
               </tr>
             </thead>
             <tbody>
@@ -83,8 +89,10 @@
                   <td>{{ position.quantidadeTotal }}</td>
                   <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
                   <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
-                  <td [class.positive]="position.lucroRealizado > 0" [class.negative]="position.lucroRealizado < 0">
-                    {{ formatCurrency(position.lucroRealizado || 0) }}
+                  <td>{{ position.currentPrice !== undefined ? formatCurrency(position.currentPrice) : 'N/A' }}</td>
+                  <td>{{ position.valorAtual !== undefined ? formatCurrency(position.valorAtual) : 'N/A' }}</td>
+                  <td [class.positive]="(position.totalLucro || 0) > 0" [class.negative]="(position.totalLucro || 0) < 0">
+                    {{ formatCurrency(position.totalLucro || 0) }}
                   </td>
                 </tr>
               }

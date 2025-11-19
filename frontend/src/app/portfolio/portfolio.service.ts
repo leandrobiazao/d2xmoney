@@ -87,6 +87,37 @@ export class PortfolioService {
   }
 
   /**
+   * Fetch current prices for multiple tickers
+   */
+  fetchCurrentPrices(tickers: string[], market: string = 'B3'): Observable<Map<string, number>> {
+    if (!tickers || tickers.length === 0) {
+      return of(new Map<string, number>());
+    }
+
+    this.debug.log(`💰 Fetching prices for ${tickers.length} tickers:`, tickers);
+
+    return this.http.post<{ prices: { [ticker: string]: number } }>(
+      `${this.PORTFOLIO_API_URL}/prices/`,
+      { tickers, market }
+    ).pipe(
+      tap(response => {
+        this.debug.log(`✅ Received prices for ${Object.keys(response.prices).length} tickers`);
+      }),
+      map(response => {
+        const priceMap = new Map<string, number>();
+        for (const [ticker, price] of Object.entries(response.prices)) {
+          priceMap.set(ticker, price);
+        }
+        return priceMap;
+      }),
+      catchError(error => {
+        this.debug.error('Error fetching prices:', error);
+        return of(new Map<string, number>());
+      })
+    );
+  }
+
+  /**
    * Debug method to trace position calculation for a specific ticker
    * This helps diagnose position calculation issues
    */

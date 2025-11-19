@@ -118,7 +118,63 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     this.portfolioService.getPositionsAsync(this.userId).subscribe({
       next: (positions) => {
         this.debug.log(`✅ Loaded ${positions.length} positions`);
-        this.positions = this.sortPositions(positions);
+        
+        // Fetch current prices for all positions
+        const tickers = positions.map(p => p.titulo);
+        if (tickers.length > 0) {
+          this.portfolioService.fetchCurrentPrices(tickers).subscribe({
+            next: (priceMap) => {
+              // Update positions with current prices and calculate unrealized P&L, valor atual, and total lucro
+              const positionsWithPrices = positions.map(position => {
+                const currentPrice = priceMap.get(position.titulo);
+                let unrealizedPnL: number | undefined;
+                let valorAtual: number | undefined;
+                let totalLucro: number | undefined;
+                
+                if (currentPrice !== undefined && position.quantidadeTotal > 0) {
+                  // Calculate unrealized P&L: (Current Price - Average Cost) × Quantity
+                  unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
+                  // Calculate Valor Atual: Quantidade × Preço Atual
+                  valorAtual = position.quantidadeTotal * currentPrice;
+                  // Calculate Total Lucro: Lucro Realizado + Lucro Não Realizado
+                  totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
+                } else if (position.quantidadeTotal > 0) {
+                  // If no price, total lucro is just realized profit
+                  totalLucro = position.lucroRealizado || 0;
+                } else {
+                  // No quantity, total lucro is just realized profit
+                  totalLucro = position.lucroRealizado || 0;
+                }
+                
+                return {
+                  ...position,
+                  currentPrice,
+                  unrealizedPnL,
+                  valorAtual,
+                  totalLucro
+                };
+              });
+              
+              this.positions = this.sortPositions(positionsWithPrices);
+            },
+            error: (error) => {
+              this.debug.error('❌ Error fetching prices:', error);
+              // Continue with positions without prices, but still calculate totalLucro
+              const positionsWithoutPrices = positions.map(position => ({
+                ...position,
+                totalLucro: position.lucroRealizado || 0
+              }));
+              this.positions = this.sortPositions(positionsWithoutPrices);
+            }
+          });
+        } else {
+          // No positions, but ensure totalLucro is set
+          const positionsWithTotalLucro = positions.map(position => ({
+            ...position,
+            totalLucro: position.lucroRealizado || 0
+          }));
+          this.positions = this.sortPositions(positionsWithTotalLucro);
+        }
       },
       error: (error) => {
         this.debug.error('❌ Error loading positions:', error);
@@ -298,13 +354,24 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     return this.positions.filter(pos => pos.quantidadeTotal > 0).length;
   }
 
+  getTotalValorAtual(): number {
+    return this.positions.reduce((sum, pos) => sum + (pos.valorAtual || 0), 0);
+  }
+
   sortPositions(positions: Position[]): Position[] {
     return [...positions].sort((a, b) => {
-      // First sort by Valor Total Investido (descending)
+      // Sort by Valor Atual (descending - highest value first)
+      const valorA = a.valorAtual || 0;
+      const valorB = b.valorAtual || 0;
+      
+      if (valorB !== valorA) {
+        return valorB - valorA;
+      }
+      // If equal, sort by Valor Total Investido (descending)
       if (b.valorTotalInvestido !== a.valorTotalInvestido) {
         return b.valorTotalInvestido - a.valorTotalInvestido;
       }
-      // If equal, sort by Lucro Realizado (descending)
+      // If still equal, sort by Lucro Realizado (descending)
       return (b.lucroRealizado || 0) - (a.lucroRealizado || 0);
     });
   }

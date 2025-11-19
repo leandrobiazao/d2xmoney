@@ -339,7 +339,7 @@
   .positions-table,
   .operations-table {
     font-size: 0.8rem;
-    min-width: 800px;
+    min-width: 1000px;
   }
 
   .positions-table th,
