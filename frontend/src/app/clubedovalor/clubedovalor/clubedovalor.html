@@ -1,33 +1,4 @@
 <div class="clubedovalor-app">
-  <!-- Modal Dialog -->
-  @if (showUrlDialog) {
-    <div class="modal-overlay" (click)="onUrlDialogCancel()">
-      <div class="modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>Atualizar do Google Sheets</h2>
-        </div>
-        <div class="modal-body">
-          <p class="modal-description">Cole o link do Google Sheets para atualizar os dados.</p>
-          <input 
-            type="text" 
-            [(ngModel)]="sheetsUrl"
-            placeholder="https://docs.google.com/spreadsheets/..."
-            (keyup.enter)="onUrlDialogConfirm()"
-            (keyup.escape)="onUrlDialogCancel()"
-            autofocus
-            class="modal-input"
-          />
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" (click)="onUrlDialogCancel()">Cancelar</button>
-          <button class="btn-primary" (click)="onUrlDialogConfirm()" [disabled]="!sheetsUrl.trim()">
-            Atualizar
-          </button>
-        </div>
-      </div>
-    </div>
-  }
-
   <!-- Error Message -->
   @if (error) {
     <div class="alert alert-error">

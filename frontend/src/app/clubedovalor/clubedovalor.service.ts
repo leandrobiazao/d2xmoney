@@ -20,8 +20,8 @@ export class ClubeDoValorService {
     return this.http.get<ClubeDoValorHistoryResponse>(`${this.apiUrl}/history/`);
   }
 
-  refreshFromSheets(sheetsUrl: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/refresh/`, { sheets_url: sheetsUrl }, {
+  refreshFromSheets(): Observable<any> {
+    return this.http.post(`${this.apiUrl}/refresh/`, {}, {
       headers: {
         'Content-Type': 'application/json'
       }

@@ -44,12 +44,8 @@ class ClubeDoValorRefreshView(APIView):
     def post(self, request):
         """Fetch from Google Sheets and create new snapshot."""
         try:
-            sheets_url = request.data.get('sheets_url')
-            if not sheets_url:
-                return Response({
-                    'error': 'sheets_url is required',
-                    'message': 'Please provide the Google Sheets URL'
-                }, status=status.HTTP_400_BAD_REQUEST)
+            # Use provided URL or default to the fixed URL
+            sheets_url = request.data.get('sheets_url', None)
             
             result = ClubeDoValorService.refresh_from_google_sheets(sheets_url=sheets_url)
             return Response({
@@ -64,9 +60,22 @@ class ClubeDoValorRefreshView(APIView):
             traceback_str = traceback.format_exc()
             print(f"Error refreshing from Google Sheets: {error_details}")
             print(f"Traceback: {traceback_str}")
+            
+            # Provide more helpful error message for 404 errors
+            if '404' in error_details or 'Not Found' in error_details:
+                error_message = (
+                    'Failed to access Google Sheets. This usually means:\n'
+                    '1. The sheet is not published to the web (File > Share > Publish to web)\n'
+                    '2. The URL is incorrect or incomplete\n'
+                    '3. The sheet has been moved or deleted\n\n'
+                    f'Error: {error_details}'
+                )
+            else:
+                error_message = f'Failed to refresh from Google Sheets: {error_details}'
+            
             return Response({
                 'error': 'Failed to refresh from Google Sheets',
-                'details': error_details
+                'details': error_message
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

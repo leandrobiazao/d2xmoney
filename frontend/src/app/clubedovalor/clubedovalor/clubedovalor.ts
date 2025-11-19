@@ -22,9 +22,6 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
   sortField: keyof Stock | '' = '';
   sortDirection: 'asc' | 'desc' = 'asc';
 
-  // URL Dialog
-  showUrlDialog: boolean = false;
-  sheetsUrl: string = '';
 
   // Month Selection
   selectedMonth: string = '';
@@ -177,31 +174,14 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
   }
 
   refreshFromSheets(): void {
-    // Show dialog to get URL
-    this.showUrlDialog = true;
-    this.sheetsUrl = '';
-  }
-
-  onUrlDialogCancel(): void {
-    this.showUrlDialog = false;
-    this.sheetsUrl = '';
-  }
-
-  onUrlDialogConfirm(): void {
-    if (!this.sheetsUrl || !this.sheetsUrl.trim()) {
-      this.error = 'Por favor, informe a URL do Google Sheets.';
-      return;
-    }
-
-    this.showUrlDialog = false;
+    // Refresh directly using the fixed URL (no dialog needed)
     this.loading = true;
     this.error = null;
 
-    this.clubeDoValorService.refreshFromSheets(this.sheetsUrl.trim()).subscribe({
+    this.clubeDoValorService.refreshFromSheets().subscribe({
       next: (response) => {
         // Reload available months and then load stocks
         this.loadAvailableMonths();
-        this.sheetsUrl = ''; // Clear URL after successful refresh
       },
       error: (error) => {
         const errorMsg = error.error?.details || error.error?.error || error.message || 'Erro ao atualizar dados do Google Sheets.';

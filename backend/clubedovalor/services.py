@@ -13,8 +13,8 @@ from .models import StockSnapshot, Stock
 class ClubeDoValorService:
     """Service for managing stock recommendations from Google Sheets."""
     
-    GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/u/0/d/1-C7tynYu9CHbQzg-bCAH4StLGfYqDcKWWqSvHbWxrCw/pubhtml/sheet?headers=false&gid=0"
-    GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/u/0/d/1-C7tynYu9CHbQzg-bCAH4StLGfYqDcKWWqSvHbWxrCw/export?format=csv&gid=0"
+    GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRcssbJB5jamNErlaJ2KNYnnI-O8JSlti4lTyEhhjqM2X6x0Ql4pmrw07XbW6T4osXAjs9qecu8rds8/pubhtml?gid=0&single=true&widget=true&headers=false"
+    GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRcssbJB5jamNErlaJ2KNYnnI-O8JSlti4lTyEhhjqM2X6x0Ql4pmrw07XbW6T4osXAjs9qecu8rds8/pub?output=csv"
     
     @staticmethod
     def parse_brazilian_date(date_str: str) -> str:
@@ -354,37 +354,57 @@ class ClubeDoValorService:
         """Fetch from Google Sheets and create new snapshot. Tries CSV first, then HTML."""
         # Use provided URL or default
         if sheets_url:
+            # Clean the URL first - remove query params and fragments
+            clean_url = sheets_url.strip().rstrip('/')
+            if '?' in clean_url:
+                clean_url = clean_url.split('?')[0]
+            if '#' in clean_url:
+                clean_url = clean_url.split('#')[0]
+            
+            print(f"Processing Google Sheets URL: {clean_url}")
+            
             # Extract URLs from provided URL
-            if '/export?format=csv' in sheets_url:
-                # User provided CSV URL
-                csv_url = sheets_url
-                # Extract base URL and construct HTML URL
-                if '/export?format=csv' in sheets_url:
-                    base = sheets_url.split('/export?format=csv')[0]
-                    gid_param = ''
-                    if '&gid=' in sheets_url:
-                        gid_param = '&gid=' + sheets_url.split('&gid=')[1].split('&')[0]
-                    elif '?gid=' in sheets_url:
-                        gid_param = '?gid=' + sheets_url.split('?gid=')[1].split('&')[0]
-                    html_url = f"{base}/pubhtml/sheet?headers=false{gid_param}"
-                else:
-                    html_url = sheets_url.replace('/export?format=csv', '/pubhtml/sheet?headers=false')
-            elif '/pubhtml' in sheets_url:
+            # Check for /pubhtml FIRST (if URL already has it, we know how to construct CSV)
+            if '/pubhtml' in sheets_url:
                 # User provided HTML URL
                 html_url = sheets_url
                 # Extract base URL and construct CSV URL
+                # For /d/e/ format with /pubhtml, CSV should be /pub?output=csv
                 base = sheets_url.split('/pubhtml')[0]
+                # Remove query parameters from base for CSV URL
+                if '?' in base:
+                    base = base.split('?')[0]
+                csv_url = f"{base}/pub?output=csv"
+                print(f"Detected HTML URL. CSV URL: {csv_url}, HTML URL: {html_url}")
+            elif '/export?format=csv' in sheets_url:
+                # User provided CSV URL
+                csv_url = sheets_url
+                # Extract base URL and construct HTML URL
+                base = sheets_url.split('/export?format=csv')[0]
                 gid_param = ''
                 if '&gid=' in sheets_url:
                     gid_param = '&gid=' + sheets_url.split('&gid=')[1].split('&')[0]
                 elif '?gid=' in sheets_url:
-                    gid_param = '&gid=' + sheets_url.split('?gid=')[1].split('&')[0]
-                csv_url = f"{base}/export?format=csv{gid_param}"
+                    gid_param = '?gid=' + sheets_url.split('?gid=')[1].split('&')[0]
+                html_url = f"{base}/pubhtml/sheet?headers=false{gid_param}"
+                print(f"Detected CSV export URL. CSV URL: {csv_url}, HTML URL: {html_url}")
+            elif '/d/e/' in clean_url or '/spreadsheets/d/e/' in clean_url:
+                # Handle published/embedded URL format (/d/e/PUBLISH_ID)
+                # For /d/e/ format, use pub?output=csv for CSV and /pubhtml for HTML
+                csv_url = f"{clean_url}/pub?output=csv"
+                html_url = f"{clean_url}/pubhtml"
+                print(f"Detected /d/e/ format. CSV URL: {csv_url}, HTML URL: {html_url}")
+            elif '/d/' in clean_url and '/e/' not in clean_url:
+                # Handle direct document ID format (/d/DOC_ID)
+                # For /d/DOC_ID format, use export?format=csv and pubhtml/sheet
+                csv_url = f"{clean_url}/export?format=csv&gid=0"
+                html_url = f"{clean_url}/pubhtml/sheet?headers=false&gid=0"
+                print(f"Detected /d/ format. CSV URL: {csv_url}, HTML URL: {html_url}")
             else:
-                # Assume it's a base URL, construct both
-                base_url = sheets_url.rstrip('/')
-                csv_url = f"{base_url}/export?format=csv&gid=0"
-                html_url = f"{base_url}/pubhtml/sheet?headers=false&gid=0"
+                # Fallback: assume it's a base URL, construct both
+                csv_url = f"{clean_url}/export?format=csv&gid=0"
+                html_url = f"{clean_url}/pubhtml/sheet?headers=false&gid=0"
+                print(f"Using fallback format. CSV URL: {csv_url}, HTML URL: {html_url}")
         else:
             csv_url = ClubeDoValorService.GOOGLE_SHEETS_CSV_URL
             html_url = ClubeDoValorService.GOOGLE_SHEETS_URL
@@ -400,14 +420,19 @@ class ClubeDoValorService:
             print(f"Successfully parsed {len(stocks)} stocks from CSV")
         except Exception as csv_err:
             csv_error = str(csv_err)
-            print(f"CSV fetch failed: {csv_error}, trying HTML...")
+            print(f"CSV fetch failed: {csv_error}")
+            print(f"CSV URL that failed: {csv_url}")
+            print(f"Trying HTML fallback...")
             # Fallback to HTML
             try:
+                print(f"Attempting to fetch from Google Sheets as HTML: {html_url}")
                 html_content = ClubeDoValorService.fetch_from_google_sheets_url(html_url)
                 timestamp, stocks = ClubeDoValorService.parse_html_table(html_content)
                 print(f"Successfully parsed {len(stocks)} stocks from HTML")
             except Exception as html_err:
                 html_error = str(html_err)
+                print(f"HTML fetch also failed: {html_error}")
+                print(f"HTML URL that failed: {html_url}")
                 error_msg = f"Both CSV and HTML fetch failed. CSV error: {csv_error}. HTML error: {html_error}"
                 print(error_msg)
                 raise Exception(error_msg)
