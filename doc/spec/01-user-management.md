@@ -373,9 +373,11 @@ or
 
 ## Data Storage
 
-- **Users**: JSON file storage at `backend/data/users.json`
+- **Users**: Database storage (SQLite) in `users` table
 - **User Pictures**: File storage at `backend/media/users/`
 - File format: `{user_id}_{original_filename}`
+
+**Note**: The system has migrated from JSON file storage to SQLite database. All user data is now stored in the database with proper relationships and constraints. See [09-database-data-model.md](09-database-data-model.md) for complete database schema.
 
 ## Integration
 

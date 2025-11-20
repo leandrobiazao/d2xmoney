@@ -20,9 +20,9 @@ The portfolio system uses a backend-driven architecture:
 
 ## Data Models
 
-### Portfolio JSON Structure
+### Portfolio Database Structure
 
-Portfolio data is stored in `backend/data/portfolio.json` with the following structure:
+Portfolio data is stored in the `portfolio_positions` table with the following structure:
 
 ```json
 {
@@ -126,12 +126,9 @@ Realized profit is calculated using the **FIFO (First In, First Out)** method:
 
 **Key Methods:**
 
-- `load_portfolio() -> Dict[str, List[Dict]]`
-  - Loads `portfolio.json` from `backend/data/portfolio.json`
-  - Returns dictionary keyed by `user_id`
-
-- `save_portfolio(portfolio: Dict[str, List[Dict]]) -> None`
-  - Saves portfolio to JSON file
+- `get_user_portfolio(user_id: str) -> List[PortfolioPosition]`
+  - Loads portfolio positions from database
+  - Returns list of PortfolioPosition objects for the user
 
 - `get_user_portfolio(user_id: str) -> List[Dict]`
   - Returns ticker summaries for a specific user
@@ -146,9 +143,9 @@ Realized profit is calculated using the **FIFO (First In, First Out)** method:
   - Returns (profit, updated_purchase_queue)
 
 - `refresh_portfolio_from_brokerage_notes() -> None`
-  - Rebuilds entire `portfolio.json` from all brokerage notes
+  - Rebuilds entire portfolio from all brokerage notes in database
   - Processes all operations chronologically
-  - Groups by user_id and calculates ticker summaries
+  - Updates PortfolioPosition records grouped by user_id and ticker
 
 ### API Endpoints
 
@@ -266,9 +263,11 @@ python manage.py refresh_portfolio
 
 ### Backend Storage
 
-- **Portfolio**: `backend/data/portfolio.json`
-- **Brokerage Notes**: `backend/data/brokerage_notes.json` (source of truth)
-- **Users**: `backend/data/users.json`
+- **Portfolio**: Database storage (SQLite) in `portfolio_positions` table
+- **Brokerage Notes**: Database storage (SQLite) in `brokerage_notes` and `operations` tables (source of truth)
+- **Users**: Database storage (SQLite) in `users` table
+
+**Note**: The system has migrated from JSON file storage to SQLite database. All portfolio data is now stored in the database with proper relationships and constraints. See [09-database-data-model.md](09-database-data-model.md) for complete database schema.
 
 ### Data Flow
 

@@ -223,11 +223,28 @@ graph TB
 
 ## API Endpoints
 
-### Existing Endpoints Used
-- `GET /api/clubedovalor/` - Get current month's stocks
-- `GET /api/clubedovalor/history/` - Get all historical snapshots
+**Base URL**: `http://localhost:8000/api/clubedovalor/`
+
+### Get Current Month's Stocks
+- `GET /api/clubedovalor/?strategy={strategy}` - Get current month's stocks (default: AMBB1)
+
+### Get Historical Snapshots
+- `GET /api/clubedovalor/history/?strategy={strategy}` - Get all historical snapshots (default: AMBB1)
+
+### Refresh from Google Sheets
 - `POST /api/clubedovalor/refresh/` - Refresh from Google Sheets
-- `DELETE /api/clubedovalor/stocks/{codigo}/` - Delete stock
+  - Request body: `{ "sheets_url": "...", "strategy": "AMBB1" }` (both optional)
+
+### Delete Stock
+- `DELETE /api/clubedovalor/stocks/{codigo}/?strategy={strategy}` - Delete stock and auto-reorder rankings
+
+### Data Model
+
+The Clube do Valor app uses the following database models (see [09-database-data-model.md](09-database-data-model.md)):
+- `StockSnapshot` - Monthly snapshots of stock recommendations
+- `Stock` (clubedovalor.Stock) - Individual stock data within snapshots
+
+**Note**: This is different from `stocks.Stock` (stock catalog). They serve different purposes.
 
 ### Data Structure
 

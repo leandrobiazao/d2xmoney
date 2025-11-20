@@ -4,12 +4,20 @@ This document provides the main specification and technology stack for the Portf
 
 ## Project Overview
 
-The Portfolio Management System is a full-stack application for managing investment portfolios, processing B3 brokerage notes, and tracking investment positions. The system consists of:
+The Portfolio Management System (d2xmoney) is a comprehensive full-stack application for managing investment portfolios, processing B3 brokerage notes, and tracking investment positions. The system consists of 11 Django backend apps and multiple Angular frontend components:
 
+**Core Features:**
 - **User Management**: Create and manage users with CPF, account information, and profile pictures
 - **Brokerage Note Processing**: Parse B3 brokerage note PDFs and extract trading operations
 - **Brokerage History**: Track and view history of processed brokerage notes
 - **Portfolio Summary**: View positions, operations, and portfolio analytics
+- **Fixed Income Management**: Track CDB, Tesouro Direto, and other fixed income investments
+- **Stock Catalog**: Master catalog of stocks with ticker symbols and pricing
+- **Investment Configuration**: Manage investment types and sub-types
+- **Allocation Strategies**: Define and manage portfolio allocation strategies
+- **Rebalancing**: Generate and manage rebalancing recommendations
+- **Clube do Valor**: Stock recommendations and monthly snapshots
+- **Ticker Mappings**: Map company names to stock ticker symbols
 
 ## Technology Stack
 
@@ -27,9 +35,17 @@ The Portfolio Management System is a full-stack application for managing investm
 - **Framework**: Django 5.0+
 - **REST API**: Django REST Framework 3.14.0+
 - **Language**: Python 3.10+
+- **Database**: SQLite 3 (development)
 - **Key Dependencies**:
+  - Django>=5.0
+  - djangorestframework>=3.14.0
   - django-cors-headers>=4.3.0 (CORS support)
   - python-dateutil>=2.8.0 (date utilities)
+  - requests>=2.31.0 (HTTP requests)
+  - beautifulsoup4>=4.12.0 (HTML parsing)
+  - Pillow>=10.0.0 (Image processing)
+  - openpyxl>=3.1.0 (Excel file handling)
+  - yfinance>=0.2.0 (Stock price data)
 
 ## Project Structure
 
@@ -38,15 +54,14 @@ project-root/
 ├── frontend/          # Angular application (port 4400)
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── users/              # User Management App
-│   │   │   ├── brokerage-note/    # Brokerage Note Processing App
-│   │   │   ├── brokerage-history/ # Brokerage History App
-│   │   │   ├── portfolio/          # Portfolio Summary App
-│   │   │   │   ├── ticker-mapping/ # Ticker Mapping Module
-│   │   │   │   │   ├── ticker-mappings.ts
-│   │   │   │   │   └── ticker-mapping.service.ts
-│   │   │   │   ├── portfolio.service.ts
-│   │   │   │   └── ...
+│   │   │   ├── users/              # User Management
+│   │   │   ├── brokerage-note/    # Brokerage Note Processing
+│   │   │   ├── brokerage-history/ # Brokerage History
+│   │   │   ├── portfolio/          # Portfolio Summary
+│   │   │   ├── clubedovalor/       # Clube do Valor
+│   │   │   ├── configuration/      # Investment Configuration
+│   │   │   ├── allocation-strategies/ # Allocation Strategies
+│   │   │   ├── fixed-income/       # Fixed Income Management
 │   │   │   └── shared/             # Shared components and utilities
 │   │   └── assets/
 │   ├── angular.json
@@ -55,6 +70,7 @@ project-root/
 ├── backend/           # Django REST API (port 8000)
 │   ├── manage.py
 │   ├── requirements.txt
+│   ├── db.sqlite3    # SQLite database
 │   ├── portfolio_api/
 │   │   ├── settings.py
 │   │   ├── urls.py
@@ -62,19 +78,34 @@ project-root/
 │   ├── users/         # User Management API
 │   ├── brokerage_notes/ # Brokerage Note Processing API
 │   ├── portfolio_operations/ # Portfolio Summary API
-│   ├── data/          # JSON file storage
-│   │   ├── users.json
-│   │   ├── brokerage_notes.json
-│   │   └── portfolio.json
+│   ├── ticker_mappings/ # Ticker Mapping API
+│   ├── clubedovalor/  # Clube do Valor API
+│   ├── configuration/ # Investment Configuration API
+│   ├── stocks/        # Stock Catalog API
+│   ├── allocation_strategies/ # Allocation Strategies API
+│   ├── ambb_strategy/ # AMBB Strategy API
+│   ├── rebalancing/   # Rebalancing API
+│   ├── fixed_income/   # Fixed Income API
+│   ├── data/          # Data backups and exports
 │   └── media/         # File uploads
-│       └── users/
+│       ├── users/
+│       ├── brokerage_notes/
+│       └── portafolio_wallet/
 └── doc/
     └── spec/          # This specification
         ├── README.md (this file)
         ├── 01-user-management.md
         ├── 02-brokerage-note-processing.md
         ├── 03-brokerage-history.md
-        └── 04-portfolio-summary.md
+        ├── 04-portfolio-summary.md
+        ├── 05-clube-do-valor-redesign.md
+        ├── 09-database-data-model.md
+        ├── 10-configuration.md
+        ├── 11-stocks.md
+        ├── 12-allocation-strategies.md
+        ├── 13-rebalancing.md
+        ├── 14-fixed-income.md
+        └── 15-ticker-mappings.md
 ```
 
 ## Initial Project Setup
@@ -155,6 +186,11 @@ Create requirements.txt in backend/ directory with:
 - djangorestframework>=3.14.0
 - django-cors-headers>=4.3.0
 - python-dateutil>=2.8.0
+- requests>=2.31.0
+- beautifulsoup4>=4.12.0
+- Pillow>=10.0.0
+- openpyxl>=3.1.0
+- yfinance>=0.2.0
 
 Install dependencies: pip install -r requirements.txt
 ```
@@ -208,11 +244,13 @@ Update frontend/package.json scripts:
 
 The complete specification is organized into the following application-specific documents:
 
+### Core Applications
+
 1. **[01-user-management.md](01-user-management.md)** - User Management Infrastructure
    - User CRUD operations
    - CPF validation
    - Picture upload
-   - JSON file storage
+   - Database storage
 
 2. **[02-brokerage-note-processing.md](02-brokerage-note-processing.md)** - Brokerage Note Processing
    - PDF parsing
@@ -231,6 +269,65 @@ The complete specification is organized into the following application-specific 
    - Operations display
    - Filters and analytics
    - Portfolio service
+
+5. **[05-clube-do-valor-redesign.md](05-clube-do-valor-redesign.md)** - Clube do Valor
+   - Stock recommendations
+   - Monthly snapshots
+   - Strategy-based filtering
+   - Google Sheets integration
+
+### Configuration & Catalog
+
+6. **[10-configuration.md](10-configuration.md)** - Investment Configuration
+   - Investment types management
+   - Investment sub-types management
+   - Excel import functionality
+   - Type classification
+
+7. **[11-stocks.md](11-stocks.md)** - Stock Catalog
+   - Stock master catalog
+   - Ticker management
+   - Price updates
+   - Stock classification
+
+8. **[15-ticker-mappings.md](15-ticker-mappings.md)** - Ticker Mappings
+   - Company name to ticker mapping
+   - Mapping management
+   - Integration with brokerage note processing
+
+### Portfolio Management
+
+9. **[12-allocation-strategies.md](12-allocation-strategies.md)** - Allocation Strategies
+   - User allocation strategies
+   - Investment type allocations
+   - Sub-type allocations
+   - Stock-specific allocations
+
+10. **[13-rebalancing.md](13-rebalancing.md)** - Rebalancing
+    - Rebalancing recommendations
+    - Recommendation generation
+    - Action tracking
+    - Status management
+
+11. **[14-fixed-income.md](14-fixed-income.md)** - Fixed Income
+    - Fixed income positions
+    - CDB management
+    - Tesouro Direto tracking
+    - Portfolio import
+
+### Database & Testing
+
+12. **[09-database-data-model.md](09-database-data-model.md)** - Database Schema
+    - Complete database model documentation
+    - Entity relationships
+    - Field specifications
+    - Constraints and validations
+
+13. **[TESTING.md](TESTING.md)** - Testing Guide
+    - Unit testing
+    - E2E testing
+    - Test structure
+    - Debugging guides
 
 ## Running the Application
 
@@ -274,64 +371,157 @@ npm start
 - `DELETE /api/users/{id}/` - Delete user
 
 ### Brokerage Note Processing API
-- `POST /api/brokerage-notes/upload/` - Upload and process PDF
-- `GET /api/ticker-mappings/` - Get ticker mappings
-- `POST /api/ticker-mappings/` - Update ticker mappings
-
-### Brokerage History API
 - `GET /api/brokerage-notes/` - List processed notes
+- `POST /api/brokerage-notes/` - Upload and process PDF
 - `GET /api/brokerage-notes/{id}/` - Get note details
+- `DELETE /api/brokerage-notes/{id}/` - Delete note
 - `GET /api/brokerage-notes/{id}/operations/` - Get operations from note
 
 ### Portfolio Summary API
 - `GET /api/portfolio/?user_id={user_id}` - Get user's ticker summaries
 - `POST /api/portfolio/refresh/` - Manually refresh portfolio from brokerage notes
+- `GET /api/portfolio/prices/` - Get portfolio prices
 
 **Note**: Portfolio is automatically refreshed after brokerage note upload/delete.
+
+### Ticker Mappings API
+- `GET /api/ticker-mappings/` - List all ticker mappings
+- `POST /api/ticker-mappings/` - Create ticker mapping
+- `GET /api/ticker-mappings/{nome}/` - Get mapping by company name
+- `PUT /api/ticker-mappings/{nome}/` - Update mapping
+- `DELETE /api/ticker-mappings/{nome}/` - Delete mapping
+
+### Clube do Valor API
+- `GET /api/clubedovalor/?strategy={strategy}` - Get current month's stocks
+- `GET /api/clubedovalor/history/?strategy={strategy}` - Get historical snapshots
+- `POST /api/clubedovalor/refresh/` - Refresh from Google Sheets
+- `DELETE /api/clubedovalor/stocks/{codigo}/?strategy={strategy}` - Delete stock
+
+### Configuration API
+- `GET /api/configuration/investment-types/` - List investment types
+- `POST /api/configuration/investment-types/` - Create investment type
+- `GET /api/configuration/investment-types/{id}/` - Get investment type
+- `PUT /api/configuration/investment-types/{id}/` - Update investment type
+- `DELETE /api/configuration/investment-types/{id}/` - Delete investment type
+- `GET /api/configuration/investment-subtypes/` - List investment sub-types
+- `POST /api/configuration/investment-subtypes/` - Create investment sub-type
+- `POST /api/configuration/investment-subtypes/import_excel/` - Import from Excel
+
+### Stocks API
+- `GET /api/stocks/stocks/` - List stocks (with search, filters)
+- `POST /api/stocks/stocks/` - Create stock
+- `GET /api/stocks/stocks/{ticker}/` - Get stock by ticker
+- `PUT /api/stocks/stocks/{ticker}/` - Update stock
+- `DELETE /api/stocks/stocks/{ticker}/` - Delete stock
+- `POST /api/stocks/stocks/update_prices/` - Update all stock prices
+- `POST /api/stocks/stocks/{ticker}/update_price/` - Update specific stock price
+
+### Allocation Strategies API
+- `GET /api/allocation-strategies/allocation-strategies/` - List strategies
+- `POST /api/allocation-strategies/allocation-strategies/` - Create strategy
+- `GET /api/allocation-strategies/allocation-strategies/{id}/` - Get strategy
+- `PUT /api/allocation-strategies/allocation-strategies/{id}/` - Update strategy
+- `DELETE /api/allocation-strategies/allocation-strategies/{id}/` - Delete strategy
+
+### Rebalancing API
+- `GET /api/rebalancing/recommendations/` - List recommendations
+- `POST /api/rebalancing/recommendations/` - Create recommendation
+- `GET /api/rebalancing/recommendations/{id}/` - Get recommendation
+- `POST /api/rebalancing/recommendations/generate/` - Generate recommendations
+- `POST /api/rebalancing/recommendations/{id}/apply/` - Apply recommendation
+- `POST /api/rebalancing/recommendations/{id}/dismiss/` - Dismiss recommendation
+
+### AMBB Strategy API
+- `GET /api/ambb-strategy/ambb-strategy/recommendations/?user_id={user_id}` - Get AMBB recommendations
+
+### Fixed Income API
+- `GET /api/fixed-income/positions/` - List fixed income positions
+- `POST /api/fixed-income/positions/` - Create position
+- `GET /api/fixed-income/positions/{id}/` - Get position
+- `PUT /api/fixed-income/positions/{id}/` - Update position
+- `DELETE /api/fixed-income/positions/{id}/` - Delete position
+- `GET /api/fixed-income/tesouro-direto/` - List Tesouro Direto positions
+- `POST /api/fixed-income/tesouro-direto/` - Create Tesouro Direto position
 
 For detailed API documentation, see the respective application specification files.
 
 ## Data Persistence
 
+### Database
+The system uses **SQLite 3** for data storage (development environment). All data is stored in Django models across 11 apps:
+
+- **Users**: User accounts and profiles
+- **Brokerage Notes**: Processed brokerage notes and operations
+- **Portfolio Positions**: Calculated portfolio positions (FIFO method)
+- **Fixed Income**: CDB, Tesouro Direto, and other fixed income positions
+- **Stocks**: Master stock catalog with ticker symbols and prices
+- **Investment Types/Sub-types**: Configuration data for investment classification
+- **Allocation Strategies**: User-defined portfolio allocation strategies
+- **Rebalancing**: Rebalancing recommendations and actions
+- **Clube do Valor**: Stock snapshots and recommendations
+- **Ticker Mappings**: Company name to ticker symbol mappings
+
+See [09-database-data-model.md](09-database-data-model.md) for complete database schema documentation.
+
+### File Storage
+- User pictures: `backend/media/users/`
+- Brokerage note PDFs: `backend/media/brokerage_notes/`
+- Portfolio exports: `backend/media/portafolio_wallet/`
+- Data backups: `backend/data/backup/`
+
 ### Frontend
-- Ticker mappings: localStorage key `ticker_mappings`
-- Custom ticker mappings: localStorage key `ticker_mappings_custom`
+- Ticker mappings: localStorage key `ticker_mappings` (legacy, now uses database)
+- Custom ticker mappings: localStorage key `ticker_mappings_custom` (legacy, now uses database)
 
-### Backend
-- Users: JSON file storage at `backend/data/users.json`
-- Brokerage notes: JSON file storage at `backend/data/brokerage_notes.json`
-- **Portfolio**: JSON file storage at `backend/data/portfolio.json` (aggregated summary)
-- User pictures: File storage at `backend/media/users/`
-- Note PDFs: File storage at `backend/media/brokerage_notes/`
-
-**Important**: Portfolio data is stored on the backend, not in localStorage. The `portfolio.json` file is automatically generated from `brokerage_notes.json` using FIFO calculation.
+**Important**: The system has migrated from JSON file storage to SQLite database. All data is now stored in the database with proper relationships and constraints.
 
 ## Development Workflow
 
 1. **Setup**: Follow Initial Project Setup (Prompts 1.1-1.6)
 2. **Infrastructure**: Configure infrastructure (Prompts INFRA-1 to INFRA-4)
-3. **User Management**: Implement user management (see 01-user-management.md)
-4. **Brokerage Note Processing**: Implement note processing (see 02-brokerage-note-processing.md)
-5. **Brokerage History**: Implement history tracking (see 03-brokerage-history.md)
-6. **Portfolio Summary**: Implement portfolio summary (see 04-portfolio-summary.md)
-7. **Database Schema**: Reference database models and relationships (see 09-database-data-model.md)
+3. **Database**: Run migrations: `python manage.py migrate`
+4. **Core Features**: 
+   - User Management (see 01-user-management.md)
+   - Brokerage Note Processing (see 02-brokerage-note-processing.md)
+   - Brokerage History (see 03-brokerage-history.md)
+   - Portfolio Summary (see 04-portfolio-summary.md)
+5. **Configuration**: 
+   - Investment Configuration (see 10-configuration.md)
+   - Stock Catalog (see 11-stocks.md)
+   - Ticker Mappings (see 15-ticker-mappings.md)
+6. **Portfolio Management**:
+   - Allocation Strategies (see 12-allocation-strategies.md)
+   - Rebalancing (see 13-rebalancing.md)
+   - Fixed Income (see 14-fixed-income.md)
+7. **Additional Features**:
+   - Clube do Valor (see 05-clube-do-valor-redesign.md)
+8. **Database Schema**: Reference database models and relationships (see 09-database-data-model.md)
 
 ## Notes
 
 - The application uses standalone Angular components throughout
-- User and brokerage note data is stored in JSON files on the Django backend
+- All data is stored in SQLite database (migrated from JSON files)
 - Portfolio data is automatically calculated from brokerage notes using FIFO method
 - Portfolio is automatically refreshed after brokerage note upload/delete
 - PDF parsing supports standard B3 brokerage note format
-- Ticker mappings are automatically saved when new company names are encountered
+- Ticker mappings are stored in database and automatically used during PDF processing
 - CPF validation follows Brazilian CPF algorithm (11 digits with checksum validation)
 - Frontend runs on port 4400 (not 4200)
+- Backend runs on port 8000
+- Database migrations must be run: `python manage.py migrate`
 
 ---
 
-**Document Version**: 3.0  
+**Document Version**: 4.0  
 **Last Updated**: November 2025  
 **Changes**: 
+- v4.0: Complete documentation update
+  - Added all 11 Django apps documentation
+  - Updated technology stack with all dependencies
+  - Migrated from JSON file storage to SQLite database
+  - Added comprehensive API endpoints documentation
+  - Added new application specifications (10-15)
+  - Updated project structure
 - v3.0: Restructured into application-specific specification files
 - Removed task management functionality
 - Added brokerage history tracking

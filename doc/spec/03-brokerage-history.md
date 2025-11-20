@@ -350,8 +350,10 @@ Update UploadPdfComponent in brokerage note processing:
 
 ## Data Storage
 
-- **Brokerage Notes History**: JSON file storage at `backend/data/brokerage_notes.json`
+- **Brokerage Notes History**: Database storage (SQLite) in `brokerage_notes` and `operations` tables
 - **Note PDFs**: File storage at `backend/media/brokerage_notes/`
+
+**Note**: The system has migrated from JSON file storage to SQLite database. All brokerage note data is now stored in the database with proper relationships and constraints. See [09-database-data-model.md](09-database-data-model.md) for complete database schema.
 - File format: `{note_id}_{original_filename}`
 
 ## Integration
