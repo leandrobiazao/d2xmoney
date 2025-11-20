@@ -11,25 +11,35 @@ export class ClubeDoValorService {
 
   constructor(private http: HttpClient) {}
 
-  getCurrentStocks(): Observable<ClubeDoValorResponse> {
+  getCurrentStocks(strategy: string = 'AMBB1'): Observable<ClubeDoValorResponse> {
     const url = this.apiUrl.endsWith('/') ? this.apiUrl : `${this.apiUrl}/`;
-    return this.http.get<ClubeDoValorResponse>(url);
+    console.log(`[SERVICE] getCurrentStocks called with strategy: ${strategy}`);
+    return this.http.get<ClubeDoValorResponse>(url, {
+      params: { strategy }
+    });
   }
 
-  getHistory(): Observable<ClubeDoValorHistoryResponse> {
-    return this.http.get<ClubeDoValorHistoryResponse>(`${this.apiUrl}/history/`);
+  getHistory(strategy: string = 'AMBB1'): Observable<ClubeDoValorHistoryResponse> {
+    console.log(`[SERVICE] getHistory called with strategy: ${strategy}`);
+    return this.http.get<ClubeDoValorHistoryResponse>(`${this.apiUrl}/history/`, {
+      params: { strategy }
+    });
   }
 
-  refreshFromSheets(): Observable<any> {
-    return this.http.post(`${this.apiUrl}/refresh/`, {}, {
+  refreshFromSheets(strategy: string = 'AMBB1'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/refresh/`, {
+      strategy: strategy
+    }, {
       headers: {
         'Content-Type': 'application/json'
       }
     });
   }
 
-  deleteStock(codigo: string): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/stocks/${codigo}/`);
+  deleteStock(codigo: string, strategy: string = 'AMBB1'): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/stocks/${codigo}/`, {
+      params: { strategy }
+    });
   }
 }
 

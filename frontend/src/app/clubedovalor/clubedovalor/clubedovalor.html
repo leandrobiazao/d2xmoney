@@ -35,10 +35,24 @@
 
   <!-- Right Content Area - Table -->
   <main class="content-area">
+    <!-- Strategy Selector Menu -->
+    <div class="strategy-selector">
+      @for (strategy of strategies; track strategy.code) {
+        <button 
+          class="strategy-button"
+          [class.active]="selectedStrategy === strategy.code"
+          (click)="selectStrategy(strategy.code)"
+        >
+          <span class="strategy-label">{{ strategy.label }}</span>
+          <span class="strategy-name">{{ strategy.fullName }}</span>
+        </button>
+      }
+    </div>
+
     <!-- Content Header - Always visible -->
     <div class="content-header">
       <div class="header-title">
-        <h2>Ações Mais Baratas da Bolsa - {{ getCurrentMonthLabel() }}</h2>
+        <h2>{{ getCurrentStrategyLabel() }} - {{ getCurrentMonthLabel() }}</h2>
         <p>Recomendações Mensais</p>
       </div>
       <div class="header-actions">
@@ -68,67 +82,68 @@
         <p>Carregando dados...</p>
       </div>
     } @else if (filteredStocks.length > 0) {
-      <!-- Table -->
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
+      <!-- AMBB1 Table -->
+      @if (selectedStrategy === 'AMBB1') {
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                  <span>Ranking</span>
+                  <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                </th>
+                <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                </th>
+                <th class="col-yield sortable" [class.active]="sortField === 'earningYield'" (click)="selectSortField('earningYield')">
+                  <span>Earning Yield</span>
+                  <span class="sort-icon">{{ getSortIcon('earningYield') }}</span>
+                </th>
+                <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                  <span>Nome</span>
+                  <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                </th>
+                <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                  <span>Setor</span>
+                  <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                </th>
+                <th class="col-ev sortable" [class.active]="sortField === 'ev'" (click)="selectSortField('ev')">
+                  <span>EV</span>
+                  <span class="sort-icon">{{ getSortIcon('ev') }}</span>
+                </th>
+                <th class="col-ebit sortable" [class.active]="sortField === 'ebit'" (click)="selectSortField('ebit')">
+                  <span>Ebit</span>
+                  <span class="sort-icon">{{ getSortIcon('ebit') }}</span>
+                </th>
+                <th class="col-liquidity sortable" [class.active]="sortField === 'liquidez'" (click)="selectSortField('liquidez')">
+                  <span>Liquidez</span>
+                  <span class="sort-icon">{{ getSortIcon('liquidez') }}</span>
+                </th>
+                <th class="col-price sortable" [class.active]="sortField === 'cotacaoAtual'" (click)="selectSortField('cotacaoAtual')">
+                  <span>Cotação</span>
+                  <span class="sort-icon">{{ getSortIcon('cotacaoAtual') }}</span>
+                </th>
+                <th class="col-notes">Observação</th>
+                <th class="col-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (stock of filteredStocks; track stock.codigo) {
                 <tr>
-                  <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
-                    <span>Ranking</span>
-                    <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
-                  </th>
-                  <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
-                    <span>Código</span>
-                    <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
-                  </th>
-                  <th class="col-yield sortable" [class.active]="sortField === 'earningYield'" (click)="selectSortField('earningYield')">
-                    <span>Earning Yield</span>
-                    <span class="sort-icon">{{ getSortIcon('earningYield') }}</span>
-                  </th>
-                  <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
-                    <span>Nome</span>
-                    <span class="sort-icon">{{ getSortIcon('nome') }}</span>
-                  </th>
-                  <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
-                    <span>Setor</span>
-                    <span class="sort-icon">{{ getSortIcon('setor') }}</span>
-                  </th>
-                  <th class="col-ev sortable" [class.active]="sortField === 'ev'" (click)="selectSortField('ev')">
-                    <span>EV</span>
-                    <span class="sort-icon">{{ getSortIcon('ev') }}</span>
-                  </th>
-                  <th class="col-ebit sortable" [class.active]="sortField === 'ebit'" (click)="selectSortField('ebit')">
-                    <span>Ebit</span>
-                    <span class="sort-icon">{{ getSortIcon('ebit') }}</span>
-                  </th>
-                  <th class="col-liquidity sortable" [class.active]="sortField === 'liquidez'" (click)="selectSortField('liquidez')">
-                    <span>Liquidez</span>
-                    <span class="sort-icon">{{ getSortIcon('liquidez') }}</span>
-                  </th>
-                  <th class="col-price sortable" [class.active]="sortField === 'cotacaoAtual'" (click)="selectSortField('cotacaoAtual')">
-                    <span>Cotação</span>
-                    <span class="sort-icon">{{ getSortIcon('cotacaoAtual') }}</span>
-                  </th>
-                  <th class="col-notes">Observação</th>
-                  <th class="col-actions">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (stock of filteredStocks; track stock.codigo) {
-                  <tr>
                     <td class="col-rank">{{ stock.ranking }}</td>
                     <td class="col-code">
                       <span class="code-badge">{{ stock.codigo }}</span>
                     </td>
                     <td class="col-yield">
-                      <span class="value-positive">{{ formatPercentage(stock.earningYield) }}</span>
+                      <span class="value-positive">{{ formatPercentage(getStockField(stock, 'earningYield')) }}</span>
                     </td>
                     <td class="col-name">{{ stock.nome }}</td>
                     <td class="col-sector">{{ stock.setor }}</td>
-                    <td class="col-ev">{{ formatCurrency(stock.ev) }}</td>
-                    <td class="col-ebit">{{ formatCurrency(stock.ebit) }}</td>
-                    <td class="col-liquidity">{{ formatCurrency(stock.liquidez) }}</td>
-                    <td class="col-price">{{ formatCurrency(stock.cotacaoAtual) }}</td>
+                    <td class="col-ev">{{ formatCurrency(getStockField(stock, 'ev')) }}</td>
+                    <td class="col-ebit">{{ formatCurrency(getStockField(stock, 'ebit')) }}</td>
+                    <td class="col-liquidity">{{ formatCurrency(getStockField(stock, 'liquidez')) }}</td>
+                    <td class="col-price">{{ formatCurrency(getStockField(stock, 'cotacaoAtual')) }}</td>
                     <td class="col-notes">{{ stock.observacao }}</td>
                     <td class="col-actions">
                       <button 
@@ -143,10 +158,343 @@
                       </button>
                     </td>
                   </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      
+      <!-- AMBB2 Table -->
+      @if (selectedStrategy === 'AMBB2') {
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                  <span>Ranking</span>
+                  <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                </th>
+                <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                </th>
+                <th class="col-valueidx sortable" [class.active]="sortField === 'valueIdx'" (click)="selectSortField('valueIdx')">
+                  <span>Value IDX</span>
+                  <span class="sort-icon">{{ getSortIcon('valueIdx') }}</span>
+                </th>
+                <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                  <span>Nome</span>
+                  <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                </th>
+                <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                  <span>Setor</span>
+                  <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                </th>
+                <th class="col-yield sortable" [class.active]="sortField === 'earningYield'" (click)="selectSortField('earningYield')">
+                  <span>EY</span>
+                  <span class="sort-icon">{{ getSortIcon('earningYield') }}</span>
+                </th>
+                <th class="col-cfy sortable" [class.active]="sortField === 'cfy'" (click)="selectSortField('cfy')">
+                  <span>CFY</span>
+                  <span class="sort-icon">{{ getSortIcon('cfy') }}</span>
+                </th>
+                <th class="col-btm sortable" [class.active]="sortField === 'btm'" (click)="selectSortField('btm')">
+                  <span>BtM</span>
+                  <span class="sort-icon">{{ getSortIcon('btm') }}</span>
+                </th>
+                <th class="col-mktcap sortable" [class.active]="sortField === 'mktcap'" (click)="selectSortField('mktcap')">
+                  <span>MktCap</span>
+                  <span class="sort-icon">{{ getSortIcon('mktcap') }}</span>
+                </th>
+                <th class="col-ev sortable" [class.active]="sortField === 'ev'" (click)="selectSortField('ev')">
+                  <span>EV</span>
+                  <span class="sort-icon">{{ getSortIcon('ev') }}</span>
+                </th>
+                <th class="col-liquidity sortable" [class.active]="sortField === 'liquidez'" (click)="selectSortField('liquidez')">
+                  <span>Liquidez (3M)</span>
+                  <span class="sort-icon">{{ getSortIcon('liquidez') }}</span>
+                </th>
+                <th class="col-price sortable" [class.active]="sortField === 'cotacaoAtual'" (click)="selectSortField('cotacaoAtual')">
+                  <span>Cotação</span>
+                  <span class="sort-icon">{{ getSortIcon('cotacaoAtual') }}</span>
+                </th>
+                <th class="col-notes">Observação</th>
+                <th class="col-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (stock of filteredStocks; track stock.codigo) {
+                <tr>
+                  <td class="col-rank">{{ stock.ranking }}</td>
+                  <td class="col-code">
+                    <span class="code-badge">{{ stock.codigo }}</span>
+                  </td>
+                  <td class="col-valueidx">{{ formatValueIdx(stock) }}</td>
+                  <td class="col-name">{{ stock.nome }}</td>
+                  <td class="col-sector">{{ stock.setor }}</td>
+                  <td class="col-yield">
+                    <span class="value-positive">{{ formatPercentage(getStockField(stock, 'earningYield')) }}</span>
+                  </td>
+                  <td class="col-cfy">
+                    @if (getStockField(stock, 'cfy') > 0 && getStockField(stock, 'cfy') < 100) {
+                      <span class="value-positive">{{ formatPercentage(getStockField(stock, 'cfy')) }}</span>
+                    } @else {
+                      <span>{{ formatCurrency(getStockField(stock, 'cfy')) }}</span>
+                    }
+                  </td>
+                  <td class="col-btm">{{ formatCurrency(getStockField(stock, 'btm')) }}</td>
+                  <td class="col-mktcap">{{ formatCurrency(getStockField(stock, 'mktcap')) }}</td>
+                  <td class="col-ev">{{ formatCurrency(getStockField(stock, 'ev')) }}</td>
+                  <td class="col-liquidity">{{ formatCurrency(getStockField(stock, 'liquidez')) }}</td>
+                  <td class="col-price">{{ formatCurrency(getStockField(stock, 'cotacaoAtual')) }}</td>
+                  <td class="col-notes">{{ stock.observacao }}</td>
+                  <td class="col-actions">
+                    <button 
+                      class="action-button" 
+                      (click)="deleteStock(stock)"
+                      [disabled]="loading"
+                      title="Remover ação"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      
+      <!-- MDIV Table -->
+      @if (selectedStrategy === 'MDIV') {
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                  <span>Ranking</span>
+                  <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                </th>
+                <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                </th>
+                <th class="col-dividend sortable" [class.active]="sortField === 'dividendYield36m'" (click)="selectSortField('dividendYield36m')">
+                  <span>Dividend Yield (36 meses)</span>
+                  <span class="sort-icon">{{ getSortIcon('dividendYield36m') }}</span>
+                </th>
+                <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                  <span>Nome</span>
+                  <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                </th>
+                <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                  <span>Setor</span>
+                  <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                </th>
+                <th class="col-liquidity sortable" [class.active]="sortField === 'liquidezMedia3m'" (click)="selectSortField('liquidezMedia3m')">
+                  <span>Liquidez Média 3M</span>
+                  <span class="sort-icon">{{ getSortIcon('liquidezMedia3m') }}</span>
+                </th>
+                <th class="col-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (stock of filteredStocks; track stock.codigo) {
+                <tr>
+                  <td class="col-rank">{{ stock.ranking }}</td>
+                  <td class="col-code">
+                    <span class="code-badge">{{ stock.codigo }}</span>
+                  </td>
+                  <td class="col-dividend">
+                    <span class="value-positive">{{ formatPercentage(getDividendYield(stock)) }}</span>
+                  </td>
+                  <td class="col-name">{{ stock.nome }}</td>
+                  <td class="col-sector">{{ stock.setor }}</td>
+                  <td class="col-liquidity">{{ formatCurrency(getLiquidezMedia(stock)) }}</td>
+                  <td class="col-actions">
+                    <button 
+                      class="action-button" 
+                      (click)="deleteStock(stock)"
+                      [disabled]="loading"
+                      title="Remover ação"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      
+      <!-- MOMM Table -->
+      @if (selectedStrategy === 'MOMM') {
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                  <span>Ranking</span>
+                  <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                </th>
+                <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                </th>
+                <th class="col-momentum sortable" [class.active]="sortField === 'momentum6m'" (click)="selectSortField('momentum6m')">
+                  <span>6 months Mom(%)</span>
+                  <span class="sort-icon">{{ getSortIcon('momentum6m') }}</span>
+                </th>
+                <th class="col-idratio sortable" [class.active]="sortField === 'idRatio'" (click)="selectSortField('idRatio')">
+                  <span>ID ratio</span>
+                  <span class="sort-icon">{{ getSortIcon('idRatio') }}</span>
+                </th>
+                <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                  <span>Nome</span>
+                  <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                </th>
+                <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                  <span>Setor</span>
+                  <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                </th>
+                <th class="col-subsetor sortable" [class.active]="sortField === 'subsetor'" (click)="selectSortField('subsetor')">
+                  <span>Subsetor</span>
+                  <span class="sort-icon">{{ getSortIcon('subsetor') }}</span>
+                </th>
+                <th class="col-segmento sortable" [class.active]="sortField === 'segmento'" (click)="selectSortField('segmento')">
+                  <span>Segmento</span>
+                  <span class="sort-icon">{{ getSortIcon('segmento') }}</span>
+                </th>
+                <th class="col-volume sortable" [class.active]="sortField === 'volumeMm'" (click)="selectSortField('volumeMm')">
+                  <span>Volume(MM)</span>
+                  <span class="sort-icon">{{ getSortIcon('volumeMm') }}</span>
+                </th>
+                <th class="col-capitalizacao sortable" [class.active]="sortField === 'capitalizacaoMm'" (click)="selectSortField('capitalizacaoMm')">
+                  <span>Capitalização (MM)</span>
+                  <span class="sort-icon">{{ getSortIcon('capitalizacaoMm') }}</span>
+                </th>
+                <th class="col-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (stock of filteredStocks; track stock.codigo) {
+                <tr>
+                  <td class="col-rank">{{ stock.ranking }}</td>
+                  <td class="col-code">
+                    <span class="code-badge">{{ stock.codigo }}</span>
+                  </td>
+                  <td class="col-momentum">
+                    <span [class.value-positive]="getStockField(stock, 'momentum6m') > 0" [class.value-negative]="getStockField(stock, 'momentum6m') < 0">
+                      {{ formatPercentage(getStockField(stock, 'momentum6m')) }}
+                    </span>
+                  </td>
+                  <td class="col-idratio">{{ formatDecimal(getStockField(stock, 'idRatio'), 2) }}</td>
+                  <td class="col-name">{{ stock.nome }}</td>
+                  <td class="col-sector">{{ stock.setor }}</td>
+                  <td class="col-subsetor">{{ getStockStringField(stock, 'subsetor') || '-' }}</td>
+                  <td class="col-segmento">{{ getStockStringField(stock, 'segmento') || '-' }}</td>
+                  <td class="col-volume">{{ formatCurrency(getStockField(stock, 'volumeMm')) }}</td>
+                  <td class="col-capitalizacao">{{ formatCurrency(getStockField(stock, 'capitalizacaoMm')) }}</td>
+                  <td class="col-actions">
+                    <button class="action-button" (click)="deleteStock(stock)" [disabled]="loading" title="Remover ação">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+      
+      <!-- MOMP Table -->
+      @if (selectedStrategy === 'MOMP') {
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" [class.active]="sortField === 'ranking'" (click)="selectSortField('ranking')">
+                  <span>Ranking</span>
+                  <span class="sort-icon">{{ getSortIcon('ranking') }}</span>
+                </th>
+                <th class="col-code sortable" [class.active]="sortField === 'codigo'" (click)="selectSortField('codigo')">
+                  <span>Código</span>
+                  <span class="sort-icon">{{ getSortIcon('codigo') }}</span>
+                </th>
+                <th class="col-momentum sortable" [class.active]="sortField === 'momentum6m'" (click)="selectSortField('momentum6m')">
+                  <span>6 months Mom(%)</span>
+                  <span class="sort-icon">{{ getSortIcon('momentum6m') }}</span>
+                </th>
+                <th class="col-idratio sortable" [class.active]="sortField === 'idRatio'" (click)="selectSortField('idRatio')">
+                  <span>ID ratio</span>
+                  <span class="sort-icon">{{ getSortIcon('idRatio') }}</span>
+                </th>
+                <th class="col-name sortable" [class.active]="sortField === 'nome'" (click)="selectSortField('nome')">
+                  <span>Nome</span>
+                  <span class="sort-icon">{{ getSortIcon('nome') }}</span>
+                </th>
+                <th class="col-sector sortable" [class.active]="sortField === 'setor'" (click)="selectSortField('setor')">
+                  <span>Setor</span>
+                  <span class="sort-icon">{{ getSortIcon('setor') }}</span>
+                </th>
+                <th class="col-subsetor sortable" [class.active]="sortField === 'subsetor'" (click)="selectSortField('subsetor')">
+                  <span>Subsetor</span>
+                  <span class="sort-icon">{{ getSortIcon('subsetor') }}</span>
+                </th>
+                <th class="col-segmento sortable" [class.active]="sortField === 'segmento'" (click)="selectSortField('segmento')">
+                  <span>Segmento</span>
+                  <span class="sort-icon">{{ getSortIcon('segmento') }}</span>
+                </th>
+                <th class="col-volume sortable" [class.active]="sortField === 'volumeMm'" (click)="selectSortField('volumeMm')">
+                  <span>Volume(MM)</span>
+                  <span class="sort-icon">{{ getSortIcon('volumeMm') }}</span>
+                </th>
+                <th class="col-capitalizacao sortable" [class.active]="sortField === 'capitalizacaoMm'" (click)="selectSortField('capitalizacaoMm')">
+                  <span>Capitalização (MM)</span>
+                  <span class="sort-icon">{{ getSortIcon('capitalizacaoMm') }}</span>
+                </th>
+                <th class="col-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (stock of filteredStocks; track stock.codigo) {
+                <tr>
+                  <td class="col-rank">{{ stock.ranking }}</td>
+                  <td class="col-code">
+                    <span class="code-badge">{{ stock.codigo }}</span>
+                  </td>
+                  <td class="col-momentum">
+                    <span [class.value-positive]="getStockField(stock, 'momentum6m') > 0" [class.value-negative]="getStockField(stock, 'momentum6m') < 0">
+                      {{ formatPercentage(getStockField(stock, 'momentum6m')) }}
+                    </span>
+                  </td>
+                  <td class="col-idratio">{{ formatDecimal(getStockField(stock, 'idRatio'), 2) }}</td>
+                  <td class="col-name">{{ stock.nome }}</td>
+                  <td class="col-sector">{{ stock.setor }}</td>
+                  <td class="col-subsetor">{{ getStockStringField(stock, 'subsetor') || '-' }}</td>
+                  <td class="col-segmento">{{ getStockStringField(stock, 'segmento') || '-' }}</td>
+                  <td class="col-volume">{{ formatCurrency(getStockField(stock, 'volumeMm')) }}</td>
+                  <td class="col-capitalizacao">{{ formatCurrency(getStockField(stock, 'capitalizacaoMm')) }}</td>
+                  <td class="col-actions">
+                    <button class="action-button" (click)="deleteStock(stock)" [disabled]="loading" title="Remover ação">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M10 4L4 10M4 4l6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
       <div class="table-footer">
         <span>{{ filteredStocks.length }} {{ filteredStocks.length === 1 ? 'ação' : 'ações' }}</span>
       </div>

@@ -12,28 +12,54 @@ class ClubeDoValorListView(APIView):
     """Get current month's stock list."""
     
     def get(self, request):
-        """Get current month's stocks."""
-        stocks = ClubeDoValorService.get_current_stocks()
-        current_data = ClubeDoValorService.load_ambb_data()
-        current_info = current_data.get('current', {})
-        
-        return Response({
-            'timestamp': current_info.get('timestamp', ''),
-            'stocks': stocks,
-            'count': len(stocks)
-        }, status=status.HTTP_200_OK)
+        """Get current month's stocks for a specific strategy."""
+        try:
+            strategy_type = request.query_params.get('strategy', 'AMBB1')
+            stocks = ClubeDoValorService.get_current_stocks(strategy_type)
+            current_data = ClubeDoValorService.load_ambb_data(strategy_type)
+            current_info = current_data.get('current', {})
+            
+            return Response({
+                'timestamp': current_info.get('timestamp', ''),
+                'stocks': stocks,
+                'count': len(stocks),
+                'strategy_type': strategy_type
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            import traceback
+            error_details = str(e)
+            traceback_str = traceback.format_exc()
+            print(f"Error in ClubeDoValorListView: {error_details}")
+            print(f"Traceback: {traceback_str}")
+            return Response({
+                'error': 'Erro ao carregar dados',
+                'details': error_details
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ClubeDoValorHistoryView(APIView):
     """Get all historical snapshots."""
     
     def get(self, request):
-        """Get all historical snapshots."""
-        snapshots = ClubeDoValorService.get_historical_snapshots()
-        return Response({
-            'snapshots': snapshots,
-            'count': len(snapshots)
-        }, status=status.HTTP_200_OK)
+        """Get all historical snapshots for a specific strategy."""
+        try:
+            strategy_type = request.query_params.get('strategy', 'AMBB1')
+            snapshots = ClubeDoValorService.get_historical_snapshots(strategy_type)
+            return Response({
+                'snapshots': snapshots,
+                'count': len(snapshots),
+                'strategy_type': strategy_type
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            import traceback
+            error_details = str(e)
+            traceback_str = traceback.format_exc()
+            print(f"Error in ClubeDoValorHistoryView: {error_details}")
+            print(f"Traceback: {traceback_str}")
+            return Response({
+                'error': 'Erro ao carregar histórico',
+                'details': error_details
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ClubeDoValorRefreshView(APIView):
@@ -46,8 +72,9 @@ class ClubeDoValorRefreshView(APIView):
         try:
             # Use provided URL or default to the fixed URL
             sheets_url = request.data.get('sheets_url', None)
+            strategy_type = request.data.get('strategy', None)
             
-            result = ClubeDoValorService.refresh_from_google_sheets(sheets_url=sheets_url)
+            result = ClubeDoValorService.refresh_from_google_sheets(sheets_url=sheets_url, strategy_type=strategy_type)
             return Response({
                 'success': True,
                 'message': 'Data refreshed successfully from Google Sheets',
@@ -84,7 +111,8 @@ class ClubeDoValorStockDetailView(APIView):
     
     def delete(self, request, codigo):
         """Delete a stock by codigo."""
-        deleted = ClubeDoValorService.delete_stock(codigo)
+        strategy_type = request.query_params.get('strategy', 'AMBB1')
+        deleted = ClubeDoValorService.delete_stock(codigo, strategy_type)
         
         if deleted:
             return Response({
