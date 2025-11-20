@@ -4,6 +4,33 @@
   padding: 2rem;
 }
 
+.configuration-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .configuration-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .configuration-right {
+    order: -1;
+  }
+}
+
+.configuration-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.configuration-right {
+  display: flex;
+  flex-direction: column;
+}
+
 .configuration-header {
   background: #ffffff;
   border-radius: 8px;

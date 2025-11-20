@@ -1,0 +1,98 @@
+<div class="stocks-container">
+  <div class="stocks-header">
+    <h3>Ações</h3>
+    <p>Gerencie o catálogo de ações e seus tipos de investimento</p>
+  </div>
+
+  <div class="search-section">
+    <div class="search-controls">
+      <input 
+        type="text" 
+        placeholder="Buscar por ticker ou nome..." 
+        [(ngModel)]="searchTerm"
+        (input)="onSearchChange()"
+        class="search-input"
+      />
+      <button 
+        class="sync-button"
+        (click)="syncPortfolioStocks()"
+        [disabled]="isSyncing"
+        title="Sincronizar ações do portfólio"
+      >
+        @if (isSyncing) {
+          Sincronizando...
+        } @else {
+          🔄 Sincronizar do Portfólio
+        }
+      </button>
+    </div>
+    @if (syncMessage) {
+      <div class="sync-message">{{ syncMessage }}</div>
+    }
+  </div>
+
+  @if (isLoading) {
+    <div class="loading">Carregando ações...</div>
+  } @else if (errorMessage) {
+    <div class="error">
+      <p>{{ errorMessage }}</p>
+      <button class="retry-btn" (click)="loadStocks()">Tentar Novamente</button>
+    </div>
+  } @else if (stocks.length === 0) {
+    <div class="empty-state">
+      <p>Nenhuma ação encontrada.</p>
+    </div>
+  } @else {
+    <div class="stocks-table-container">
+      <table class="stocks-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Nome</th>
+            <th>CNPJ</th>
+            <th>Mercado</th>
+            <th>Classe</th>
+            <th>Preço Atual</th>
+            <th>Última Atualização</th>
+            <th>Tipo de Investimento</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (stock of stocks; track stock.id) {
+            <tr>
+              <td class="ticker-cell">
+                <strong>{{ stock.ticker }}</strong>
+              </td>
+              <td>{{ stock.name }}</td>
+              <td>{{ stock.cnpj || '-' }}</td>
+              <td>{{ stock.financial_market }}</td>
+              <td>{{ stock.stock_class }}</td>
+              <td class="price-cell">{{ formatCurrency(stock.current_price) }}</td>
+              <td class="date-cell">{{ formatDate(stock.last_updated) }}</td>
+              <td class="investment-type-cell">
+                <select 
+                  [ngModel]="stock.investment_type?.id || null"
+                  (ngModelChange)="onInvestmentTypeChange(stock, $event)"
+                  class="investment-type-select"
+                  [disabled]="investmentTypes.length === 0 && !errorMessage"
+                >
+                  <option [ngValue]="null">-- Selecionar --</option>
+                  @if (investmentTypes.length > 0) {
+                    @for (type of investmentTypes; track type.id) {
+                      <option [ngValue]="type.id">{{ type.name }}</option>
+                    }
+                  } @else if (errorMessage) {
+                    <option disabled>Erro ao carregar tipos</option>
+                  } @else {
+                    <option disabled>Carregando tipos...</option>
+                  }
+                </select>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+

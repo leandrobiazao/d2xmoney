@@ -40,44 +40,107 @@
             <span class="group-total">{{ formatCurrency(group.totalValue) }}</span>
           </div>
           
-          <div class="positions-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Ativo</th>
-                  <th>Aplicação</th>
-                  <th>Vencimento</th>
-                  <th>Taxa</th>
-                  <th>Quantidade</th>
-                  <th>Valor Aplicado</th>
-                  <th>Posição</th>
-                  <th>Valor Líquido</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (position of group.positions; track position.id) {
-                  @if (filterType === 'all' || filterType === group.typeName) {
-                    @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
-                      <tr (click)="selectPosition(position)" class="position-row">
-                        <td>
-                          <strong>{{ position.asset_name }}</strong>
-                          <br>
-                          <small>{{ position.asset_code }}</small>
-                        </td>
-                        <td>{{ formatDate(position.application_date) }}</td>
-                        <td>{{ formatDate(position.maturity_date) }}</td>
-                        <td>{{ position.rate || '-' }}</td>
-                        <td>{{ position.quantity }}</td>
-                        <td>{{ formatCurrency(position.applied_value) }}</td>
-                        <td>{{ formatCurrency(position.position_value) }}</td>
-                        <td>{{ formatCurrency(position.net_value) }}</td>
+          @if (group.isTesouroDireto && group.subTypeGroups) {
+            <!-- Tesouro Direto with sub-type grouping -->
+            @for (subTypeGroup of group.subTypeGroups; track subTypeGroup.subTypeName) {
+              <div class="subtype-section">
+                <div class="subtype-header">
+                  <h4>{{ subTypeGroup.percentage.toFixed(1) }}% | {{ subTypeGroup.subTypeName }}</h4>
+                </div>
+                
+                <div class="positions-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ativo</th>
+                        <th>Posição</th>
+                        <th>% Alocação</th>
+                        <th>Total aplicado</th>
+                        <th>Qtd.</th>
+                        <th>Disponível</th>
+                        <th>Vencimento</th>
                       </tr>
+                    </thead>
+                    <tbody>
+                      @for (position of subTypeGroup.positions; track position.id) {
+                        @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
+                          <tr (click)="selectPosition(position)" class="position-row">
+                            <td>
+                              <strong>{{ position.asset_name }}</strong>
+                              <br>
+                              <small>{{ position.asset_code }}</small>
+                            </td>
+                            <td>{{ formatCurrency(position.position_value) }}</td>
+                            <td>
+                              @if (subTypeGroup.totalValue > 0) {
+                                {{ ((getPositionValue(position.position_value) / subTypeGroup.totalValue) * 100).toFixed(2) }}%
+                              } @else {
+                                -
+                              }
+                            </td>
+                            <td>{{ formatCurrency(position.applied_value) }}</td>
+                            <td>{{ position.quantity }}</td>
+                            <td>{{ position.available_quantity }}</td>
+                            <td>{{ formatDate(position.maturity_date) }}</td>
+                          </tr>
+                        }
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            }
+          } @else {
+            <!-- Other fixed income (CDB, etc.) -->
+            <div class="positions-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ativo</th>
+                    <th>Aplicação</th>
+                    <th>Vencimento</th>
+                    <th>Taxa</th>
+                    <th>Quantidade</th>
+                    <th>Valor Aplicado</th>
+                    <th>Posição</th>
+                    <th>Valor Líquido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (position of group.positions; track position.id) {
+                    @if (filterType === 'all' || filterType === group.typeName) {
+                      @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
+                        <tr (click)="selectPosition(position)" class="position-row">
+                          <td>
+                            <strong>{{ position.asset_name }}</strong>
+                            @if (!isCaixaPosition(position)) {
+                              <br>
+                              <small>{{ position.asset_code }}</small>
+                            }
+                          </td>
+                          @if (isCaixaPosition(position)) {
+                            <!-- CAIXA: Only show Posição and Valor Líquido -->
+                            <td colspan="5"></td>
+                            <td>{{ formatCurrency(position.position_value) }}</td>
+                            <td>{{ formatCurrency(position.net_value) }}</td>
+                          } @else {
+                            <!-- Regular positions: Show all columns -->
+                            <td>{{ formatDate(position.application_date) }}</td>
+                            <td>{{ formatDate(position.maturity_date) }}</td>
+                            <td>{{ position.rate || '-' }}</td>
+                            <td>{{ position.quantity }}</td>
+                            <td>{{ formatCurrency(position.applied_value) }}</td>
+                            <td>{{ formatCurrency(position.position_value) }}</td>
+                            <td>{{ formatCurrency(position.net_value) }}</td>
+                          }
+                        </tr>
+                      }
                     }
                   }
-                }
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+          }
         </div>
       }
     }
@@ -88,7 +151,15 @@
     <div class="modal-overlay" (click)="closeDetail()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h3>Detalhes do CDB</h3>
+          <h3>
+            @if (selectedPosition.investment_type_name && selectedPosition.investment_sub_type_name) {
+              {{ selectedPosition.investment_type_name }} - {{ selectedPosition.investment_sub_type_name }}
+            } @else if (selectedPosition.investment_type_name) {
+              {{ selectedPosition.investment_type_name }}
+            } @else {
+              Detalhes do CDB
+            }
+          </h3>
           <button class="btn-close" (click)="closeDetail()">×</button>
         </div>
         <div class="modal-body">

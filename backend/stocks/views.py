@@ -16,7 +16,7 @@ class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
     
     def get_queryset(self):
-        queryset = Stock.objects.all()
+        queryset = Stock.objects.select_related('investment_type').all()
         search = self.request.query_params.get('search')
         investment_type_id = self.request.query_params.get('investment_type_id')
         financial_market = self.request.query_params.get('financial_market')
@@ -67,3 +67,10 @@ class StockViewSet(viewsets.ModelViewSet):
                 {'error': 'Invalid price value'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+    
+    @action(detail=False, methods=['post'])
+    def sync_from_portfolio(self, request):
+        """Sync stocks from portfolio positions to catalog."""
+        user_id = request.data.get('user_id')
+        results = StockService.sync_portfolio_stocks_to_catalog(user_id=user_id)
+        return Response(results, status=status.HTTP_200_OK)

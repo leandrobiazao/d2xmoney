@@ -11,6 +11,15 @@ interface GroupedPositions {
   percentage: number;
   totalValue: number;
   positions: FixedIncomePosition[];
+  isTesouroDireto?: boolean;
+  subTypeGroups?: SubTypeGroup[];
+}
+
+interface SubTypeGroup {
+  subTypeName: string;
+  percentage: number;
+  totalValue: number;
+  positions: FixedIncomePosition[];
 }
 
 @Component({
@@ -69,14 +78,26 @@ export class FixedIncomeListComponent implements OnInit {
       return (typeof numValue === 'number' && !isNaN(numValue)) ? numValue : 0;
     };
 
+    // Separate Tesouro Direto from other fixed income
+    const tesouroPositions: FixedIncomePosition[] = [];
+    const otherPositions: FixedIncomePosition[] = [];
+
+    this.positions.forEach(pos => {
+      if (pos.investment_type_name === 'Tesouro Direto') {
+        tesouroPositions.push(pos);
+      } else {
+        otherPositions.push(pos);
+      }
+    });
+
     // Calculate total portfolio value using position_value
     this.positions.forEach(pos => {
       const positionValue = getPositionValue(pos.position_value);
       totalPortfolioValue += positionValue;
     });
 
-    // Group by investment type
-    this.positions.forEach(pos => {
+    // Group non-Tesouro positions by investment type
+    otherPositions.forEach(pos => {
       const typeName = pos.investment_type_name || 'Outros';
       const typeCode = pos.investment_type_name || 'outros';
       
@@ -86,27 +107,81 @@ export class FixedIncomeListComponent implements OnInit {
           typeName: typeName,
           percentage: 0,
           totalValue: 0,
-          positions: []
+          positions: [],
+          isTesouroDireto: false
         });
       }
 
       const group = groups.get(typeCode)!;
       group.positions.push(pos);
-      // Sum position_value instead of net_value
       const positionValue = getPositionValue(pos.position_value);
       group.totalValue += positionValue;
     });
 
+    // Group Tesouro Direto by sub-type
+    if (tesouroPositions.length > 0) {
+      const tesouroSubTypes: Map<string, SubTypeGroup> = new Map();
+      let tesouroTotalValue = 0;
+
+      tesouroPositions.forEach(pos => {
+        const subTypeName = pos.investment_sub_type_name || 'Outros';
+        const positionValue = getPositionValue(pos.position_value);
+        tesouroTotalValue += positionValue;
+
+        if (!tesouroSubTypes.has(subTypeName)) {
+          tesouroSubTypes.set(subTypeName, {
+            subTypeName: subTypeName,
+            percentage: 0,
+            totalValue: 0,
+            positions: []
+          });
+        }
+
+        const subTypeGroup = tesouroSubTypes.get(subTypeName)!;
+        subTypeGroup.positions.push(pos);
+        subTypeGroup.totalValue += positionValue;
+      });
+
+      // Calculate percentages for sub-types
+      tesouroSubTypes.forEach(subTypeGroup => {
+        subTypeGroup.percentage = tesouroTotalValue > 0
+          ? (subTypeGroup.totalValue / tesouroTotalValue) * 100
+          : 0;
+      });
+
+      // Create Tesouro Direto group with sub-type groups
+      const tesouroGroup: GroupedPositions = {
+        type: 'tesouro_direto',
+        typeName: 'Tesouro Direto',
+        percentage: totalPortfolioValue > 0
+          ? (tesouroTotalValue / totalPortfolioValue) * 100
+          : 0,
+        totalValue: tesouroTotalValue,
+        positions: tesouroPositions,
+        isTesouroDireto: true,
+        subTypeGroups: Array.from(tesouroSubTypes.values()).sort((a, b) => 
+          b.totalValue - a.totalValue
+        )
+      };
+
+      groups.set('tesouro_direto', tesouroGroup);
+    }
+
     // Calculate percentages based on position_value totals
     groups.forEach(group => {
-      group.percentage = totalPortfolioValue > 0 
-        ? (group.totalValue / totalPortfolioValue) * 100 
-        : 0;
+      if (!group.isTesouroDireto) {
+        group.percentage = totalPortfolioValue > 0 
+          ? (group.totalValue / totalPortfolioValue) * 100 
+          : 0;
+      }
     });
 
-    this.groupedPositions = Array.from(groups.values()).sort((a, b) => 
-      b.totalValue - a.totalValue
-    );
+    // Sort: Tesouro Direto first, then others by value
+    this.groupedPositions = Array.from(groups.values()).sort((a, b) => {
+      if (a.isTesouroDireto && !b.isTesouroDireto) return -1;
+      if (!a.isTesouroDireto && b.isTesouroDireto) return 1;
+      return b.totalValue - a.totalValue;
+    });
   }
 
   applyFilters(): void {
@@ -140,7 +215,13 @@ export class FixedIncomeListComponent implements OnInit {
   }
 
   selectPosition(position: FixedIncomePosition): void {
-    this.selectedPosition = position;
+    // Make a copy to ensure change detection works
+    this.selectedPosition = { ...position };
+    console.log('Selected position:', {
+      asset_name: position.asset_name,
+      investment_type_name: position.investment_type_name,
+      investment_sub_type_name: position.investment_sub_type_name
+    });
   }
 
   closeDetail(): void {
@@ -167,6 +248,19 @@ export class FixedIncomeListComponent implements OnInit {
 
   formatPercentage(value: number): string {
     return `${value.toFixed(2)}%`;
+  }
+
+  getPositionValue(value: any): number {
+    if (value == null) return 0;
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    return (typeof numValue === 'number' && !isNaN(numValue)) ? numValue : 0;
+  }
+
+  isCaixaPosition(position: FixedIncomePosition): boolean {
+    // Check if position is CAIXA by asset_code or asset_name
+    return position.asset_code?.startsWith('CAIXA_') || 
+           position.asset_name?.toLowerCase().includes('caixa') ||
+           position.asset_name?.toLowerCase().includes('xp investimentos');
   }
 }
 

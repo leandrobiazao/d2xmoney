@@ -1,0 +1,195 @@
+.stocks-container {
+  padding: 1.5rem;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  height: fit-content;
+}
+
+.stocks-header {
+  margin-bottom: 2rem;
+}
+
+.stocks-header h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.stocks-header p {
+  margin: 0;
+  color: #86868b;
+  font-size: 0.9375rem;
+}
+
+.search-section {
+  margin-bottom: 1.5rem;
+}
+
+.search-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+  padding: 0.625rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+}
+
+.sync-button {
+  padding: 0.625rem 1.25rem;
+  background: #0071e3;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.sync-button:hover:not(:disabled) {
+  background: #0077ed;
+}
+
+.sync-button:disabled {
+  background: #86868b;
+  cursor: not-allowed;
+}
+
+.sync-message {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #e8f4fd;
+  color: #0071e3;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+
+.loading,
+.error,
+.empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: #86868b;
+  font-size: 0.9375rem;
+}
+
+.error {
+  color: #d70015;
+  background: #fff5f5;
+  border-radius: 8px;
+}
+
+.retry-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #0071e3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.retry-btn:hover {
+  background: #0077ed;
+}
+
+.stocks-table-container {
+  overflow-x: auto;
+}
+
+.stocks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.stocks-table thead {
+  background: #f5f5f7;
+}
+
+.stocks-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #86868b;
+  text-transform: uppercase;
+  font-size: 0.8125rem;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e5e5e7;
+}
+
+.stocks-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #e5e5e7;
+  color: #1d1d1f;
+}
+
+.stocks-table tbody tr:hover {
+  background: #fafafa;
+}
+
+.ticker-cell {
+  font-weight: 600;
+  color: #0071e3;
+}
+
+.price-cell {
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.date-cell {
+  color: #86868b;
+  font-size: 0.875rem;
+}
+
+.investment-type-cell {
+  min-width: 200px;
+}
+
+.investment-type-select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9375rem;
+  background: white;
+  color: #1d1d1f;
+  cursor: pointer;
+}
+
+.investment-type-select option {
+  color: #1d1d1f;
+  background: white;
+}
+
+.investment-type-select:focus {
+  outline: none;
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+  color: #1d1d1f;
+}
+
+.investment-type-select:hover {
+  border-color: #0071e3;
+  color: #1d1d1f;
+}
+

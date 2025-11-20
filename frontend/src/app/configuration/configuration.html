@@ -1,45 +1,55 @@
 <div class="configuration-container">
-  <div class="configuration-header">
-    <h2>Configuração</h2>
-    <p>Gerencie tipos de investimento e sub-tipos</p>
-  </div>
+  <div class="configuration-layout">
+    <!-- Left Column: Configuration -->
+    <div class="configuration-left">
+      <div class="configuration-header">
+        <h2>Configuração</h2>
+        <p>Gerencie tipos de investimento e sub-tipos</p>
+      </div>
 
-  <div class="tabs">
-    <button 
-      class="tab-button" 
-      [class.active]="activeTab === 'types'"
-      (click)="activeTab = 'types'">
-      Tipos de Investimento
-    </button>
-    <button 
-      class="tab-button" 
-      [class.active]="activeTab === 'subtypes'"
-      (click)="activeTab = 'subtypes'">
-      Sub-Tipos
-    </button>
-  </div>
+      <div class="tabs">
+        <button 
+          class="tab-button" 
+          [class.active]="activeTab === 'types'"
+          (click)="activeTab = 'types'">
+          Tipos de Investimento
+        </button>
+        <button 
+          class="tab-button" 
+          [class.active]="activeTab === 'subtypes'"
+          (click)="activeTab = 'subtypes'">
+          Sub-Tipos
+        </button>
+      </div>
 
-  @if (isLoading) {
-    <div class="loading">Carregando...</div>
-  } @else if (errorMessage) {
-    <div class="error">
-      <p>{{ errorMessage }}</p>
-      <button class="retry-btn" (click)="loadInvestmentTypes()">Tentar Novamente</button>
-    </div>
-  } @else {
-    <div class="content-area">
-      @if (activeTab === 'types') {
-        <app-investment-types
-          [investmentTypes]="investmentTypes"
-          (typeCreated)="onTypeCreated()"
-          (typeUpdated)="onTypeUpdated()"
-          (typeDeleted)="onTypeDeleted()"
-        />
+      @if (isLoading) {
+        <div class="loading">Carregando...</div>
+      } @else if (errorMessage) {
+        <div class="error">
+          <p>{{ errorMessage }}</p>
+          <button class="retry-btn" (click)="loadInvestmentTypes()">Tentar Novamente</button>
+        </div>
       } @else {
-        <app-investment-subtypes />
+        <div class="content-area">
+          @if (activeTab === 'types') {
+            <app-investment-types
+              [investmentTypes]="investmentTypes"
+              (typeCreated)="onTypeCreated()"
+              (typeUpdated)="onTypeUpdated()"
+              (typeDeleted)="onTypeDeleted()"
+            />
+          } @else if (activeTab === 'subtypes') {
+            <app-investment-subtypes />
+          }
+        </div>
       }
     </div>
-  }
+
+    <!-- Right Column: Stocks -->
+    <div class="configuration-right">
+      <app-stocks />
+    </div>
+  </div>
 </div>
 
 

@@ -31,7 +31,7 @@ export class FixedIncomeService {
   }
 
   updatePosition(id: number, position: Partial<FixedIncomePosition>): Observable<FixedIncomePosition> {
-    return this.http.put<FixedIncomePosition>(`${this.apiUrl}/positions/${id}/`, position);
+    return this.http.patch<FixedIncomePosition>(`${this.apiUrl}/positions/${id}/`, position);
   }
 
   deletePosition(id: number): Observable<void> {

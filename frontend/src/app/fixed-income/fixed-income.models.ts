@@ -47,6 +47,7 @@ export interface ImportResult {
   errors: string[];
   cdb_count: number;
   tesouro_count: number;
+  caixa_count?: number;
   debug_info?: string[];
   error_details?: string;
 }

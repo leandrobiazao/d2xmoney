@@ -23,7 +23,7 @@ class FixedIncomePositionViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filter by user_id if provided."""
-        queryset = FixedIncomePosition.objects.all()
+        queryset = FixedIncomePosition.objects.select_related('investment_type', 'investment_sub_type').all()
         user_id = self.request.query_params.get('user_id', None)
         investment_type = self.request.query_params.get('investment_type', None)
         
