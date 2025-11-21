@@ -3,9 +3,12 @@ Service for managing stock catalog.
 """
 from typing import List, Dict, Optional
 from datetime import datetime
+import time
 import requests
 import yfinance as yf
 from django.db import models as django_models
+from django.db import transaction
+from django.db.utils import OperationalError
 from django.utils import timezone
 from .models import Stock
 from configuration.models import InvestmentType
@@ -241,4 +244,89 @@ class StockService:
                 print(f"Error syncing stock {ticker}: {e}")
         
         return results
+    
+    @staticmethod
+    def fetch_and_create_stock(ticker: str, investment_type_code: str = 'ACOES_REAIS') -> Optional[Stock]:
+        """
+        Fetch stock information from yFinance and create it in the catalog.
+        Uses retry logic to handle SQLite database locking.
+        
+        Args:
+            ticker: Stock ticker symbol (e.g., 'BRSR6')
+            investment_type_code: Investment type code (default 'ACOES_REAIS')
+        
+        Returns:
+            Created Stock object or None if creation fails
+        """
+        # Check if stock already exists
+        existing_stock = StockService.get_stock_by_ticker(ticker)
+        if existing_stock:
+            return existing_stock
+        
+        # Try to fetch from yFinance (B3 market first)
+        stock_info = StockService.fetch_stock_info_from_yfinance(ticker, 'B3')
+        
+        # If B3 fails, try other markets
+        if not stock_info:
+            for market in ['Nasdaq', 'NYExchange']:
+                stock_info = StockService.fetch_stock_info_from_yfinance(ticker, market)
+                if stock_info:
+                    break
+        
+        # Get investment type
+        investment_type = None
+        try:
+            investment_type = InvestmentType.objects.get(code=investment_type_code, is_active=True)
+        except InvestmentType.DoesNotExist:
+            # Try alternative names
+            try:
+                investment_type = InvestmentType.objects.get(name__icontains='Ações em Reais', is_active=True)
+            except InvestmentType.DoesNotExist:
+                pass
+        
+        # Create stock with retry logic for SQLite locking
+        max_retries = 5
+        retry_delay = 0.1  # 100ms
+        
+        for attempt in range(max_retries):
+            try:
+                with transaction.atomic():
+                    if stock_info:
+                        # Create stock with fetched info
+                        stock = Stock.objects.create(
+                            ticker=ticker,
+                            name=stock_info['name'],
+                            cnpj=stock_info.get('cnpj'),
+                            financial_market=stock_info['financial_market'],
+                            stock_class=stock_info['stock_class'],
+                            current_price=stock_info['price'],
+                            investment_type=investment_type,
+                            is_active=True
+                        )
+                    else:
+                        # Create with minimal data if yFinance fetch fails
+                        stock = Stock.objects.create(
+                            ticker=ticker,
+                            name=ticker,  # Use ticker as name
+                            financial_market='B3',  # Default to B3
+                            stock_class='ON',  # Default to ON
+                            current_price=0.0,
+                            investment_type=investment_type,
+                            is_active=True
+                        )
+                    return stock
+            except OperationalError as e:
+                if 'database is locked' in str(e).lower() and attempt < max_retries - 1:
+                    # Wait before retrying
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    # Re-raise if it's not a lock error or we've exhausted retries
+                    raise
+            except Exception as e:
+                # For other errors, log and return None
+                print(f"Error creating stock {ticker}: {e}")
+                return None
+        
+        return None
 

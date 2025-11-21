@@ -32,6 +32,12 @@ class RebalancingRecommendation(models.Model):
         choices=STATUS_CHOICES,
         default='pending'
     )
+    total_sales_value = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0.0,
+        help_text="Total value of sales for Ações em Reais (capped at 19,000 Reais)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -74,6 +80,7 @@ class RebalancingAction(models.Model):
     quantity_to_buy = models.IntegerField(null=True, blank=True)
     quantity_to_sell = models.IntegerField(null=True, blank=True)
     display_order = models.IntegerField(default=0)
+    reason = models.CharField(max_length=255, null=True, blank=True, help_text='Reason for this action (e.g., "Not in AMBB 2.0" or "Rank X > 30")')
 
     class Meta:
         db_table = 'rebalancing_actions'

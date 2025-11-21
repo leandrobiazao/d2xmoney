@@ -7,6 +7,7 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from users.models import User
 from portfolio_operations.models import PortfolioPosition
+from fixed_income.models import FixedIncomePosition
 from .models import (
     UserAllocationStrategy,
     InvestmentTypeAllocation,
@@ -167,11 +168,45 @@ class AllocationStrategyService:
                 'unallocated_cash': Decimal('0')
             }
         
-        # Calculate total portfolio value
-        total_value = sum(
+        # Calculate total portfolio value from stock positions
+        stock_total_value = sum(
             Decimal(str(pos.valor_total_investido))
             for pos in positions
         )
+        
+        # Get CAIXA positions (cash) - these are part of RENDA_FIXA
+        caixa_positions = FixedIncomePosition.objects.filter(
+            user_id=str(user.id),
+            asset_code__startswith='CAIXA_'
+        )
+        caixa_total_value = sum(
+            Decimal(str(pos.net_value)) if pos.net_value > 0 else Decimal(str(pos.position_value))
+            for pos in caixa_positions
+        )
+        
+        # Get all Renda Fixa positions (including CAIXA)
+        renda_fixa_type = None
+        try:
+            renda_fixa_type = InvestmentType.objects.get(code='RENDA_FIXA', is_active=True)
+        except InvestmentType.DoesNotExist:
+            # Try alternative names
+            try:
+                renda_fixa_type = InvestmentType.objects.get(name__icontains='Renda Fixa', is_active=True)
+            except InvestmentType.DoesNotExist:
+                pass
+        
+        renda_fixa_positions = FixedIncomePosition.objects.filter(
+            user_id=str(user.id),
+            investment_type=renda_fixa_type
+        ) if renda_fixa_type else FixedIncomePosition.objects.none()
+        
+        renda_fixa_total_value = sum(
+            Decimal(str(pos.net_value)) if pos.net_value > 0 else Decimal(str(pos.position_value))
+            for pos in renda_fixa_positions
+        )
+        
+        # Total portfolio value = stocks + fixed income (including CAIXA)
+        total_value = stock_total_value + renda_fixa_total_value
         
         # Group positions by investment type (via stock)
         type_values = {}
@@ -193,6 +228,18 @@ class AllocationStrategyService:
                 # Stock not in catalog - treat as unallocated
                 pass
         
+        # Add RENDA_FIXA from FixedIncomePosition (including CAIXA)
+        if renda_fixa_type:
+            type_id = renda_fixa_type.id
+            if type_id not in type_values:
+                type_values[type_id] = {
+                    'investment_type_id': type_id,
+                    'investment_type_name': renda_fixa_type.name,
+                    'current_value': Decimal('0'),
+                    'sub_types': {}
+                }
+            type_values[type_id]['current_value'] += renda_fixa_total_value
+        
         # Calculate percentages
         investment_types = []
         for type_id, type_data in type_values.items():
@@ -203,8 +250,8 @@ class AllocationStrategyService:
             type_data['current_percentage'] = percentage
             investment_types.append(type_data)
         
-        # Unallocated cash goes to Renda Fixa
-        unallocated_cash = Decimal('0')  # Could be calculated from cash positions
+        # CAIXA is part of RENDA_FIXA, not unallocated
+        unallocated_cash = Decimal('0')
         
         return {
             'investment_types': investment_types,

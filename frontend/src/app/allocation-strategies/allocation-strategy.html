@@ -46,8 +46,28 @@
       </div>
     } @else {
       <div class="strategy-content">
-        @if (strategy || draftTypeAllocations.length > 0) {
-          @if (draftTypeAllocations.length > 0) {
+        <!-- Tabs -->
+        <div class="tabs-container">
+          <button 
+            class="tab-button" 
+            [class.active]="activeTab === 'configuration'"
+            (click)="onTabChange('configuration')"
+          >
+            Configuração
+          </button>
+          <button 
+            class="tab-button" 
+            [class.active]="activeTab === 'rebalancing'"
+            (click)="onTabChange('rebalancing')"
+          >
+            Rebalanceamento
+          </button>
+        </div>
+
+        <!-- Configuration Tab -->
+        @if (activeTab === 'configuration') {
+          @if (strategy || draftTypeAllocations.length > 0) {
+            @if (draftTypeAllocations.length > 0) {
             <section class="allocations-panel">
               <h4>Alocações por tipo</h4>
               <div class="validation-banner" [class.invalid]="!isTypeTotalValid">
@@ -153,18 +173,307 @@
               </div>
             </section>
           }
+
+          <div class="actions-bar">
+            <button class="btn btn-primary" (click)="onSaveStrategy()" [disabled]="isSaving || !isTypeTotalValid">
+              {{ isSaving ? 'Salvando...' : 'Salvar Estratégia' }}
+            </button>
+          </div>
         } @else {
           <div class="empty-card">
             <p>Este usuário ainda não possui estratégia definida.</p>
             <button class="btn btn-primary" (click)="onConfigureStrategy()">Criar Estratégia</button>
           </div>
         }
+      }
 
-        <div class="actions-bar">
-          <button class="btn btn-primary" (click)="onSaveStrategy()" [disabled]="isSaving || !isTypeTotalValid">
-            {{ isSaving ? 'Salvando...' : 'Salvar Estratégia' }}
-          </button>
-        </div>
+        <!-- Rebalancing Tab -->
+        @if (activeTab === 'rebalancing') {
+          <div class="rebalancing-content">
+            <!-- Summary Section -->
+            @if (currentAllocation) {
+              <section class="summary-card">
+                <h4>Resumo do Portfólio</h4>
+                <div class="summary-grid">
+                  <div class="summary-item">
+                    <span class="summary-label">Valor Total do Portfólio</span>
+                    <span class="summary-value">R$ {{ currentAllocation.current?.total_value | number:'1.2-2' }}</span>
+                  </div>
+                  @if (currentRecommendation) {
+                    <div class="summary-item">
+                      <span class="summary-label">Limite de Vendas Restante</span>
+                      <span class="summary-value" [class.warning]="currentRecommendation.sales_limit_remaining < 5000">
+                        R$ {{ currentRecommendation.sales_limit_remaining | number:'1.2-2' }}
+                      </span>
+                      @if (currentRecommendation.sales_limit_reached) {
+                        <span class="warning-badge">Limite atingido!</span>
+                      }
+                    </div>
+                    <div class="summary-item">
+                      <span class="summary-label">Vendas Já Realizadas no Mês</span>
+                      <span class="summary-value">R$ {{ currentRecommendation.previous_sales_this_month | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="summary-item">
+                      <span class="summary-label">Vendas Completas Recomendadas</span>
+                      <span class="summary-value">R$ {{ currentRecommendation.total_complete_sales_value | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="summary-item">
+                      <span class="summary-label">Vendas Parciais Recomendadas</span>
+                      <span class="summary-value">
+                        R$ {{ currentRecommendation.total_partial_sales_value | number:'1.2-2' }}
+                        <span class="info-badge">({{ currentRecommendation.partial_sales_count }} ações)</span>
+                      </span>
+                    </div>
+                  }
+                </div>
+              </section>
+            }
+
+            <!-- Generate Recommendations Button -->
+            <div class="actions-bar">
+              <button 
+                class="btn btn-primary" 
+                (click)="generateRecommendations()" 
+                [disabled]="isGeneratingRecommendations || !strategy"
+              >
+                {{ isGeneratingRecommendations ? 'Gerando...' : 'Gerar Recomendações de Rebalanceamento' }}
+              </button>
+            </div>
+
+            <!-- Recommendations Display -->
+            @if (isLoadingRecommendations) {
+              <div class="status-card">
+                <p>Carregando recomendações...</p>
+              </div>
+            } @else if (currentRecommendation) {
+              <!-- Ações em Reais Section -->
+              <section class="rebalancing-section">
+                <h4>Ações em Reais - Rebalanceamento</h4>
+                @if (currentRecommendation.sales_limit_reached) {
+                  <div class="warning-banner">
+                    <strong>Atenção:</strong> O limite de vendas de R$ 19.000 foi atingido. Algumas ações não puderam ser vendidas.
+                  </div>
+                }
+                
+                <!-- Stocks to Sell -->
+                @if (getAcoesReaisSellActions().length > 0) {
+                  <div class="action-group">
+                    <h5>Ações para Vender</h5>
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Ranking</th>
+                          <th>Ticker</th>
+                          <th>Nome</th>
+                          <th>Valor Atual</th>
+                          <th>Quantidade</th>
+                          <th>Motivo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (action of getAcoesReaisSellActions(); track action.id) {
+                          <tr>
+                            <td>
+                              @if (action.display_order && action.display_order < 9999) {
+                                {{ action.display_order }}
+                              } @else {
+                                -
+                              }
+                            </td>
+                            <td><strong>{{ action.stock?.ticker }}</strong></td>
+                            <td>{{ action.stock?.name }}</td>
+                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                            <td>{{ action.quantity_to_sell }}</td>
+                            <td>
+                              <span class="badge">
+                                @if (action.reason) {
+                                  {{ action.reason }}
+                                } @else {
+                                  @if (action.display_order && action.display_order < 9999) {
+                                    Rank {{ action.display_order }} > 30
+                                  } @else {
+                                    Não está no AMBB 2.0
+                                  }
+                                }
+                              </span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+
+                <!-- Stocks to Buy -->
+                @if (getAcoesReaisBuyActions().length > 0) {
+                  <div class="action-group">
+                    <h5>Ações para Comprar</h5>
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Ranking</th>
+                          <th>Ticker</th>
+                          <th>Nome</th>
+                          <th>Valor Alvo</th>
+                          <th>Quantidade</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (action of getAcoesReaisBuyActions(); track action.id) {
+                          <tr>
+                            <td>{{ action.display_order }}</td>
+                            <td><strong>{{ action.stock?.ticker }}</strong></td>
+                            <td>{{ action.stock?.name }}</td>
+                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                            <td>{{ action.quantity_to_buy }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+
+                <!-- Stocks to Balance -->
+                @if (getAcoesReaisRebalanceActions().length > 0) {
+                  <div class="action-group">
+                    <h5>Ações para Rebalancear</h5>
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Ranking</th>
+                          <th>Ticker</th>
+                          <th>Nome</th>
+                          <th>Valor Atual</th>
+                          <th>Valor Alvo</th>
+                          <th>Diferença</th>
+                          <th>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (action of getAcoesReaisRebalanceActions(); track action.id) {
+                          <tr>
+                            <td>{{ action.display_order }}</td>
+                            <td><strong>{{ action.stock?.ticker }}</strong></td>
+                            <td>{{ action.stock?.name }}</td>
+                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                              R$ {{ action.difference | number:'1.2-2' }}
+                            </td>
+                            <td>
+                              @if (action.quantity_to_buy) {
+                                <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                              } @else if (action.quantity_to_sell) {
+                                <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                              } @else {
+                                <span class="badge badge-maintain">Manter</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </section>
+
+              <!-- Renda Fixa Section -->
+              @if (getRendaFixaActions().length > 0) {
+                <section class="rebalancing-section">
+                  <h4>Renda Fixa - Rebalanceamento</h4>
+                  <div class="action-group">
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Tipo</th>
+                          <th>Valor Atual</th>
+                          <th>Valor Alvo</th>
+                          <th>Diferença</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (action of getRendaFixaActions(); track action.id) {
+                          <tr>
+                            <td>Renda Fixa</td>
+                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                              R$ {{ action.difference | number:'1.2-2' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              }
+
+              <!-- Ações em Dólares Section -->
+              @if (getAcoesDolaresActions().length > 0) {
+                <section class="rebalancing-section">
+                  <h4>Ações em Dólares - Rebalanceamento</h4>
+                  <div class="action-group">
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Ticker</th>
+                          <th>Nome</th>
+                          <th>Valor Atual</th>
+                          <th>Valor Alvo</th>
+                          <th>Diferença</th>
+                          <th>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (action of getAcoesDolaresActions(); track action.id) {
+                          <tr>
+                            <td><strong>{{ action.stock?.ticker }}</strong></td>
+                            <td>{{ action.stock?.name }}</td>
+                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                              R$ {{ action.difference | number:'1.2-2' }}
+                            </td>
+                            <td>
+                              @if (action.quantity_to_buy) {
+                                <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                              } @else if (action.quantity_to_sell) {
+                                <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                              } @else {
+                                <span class="badge badge-maintain">Manter</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              }
+
+              <!-- Recommendation Actions -->
+              <div class="actions-bar">
+                <button 
+                  class="btn btn-success" 
+                  (click)="applyRecommendation(currentRecommendation.id)"
+                >
+                  Aplicar Recomendação
+                </button>
+                <button 
+                  class="btn btn-secondary" 
+                  (click)="dismissRecommendation(currentRecommendation.id)"
+                >
+                  Descartar
+                </button>
+              </div>
+            } @else if (!isGeneratingRecommendations) {
+              <div class="empty-card">
+                <p>Nenhuma recomendação de rebalanceamento disponível.</p>
+                <p class="hint">Clique em "Gerar Recomendações" para criar uma nova recomendação mensal.</p>
+              </div>
+            }
+          </div>
+        }
       </div>
     }
   </section>

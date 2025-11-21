@@ -74,3 +74,51 @@ class StockViewSet(viewsets.ModelViewSet):
         user_id = request.data.get('user_id')
         results = StockService.sync_portfolio_stocks_to_catalog(user_id=user_id)
         return Response(results, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['post'])
+    def fetch_and_create(self, request):
+        """Fetch stock from yFinance and add to catalog."""
+        from django.db.utils import OperationalError
+        
+        ticker = request.data.get('ticker')
+        investment_type_code = request.data.get('investment_type_code', 'ACOES_REAIS')
+        
+        if not ticker:
+            return Response(
+                {'error': 'ticker is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            stock = StockService.fetch_and_create_stock(ticker, investment_type_code)
+            if stock:
+                serializer = self.get_serializer(stock)
+                return Response({
+                    'success': True,
+                    'message': f'Stock {ticker} created successfully',
+                    'stock': serializer.data
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response(
+                    {'error': f'Failed to create stock {ticker}. The stock may already exist or yFinance fetch failed.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except OperationalError as e:
+            if 'database is locked' in str(e).lower():
+                return Response(
+                    {
+                        'error': 'database is locked',
+                        'message': 'O banco de dados está temporariamente bloqueado. Tente novamente em alguns segundos.'
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            else:
+                return Response(
+                    {'error': f'Database error: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except Exception as e:
+            return Response(
+                {'error': f'Error creating stock: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
