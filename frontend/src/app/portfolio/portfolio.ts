@@ -13,11 +13,12 @@ import { FixedIncomeListComponent } from '../fixed-income/fixed-income-list.comp
 import { PortfolioImportComponent } from '../fixed-income/portfolio-import.component';
 import { HistoryListComponent } from '../brokerage-history/history-list/history-list';
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
+import { CryptoComponent } from '../crypto/crypto.component';
 
 @Component({
   selector: 'app-portfolio',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, PortfolioImportComponent, HistoryListComponent, AllocationStrategyComponent],
+  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, PortfolioImportComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent],
   templateUrl: './portfolio.html',
   styleUrl: './portfolio.css'
 })
@@ -39,7 +40,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   // View settings
   showPositions = true;
   showOperations = true;
-  activeTab: 'acoes' | 'renda-fixa' | 'import' | 'historico' | 'allocation-strategy' = 'acoes';
+  activeTab: 'acoes' | 'renda-fixa' | 'import' | 'historico' | 'allocation-strategy' | 'crypto' = 'acoes';
   
   // Sorting
   sortField: string = '';

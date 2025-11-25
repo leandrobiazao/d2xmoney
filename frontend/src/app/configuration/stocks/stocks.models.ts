@@ -1,4 +1,4 @@
-import { InvestmentType } from '../configuration.service';
+import { InvestmentType, InvestmentSubType } from '../configuration.service';
 
 export interface Stock {
   id: number;
@@ -7,6 +7,8 @@ export interface Stock {
   cnpj?: string;
   investment_type?: InvestmentType;
   investment_type_id?: number;
+  investment_subtype?: InvestmentSubType;
+  investment_subtype_id?: number;
   financial_market: string;
   stock_class: string;
   current_price: number;

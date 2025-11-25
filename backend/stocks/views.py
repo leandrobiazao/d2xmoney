@@ -16,7 +16,7 @@ class StockViewSet(viewsets.ModelViewSet):
     serializer_class = StockSerializer
     
     def get_queryset(self):
-        queryset = Stock.objects.select_related('investment_type').all()
+        queryset = Stock.objects.select_related('investment_type', 'investment_subtype').all()
         search = self.request.query_params.get('search')
         investment_type_id = self.request.query_params.get('investment_type_id')
         financial_market = self.request.query_params.get('financial_market')
@@ -81,7 +81,7 @@ class StockViewSet(viewsets.ModelViewSet):
         from django.db.utils import OperationalError
         
         ticker = request.data.get('ticker')
-        investment_type_code = request.data.get('investment_type_code', 'ACOES_REAIS')
+        investment_type_code = request.data.get('investment_type_code', 'RENDA_VARIAVEL_REAIS')
         
         if not ticker:
             return Response(

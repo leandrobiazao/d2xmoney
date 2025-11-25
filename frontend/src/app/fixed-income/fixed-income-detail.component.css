@@ -1,4 +1,4 @@
-.cdb-detail-container {
+.fixed-income-detail-container {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -255,5 +255,4 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-
 

@@ -246,14 +246,14 @@ class StockService:
         return results
     
     @staticmethod
-    def fetch_and_create_stock(ticker: str, investment_type_code: str = 'ACOES_REAIS') -> Optional[Stock]:
+    def fetch_and_create_stock(ticker: str, investment_type_code: str = 'RENDA_VARIAVEL_REAIS') -> Optional[Stock]:
         """
         Fetch stock information from yFinance and create it in the catalog.
         Uses retry logic to handle SQLite database locking.
         
         Args:
             ticker: Stock ticker symbol (e.g., 'BRSR6')
-            investment_type_code: Investment type code (default 'ACOES_REAIS')
+            investment_type_code: Investment type code (default 'RENDA_VARIAVEL_REAIS')
         
         Returns:
             Created Stock object or None if creation fails
@@ -278,9 +278,14 @@ class StockService:
         try:
             investment_type = InvestmentType.objects.get(code=investment_type_code, is_active=True)
         except InvestmentType.DoesNotExist:
-            # Try alternative names
+            # Try alternative names for backward compatibility
+            from django.db.models import Q
             try:
-                investment_type = InvestmentType.objects.get(name__icontains='Ações em Reais', is_active=True)
+                investment_type = InvestmentType.objects.get(
+                    Q(name__icontains='Renda Variável em Reais') | 
+                    Q(name__icontains='Ações em Reais'), 
+                    is_active=True
+                )
             except InvestmentType.DoesNotExist:
                 pass
         

@@ -1,0 +1,240 @@
+<div class="crypto-container">
+  <div class="crypto-header">
+    <h2>Criptomoedas</h2>
+    <button class="btn-primary" (click)="onCreateCurrency()">Nova Criptomoeda</button>
+  </div>
+
+  <!-- Positions Summary -->
+  @if (userId && positions.length > 0) {
+    <div class="summary-section">
+      <h3>Posições Atuais</h3>
+      <div class="summary-cards">
+        <div class="summary-card">
+          <span class="label">Total Investido:</span>
+          <span class="value">{{ formatCurrency(getTotalInvested()) }}</span>
+        </div>
+        <div class="summary-card">
+          <span class="label">Valor Atual:</span>
+          <span class="value">{{ formatCurrency(getTotalCurrentValue()) }}</span>
+        </div>
+        <div class="summary-card">
+          <span class="label">Ganho/Perda:</span>
+          <span class="value" [class.positive]="getTotalGainLoss() >= 0" [class.negative]="getTotalGainLoss() < 0">
+            {{ formatCurrency(getTotalGainLoss()) }} ({{ getTotalGainLossPercent().toFixed(2) }}%)
+          </span>
+        </div>
+        <div class="summary-card">
+          <span class="label">Criptomoedas na Carteira:</span>
+          <span class="value">{{ positions.length }}</span>
+        </div>
+      </div>
+      
+      <table class="positions-table">
+        <thead>
+          <tr>
+            <th>Moeda</th>
+            <th>Quantidade</th>
+            <th>Preço Médio</th>
+            <th>Preço Atual</th>
+            <th>Valor Investido</th>
+            <th>Valor Atual</th>
+            <th>Ganho/Perda</th>
+            <th>Corretora</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (position of positions; track position.id) {
+            @let investedValue = position.quantity * position.average_price;
+            @let currentValue = position.current_value || 0;
+            @let gainLoss = currentValue - investedValue;
+            @let gainLossPercent = investedValue > 0 ? ((gainLoss / investedValue) * 100) : 0;
+            <tr>
+              <td><strong>{{ position.crypto_currency.symbol }}</strong> - {{ position.crypto_currency.name }}</td>
+              <td>{{ position.quantity }}</td>
+              <td>{{ formatCurrency(position.average_price) }}</td>
+              <td>
+                @if (position.current_price !== undefined) {
+                  {{ formatCurrency(position.current_price) }}
+                } @else {
+                  <span class="loading-price">Carregando...</span>
+                }
+              </td>
+              <td>{{ formatCurrency(investedValue) }}</td>
+              <td>
+                @if (position.current_value !== undefined) {
+                  {{ formatCurrency(position.current_value) }}
+                } @else {
+                  <span class="loading-price">-</span>
+                }
+              </td>
+              <td>
+                @if (position.current_value !== undefined) {
+                  <span [class.positive]="gainLoss >= 0" [class.negative]="gainLoss < 0">
+                    {{ formatCurrency(gainLoss) }} ({{ gainLossPercent.toFixed(2) }}%)
+                  </span>
+                } @else {
+                  <span class="loading-price">-</span>
+                }
+              </td>
+              <td>{{ position.broker || '-' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Operations Section -->
+  @if (userId) {
+    <div class="operations-section">
+      <div class="section-header">
+        <h3>Operações</h3>
+        <button class="btn-primary" (click)="onCreateOperation()">Nova Operação</button>
+      </div>
+      
+      @if (operations.length > 0) {
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Moeda</th>
+              <th>Tipo</th>
+              <th>Quantidade</th>
+              <th>Preço</th>
+              <th>Valor Total</th>
+              <th>Corretora</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (operation of operations; track operation.id) {
+              <tr>
+                <td>{{ formatDate(operation.operation_date) }}</td>
+                <td><strong>{{ operation.crypto_currency.symbol }}</strong></td>
+                <td>{{ operation.operation_type === 'BUY' ? 'Compra' : 'Venda' }}</td>
+                <td>{{ operation.quantity }}</td>
+                <td>{{ formatCurrency(operation.price) }}</td>
+                <td>{{ formatCurrency(operation.total_value) }}</td>
+                <td>{{ operation.broker || '-' }}</td>
+                <td>
+                  <button class="btn-small" (click)="onEditOperation(operation)">Editar</button>
+                  <button class="btn-small btn-danger" (click)="onDeleteOperation(operation)">Deletar</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <p class="empty-message">Nenhuma operação cadastrada.</p>
+      }
+    </div>
+  }
+
+  <!-- Currencies Section -->
+  <div class="currencies-section">
+    <div class="section-header">
+      <h3>Criptomoedas Disponíveis</h3>
+    </div>
+    
+    @if (isLoading) {
+      <div class="loading">Carregando...</div>
+    } @else if (errorMessage) {
+      <div class="error">
+        <p>{{ errorMessage }}</p>
+        <button class="btn-secondary" (click)="loadCurrencies()">Tentar Novamente</button>
+      </div>
+    } @else if (currencies.length === 0) {
+      <p class="empty-message">Nenhuma criptomoeda cadastrada. Clique em "Nova Criptomoeda" para adicionar.</p>
+    } @else {
+      <table class="currencies-table">
+        <thead>
+          <tr>
+            <th>Símbolo</th>
+            <th>Nome</th>
+            <th>Tipo de Investimento</th>
+            <th>Sub-Tipo</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (currency of currencies; track currency.id) {
+            <tr>
+              <td><strong>{{ currency.symbol }}</strong></td>
+              <td>{{ currency.name }}</td>
+              <td>{{ currency.investment_type?.name || '-' }}</td>
+              <td>{{ currency.investment_subtype?.name || '-' }}</td>
+              <td>{{ currency.is_active ? 'Ativo' : 'Inativo' }}</td>
+              <td>
+                <button class="btn-small" (click)="onEditCurrency(currency)">Editar</button>
+                <button class="btn-small btn-danger" (click)="onDeleteCurrency(currency)">Deletar</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </div>
+
+  <!-- Create/Edit Currency Modal -->
+  @if (showCreateCurrencyModal) {
+    <div class="modal-overlay" (click)="onCloseCurrencyModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>{{ editingCurrency ? 'Editar' : 'Criar' }} Criptomoeda</h3>
+          <button class="btn-close" (click)="onCloseCurrencyModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Símbolo *</label>
+            <input type="text" [(ngModel)]="currencyForm.symbol" placeholder="Ex: BTC" />
+          </div>
+          <div class="form-group">
+            <label>Nome *</label>
+            <input type="text" [(ngModel)]="currencyForm.name" placeholder="Ex: Bitcoin" />
+          </div>
+          <div class="form-group">
+            <label>Tipo de Investimento</label>
+            <select [(ngModel)]="currencyForm.investment_type_id" (change)="currencyForm.investment_subtype_id = undefined">
+              <option [ngValue]="undefined">-- Selecionar --</option>
+              @for (type of investmentTypes; track type.id) {
+                <option [ngValue]="type.id">{{ type.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sub-Tipo de Investimento</label>
+            <select [(ngModel)]="currencyForm.investment_subtype_id" [disabled]="!currencyForm.investment_type_id">
+              <option [ngValue]="undefined">-- Selecionar --</option>
+              @for (subType of getSubTypesForType(currencyForm.investment_type_id); track subType.id) {
+                <option [ngValue]="subType.id">{{ subType.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" [(ngModel)]="currencyForm.is_active" />
+              Ativo
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="onCloseCurrencyModal()">Cancelar</button>
+          <button class="btn-primary" (click)="onSaveCurrency()">Salvar</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Operation Dialog -->
+  @if (showOperationDialog) {
+    <app-crypto-operation-dialog
+      [userId]="userId"
+      [operation]="editingOperation"
+      [currencies]="currencies"
+      (saved)="onOperationSaved()"
+      (canceled)="onOperationCanceled()"
+    />
+  }
+</div>
+

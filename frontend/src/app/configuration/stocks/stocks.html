@@ -55,6 +55,7 @@
             <th>Preço Atual</th>
             <th>Última Atualização</th>
             <th>Tipo de Investimento</th>
+            <th>Sub-Tipo de Investimento</th>
           </tr>
         </thead>
         <tbody>
@@ -85,6 +86,21 @@
                     <option disabled>Erro ao carregar tipos</option>
                   } @else {
                     <option disabled>Carregando tipos...</option>
+                  }
+                </select>
+              </td>
+              <td class="investment-subtype-cell">
+                <select 
+                  [ngModel]="stock.investment_subtype?.id || null"
+                  (ngModelChange)="onInvestmentSubtypeChange(stock, $event)"
+                  class="investment-subtype-select"
+                  [disabled]="!stock.investment_type?.id"
+                >
+                  <option [ngValue]="null">-- Selecionar --</option>
+                  @if (stock.investment_type?.id) {
+                    @for (subType of getSubTypesForInvestmentType(stock.investment_type!.id); track subType.id) {
+                      <option [ngValue]="subType.id">{{ subType.name }}</option>
+                    }
                   }
                 </select>
               </td>

@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StocksService } from './stocks.service';
-import { ConfigurationService, InvestmentType } from '../configuration.service';
+import { ConfigurationService, InvestmentType, InvestmentSubType } from '../configuration.service';
 import { Stock } from './stocks.models';
 
 @Component({
@@ -15,6 +15,7 @@ import { Stock } from './stocks.models';
 export class StocksComponent implements OnInit {
   stocks: Stock[] = [];
   investmentTypes: InvestmentType[] = [];
+  investmentSubTypes: InvestmentSubType[] = [];
   isLoading = false;
   isSyncing = false;
   errorMessage: string | null = null;
@@ -35,6 +36,9 @@ export class StocksComponent implements OnInit {
           .filter(type => type.is_active)
           .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
         
+        // Load investment subtypes
+        this.loadInvestmentSubTypes();
+        
         // Load stocks from database first
         this.loadStocks();
         
@@ -52,6 +56,32 @@ export class StocksComponent implements OnInit {
         this.syncPortfolioStocks();
       }
     });
+  }
+
+  loadInvestmentSubTypes(): void {
+    this.configService.getInvestmentSubTypes(undefined, true).subscribe({
+      next: (subTypes) => {
+        // Filter active subtypes and sort by display_order
+        this.investmentSubTypes = subTypes
+          .filter(subType => subType.is_active)
+          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        console.log('Loaded investment subtypes:', this.investmentSubTypes);
+      },
+      error: (error) => {
+        console.error('Error loading investment subtypes:', error);
+      }
+    });
+  }
+
+  getSubTypesForInvestmentType(investmentTypeId: number | null | undefined): InvestmentSubType[] {
+    if (!investmentTypeId) {
+      return [];
+    }
+    const filtered = this.investmentSubTypes.filter(
+      subType => subType.investment_type === investmentTypeId
+    );
+    console.log(`Filtering subtypes for investment type ${investmentTypeId}:`, filtered);
+    return filtered;
   }
 
   syncPortfolioStocks(): void {
@@ -124,16 +154,22 @@ export class StocksComponent implements OnInit {
         const investmentType = this.investmentTypes.find(t => t.id === investmentTypeId);
         updatedStock.investment_type = investmentType;
         updatedStock.investment_type_id = investmentTypeId;
+        // Clear subtype when investment type changes (subtype should belong to the new type)
+        updatedStock.investment_subtype = undefined;
+        updatedStock.investment_subtype_id = undefined;
       } else {
         updatedStock.investment_type = undefined;
         updatedStock.investment_type_id = undefined;
+        updatedStock.investment_subtype = undefined;
+        updatedStock.investment_subtype_id = undefined;
       }
       this.stocks[index] = updatedStock;
     }
     
-    // Prepare update data
+    // Prepare update data - also clear subtype when type changes
     const updateData: any = {
-      investment_type_id: investmentTypeId
+      investment_type_id: investmentTypeId,
+      investment_subtype_id: null // Clear subtype when type changes
     };
 
     this.stocksService.updateStock(stock.id, updateData).subscribe({
@@ -149,6 +185,53 @@ export class StocksComponent implements OnInit {
         console.error('Error updating stock investment type:', error);
         console.error('Error details:', error.error);
         alert('Erro ao atualizar tipo de investimento: ' + (error.error?.error || error.message || 'Erro desconhecido'));
+        // Reload to revert changes and get correct state from server
+        this.loadStocks();
+      }
+    });
+  }
+
+  onInvestmentSubtypeChange(stock: Stock, value: string | number | null): void {
+    // Convert value to number or null
+    const investmentSubtypeId = value === '' || value === null || value === undefined 
+      ? null 
+      : (typeof value === 'number' ? value : parseInt(String(value), 10));
+    
+    // Optimistically update the UI
+    const index = this.stocks.findIndex(s => s.id === stock.id);
+    if (index !== -1) {
+      // Create a copy to ensure change detection
+      const updatedStock = { ...this.stocks[index] };
+      if (investmentSubtypeId) {
+        // Find the investment subtype from the list
+        const investmentSubtype = this.investmentSubTypes.find(s => s.id === investmentSubtypeId);
+        updatedStock.investment_subtype = investmentSubtype;
+        updatedStock.investment_subtype_id = investmentSubtypeId;
+      } else {
+        updatedStock.investment_subtype = undefined;
+        updatedStock.investment_subtype_id = undefined;
+      }
+      this.stocks[index] = updatedStock;
+    }
+    
+    // Prepare update data
+    const updateData: any = {
+      investment_subtype_id: investmentSubtypeId
+    };
+
+    this.stocksService.updateStock(stock.id, updateData).subscribe({
+      next: (updatedStock) => {
+        // Update the stock in the list with the server response
+        const index = this.stocks.findIndex(s => s.id === stock.id);
+        if (index !== -1) {
+          // Replace with the complete updated stock from server
+          this.stocks[index] = updatedStock;
+        }
+      },
+      error: (error) => {
+        console.error('Error updating stock investment subtype:', error);
+        console.error('Error details:', error.error);
+        alert('Erro ao atualizar sub-tipo de investimento: ' + (error.error?.error || error.message || 'Erro desconhecido'));
         // Reload to revert changes and get correct state from server
         this.loadStocks();
       }

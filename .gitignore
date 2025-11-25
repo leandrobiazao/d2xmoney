@@ -182,3 +182,4 @@ doc/spec/*.png
 backend/media/portafolio_wallet/*.xlsx
 backend/media/brokerage_notes/Sophia/*.pdf
 backend/media/brokerage_notes/Aurelio/*.pdf
+.cursor/*

@@ -21,6 +21,7 @@ urlpatterns = [
     path('api/ambb-strategy/', include('ambb_strategy.urls')),
     path('api/rebalancing/', include('rebalancing.urls')),
     path('api/fixed-income/', include('fixed_income.urls')),
+    path('api/crypto/', include('crypto.urls')),
 ]
 
 # Serve media files in development

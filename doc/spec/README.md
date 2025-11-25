@@ -105,7 +105,8 @@ project-root/
         ├── 12-allocation-strategies.md
         ├── 13-rebalancing.md
         ├── 14-fixed-income.md
-        └── 15-ticker-mappings.md
+        ├── 15-ticker-mappings.md
+        └── 16-rebalancing-frontend-design.md
 ```
 
 ## Initial Project Setup
@@ -309,7 +310,13 @@ The complete specification is organized into the following application-specific 
     - Action tracking
     - Status management
 
-11. **[14-fixed-income.md](14-fixed-income.md)** - Fixed Income
+11. **[16-rebalancing-frontend-design.md](16-rebalancing-frontend-design.md)** - Rebalancing Frontend Design
+    - Frontend component structure
+    - UI layout and hierarchy
+    - Visual design mockups
+    - Mermaid diagrams
+
+12. **[14-fixed-income.md](14-fixed-income.md)** - Fixed Income
     - Fixed income positions
     - CDB management
     - Tesouro Direto tracking
@@ -317,13 +324,13 @@ The complete specification is organized into the following application-specific 
 
 ### Database & Testing
 
-12. **[09-database-data-model.md](09-database-data-model.md)** - Database Schema
+13. **[09-database-data-model.md](09-database-data-model.md)** - Database Schema
     - Complete database model documentation
     - Entity relationships
     - Field specifications
     - Constraints and validations
 
-13. **[TESTING.md](TESTING.md)** - Testing Guide
+14. **[TESTING.md](TESTING.md)** - Testing Guide
     - Unit testing
     - E2E testing
     - Test structure

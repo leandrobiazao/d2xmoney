@@ -16,7 +16,12 @@ class RebalancingRecommendationViewSet(viewsets.ModelViewSet):
     serializer_class = RebalancingRecommendationSerializer
     
     def get_queryset(self):
-        queryset = RebalancingRecommendation.objects.all()
+        queryset = RebalancingRecommendation.objects.select_related('user', 'strategy').prefetch_related(
+            'actions__stock',
+            'actions__investment_subtype',
+            'actions__stock__investment_type',
+            'actions__stock__investment_subtype'
+        )
         user_id = self.request.query_params.get('user_id')
         status_filter = self.request.query_params.get('status')
         

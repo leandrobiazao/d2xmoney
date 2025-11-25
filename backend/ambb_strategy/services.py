@@ -48,11 +48,11 @@ class AMBBStrategyService:
             'sales_limit_reached': bool
         }
         """
-        # Get "Ações em Reais" investment type
+        # Get "Renda Variável em Reais" investment type
         # Try different possible codes/names
         acoes_reais_type = None
-        possible_codes = ['ACOES_REAIS', 'ACOES_EM_REAIS', 'ACOES']
-        possible_names = ['Ações em Reais', 'Ações', 'Acoes em Reais']
+        possible_codes = ['RENDA_VARIAVEL_REAIS', 'RENDA_VARIAVEL_EM_REAIS']
+        possible_names = ['Renda Variável em Reais', 'Renda Variavel em Reais']
         
         for code in possible_codes:
             try:
@@ -62,10 +62,15 @@ class AMBBStrategyService:
                 continue
         
         if not acoes_reais_type:
+            from django.db.models import Q
             for name in possible_names:
                 try:
-                    acoes_reais_type = InvestmentType.objects.get(name__icontains=name, is_active=True)
-                    break
+                    acoes_reais_type = InvestmentType.objects.filter(
+                        Q(name__icontains=name), 
+                        is_active=True
+                    ).first()
+                    if acoes_reais_type:
+                        break
                 except InvestmentType.DoesNotExist:
                     continue
         
@@ -77,7 +82,7 @@ class AMBBStrategyService:
                 'stocks_to_balance': [],
                 'total_sales_value': Decimal('0'),
                 'sales_limit_reached': False,
-                'error': 'Ações em Reais investment type not found'
+                'error': 'Renda Variável em Reais investment type not found'
             }
         
         # Get current AMBB 2.0 recommendations
@@ -101,7 +106,7 @@ class AMBBStrategyService:
             except Stock.DoesNotExist:
                 # Stock not in catalog - try to fetch from yFinance
                 try:
-                    fetched_stock = StockService.fetch_and_create_stock(ticker, 'ACOES_REAIS')
+                    fetched_stock = StockService.fetch_and_create_stock(ticker, 'RENDA_VARIAVEL_REAIS')
                     if fetched_stock and fetched_stock.investment_type == acoes_reais_type:
                         ambb_reais_stocks.append(stock_data)
                         current_ambb_tickers[ticker] = stock_data

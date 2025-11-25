@@ -9,7 +9,26 @@ export interface RebalancingAction {
     id: number;
     ticker: string;
     name: string;
+    investment_type?: {
+      id: number;
+      name: string;
+      code: string;
+    };
+    investment_subtype?: {
+      id: number;
+      name: string;
+      code: string;
+    };
   };
+  investment_subtype?: {
+    id: number;
+    name: string;
+    code: string;
+  };
+  subtype_name?: string;
+  subtype_display_name?: string;
+  crypto_currency_symbol?: string;
+  crypto_currency_name?: string;
   current_value: number;
   target_value: number;
   difference: number;

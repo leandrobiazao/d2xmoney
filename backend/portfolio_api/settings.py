@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'ambb_strategy',
     'rebalancing',
     'fixed_income',
+    'crypto',
 ]
 
 MIDDLEWARE = [

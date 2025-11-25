@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition } from './fixed-income.models';
-import { CdbDetailComponent } from './cdb-detail.component';
+import { FixedIncomeDetailComponent } from './fixed-income-detail.component';
 
 interface GroupedPositions {
   type: string;
@@ -25,7 +25,11 @@ interface SubTypeGroup {
 @Component({
   selector: 'app-fixed-income-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, CdbDetailComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    FixedIncomeDetailComponent
+  ],
   templateUrl: './fixed-income-list.component.html',
   styleUrl: './fixed-income-list.component.css'
 })

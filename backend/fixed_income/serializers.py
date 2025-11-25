@@ -4,16 +4,59 @@ Serializers for fixed income app.
 from decimal import Decimal
 from rest_framework import serializers
 from .models import FixedIncomePosition, TesouroDiretoPosition
+from configuration.serializers import InvestmentTypeSerializer, InvestmentSubTypeSerializer
 
 
 class FixedIncomePositionSerializer(serializers.ModelSerializer):
     """Serializer for FixedIncomePosition."""
     
+    investment_type = InvestmentTypeSerializer(read_only=True)
+    investment_type_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     investment_type_name = serializers.CharField(source='investment_type.name', read_only=True)
+    investment_sub_type = InvestmentSubTypeSerializer(read_only=True)
+    investment_sub_type_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     investment_sub_type_name = serializers.CharField(source='investment_sub_type.name', read_only=True)
     
     def update(self, instance, validated_data):
-        """Override update to calculate yields when applied_value changes."""
+        """Override update to calculate yields when applied_value changes and handle investment type/subtype updates."""
+        # Handle investment_type_id and investment_sub_type_id updates
+        investment_type_id = validated_data.pop('investment_type_id', None)
+        investment_sub_type_id = validated_data.pop('investment_sub_type_id', None)
+        
+        # Handle investment_type_id
+        investment_type_changed = False
+        if investment_type_id is not None:
+            from configuration.models import InvestmentType
+            try:
+                if investment_type_id:
+                    investment_type = InvestmentType.objects.get(id=investment_type_id)
+                    if instance.investment_type_id != investment_type_id:
+                        instance.investment_type = investment_type
+                        investment_type_changed = True
+                else:
+                    if instance.investment_type_id is not None:
+                        instance.investment_type = None
+                        investment_type_changed = True
+            except InvestmentType.DoesNotExist:
+                pass
+        
+        # Handle investment_sub_type_id
+        investment_sub_type_changed = False
+        if investment_sub_type_id is not None:
+            from configuration.models import InvestmentSubType
+            try:
+                if investment_sub_type_id:
+                    investment_sub_type = InvestmentSubType.objects.get(id=investment_sub_type_id)
+                    if instance.investment_sub_type_id != investment_sub_type_id:
+                        instance.investment_sub_type = investment_sub_type
+                        investment_sub_type_changed = True
+                else:
+                    if instance.investment_sub_type_id is not None:
+                        instance.investment_sub_type = None
+                        investment_sub_type_changed = True
+            except InvestmentSubType.DoesNotExist:
+                pass
+        
         # Only calculate yields if they're not explicitly provided in the update
         if 'gross_yield' not in validated_data or 'net_yield' not in validated_data:
             # Calculate yields if applied_value, position_value, or net_value are being updated
@@ -34,7 +77,22 @@ class FixedIncomePositionSerializer(serializers.ModelSerializer):
             if 'net_yield' not in validated_data:
                 validated_data['net_yield'] = net_value - applied_value
         
-        return super().update(instance, validated_data)
+        # Call parent update to save all other fields
+        instance = super().update(instance, validated_data)
+        
+        # Explicitly save the instance to persist investment_type and investment_sub_type changes
+        update_fields = []
+        if investment_type_changed:
+            update_fields.append('investment_type')
+        if investment_sub_type_changed:
+            update_fields.append('investment_sub_type')
+        
+        if update_fields:
+            instance.save(update_fields=update_fields)
+            # Reload instance from database with related objects
+            instance = FixedIncomePosition.objects.select_related('investment_type', 'investment_sub_type').get(pk=instance.pk)
+        
+        return instance
     
     class Meta:
         model = FixedIncomePosition
@@ -63,8 +121,10 @@ class FixedIncomePositionSerializer(serializers.ModelSerializer):
             'liquidity',
             'interest',
             'investment_type',
+            'investment_type_id',
             'investment_type_name',
             'investment_sub_type',
+            'investment_sub_type_id',
             'investment_sub_type_name',
             'source',
             'import_date',

@@ -1,13 +1,13 @@
 @if (isLoading) {
   <div class="loading-state">
-    <p>Carregando detalhes do CDB...</p>
+    <p>Carregando detalhes de Renda Fixa...</p>
   </div>
 } @else if (errorMessage) {
   <div class="error-state">
     <p>{{ errorMessage }}</p>
   </div>
 } @else if (position) {
-  <div class="cdb-detail-container">
+  <div class="fixed-income-detail-container">
     <!-- Top Header Row -->
     <div class="header-row">
       <div class="header-cell">

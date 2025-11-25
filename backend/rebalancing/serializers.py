@@ -4,19 +4,180 @@ Serializers for rebalancing app.
 from rest_framework import serializers
 from .models import RebalancingRecommendation, RebalancingAction
 from stocks.serializers import StockSerializer
+from configuration.serializers import InvestmentSubTypeSerializer
 
 
 class RebalancingActionSerializer(serializers.ModelSerializer):
     """Serializer for RebalancingAction."""
     stock = StockSerializer(read_only=True)
+    investment_subtype = InvestmentSubTypeSerializer(read_only=True)
+    subtype_display_name = serializers.SerializerMethodField()
+    crypto_currency_symbol = serializers.SerializerMethodField()
+    crypto_currency_name = serializers.SerializerMethodField()
     
     class Meta:
         model = RebalancingAction
         fields = [
-            'id', 'action_type', 'stock', 'current_value', 'target_value',
+            'id', 'action_type', 'stock', 'investment_subtype', 'subtype_name',
+            'subtype_display_name', 'crypto_currency_symbol', 'crypto_currency_name',
+            'current_value', 'target_value',
             'difference', 'quantity_to_buy', 'quantity_to_sell', 'display_order', 'reason'
         ]
         read_only_fields = ['id']
+    
+    def get_subtype_display_name(self, obj):
+        """Get display name for subtype."""
+        if obj.investment_subtype:
+            return obj.investment_subtype.name
+        elif obj.subtype_name:
+            return obj.subtype_name
+        return None
+    
+    def get_crypto_currency_symbol(self, obj):
+        """Get crypto currency symbol if this is a crypto action."""
+        if obj.investment_subtype and not obj.stock:
+            # Check if this is a crypto subtype (e.g., "Bitcoin")
+            subtype_name = obj.investment_subtype.name.lower() if obj.investment_subtype.name else ''
+            if 'bitcoin' in subtype_name or 'crypto' in subtype_name or 'cripto' in subtype_name:
+                # Try to find the crypto currency for this user and subtype
+                try:
+                    from crypto.models import CryptoCurrency, CryptoPosition
+                    # Get user from recommendation - use select_related to avoid N+1 queries
+                    user = None
+                    if hasattr(obj, 'recommendation') and obj.recommendation:
+                        # Use select_related if available
+                        try:
+                            user = obj.recommendation.user
+                        except:
+                            # Fallback: get user from recommendation_id if available
+                            from rebalancing.models import RebalancingRecommendation
+                            try:
+                                recommendation = RebalancingRecommendation.objects.select_related('user').get(id=obj.recommendation_id)
+                                user = recommendation.user
+                            except:
+                                pass
+                    
+                    # Check if subtype_name contains a crypto symbol (e.g., "BTC", "ETH")
+                    # This happens when we store the crypto symbol in subtype_name for individual crypto actions
+                    if obj.subtype_name and len(obj.subtype_name) <= 10 and obj.subtype_name.isupper():
+                        # subtype_name might be the crypto symbol itself
+                        try:
+                            crypto_currency = CryptoCurrency.objects.filter(
+                                symbol=obj.subtype_name,
+                                is_active=True
+                            ).first()
+                            if crypto_currency:
+                                return crypto_currency.symbol
+                        except:
+                            pass
+                    
+                    if user:
+                        # Find crypto positions for this user with this subtype
+                        # If subtype_name looks like a crypto symbol, use it directly
+                        if obj.subtype_name and len(obj.subtype_name) <= 10 and obj.subtype_name.isupper():
+                            crypto_positions = CryptoPosition.objects.filter(
+                                user_id=str(user.id),
+                                crypto_currency__symbol=obj.subtype_name,
+                                crypto_currency__is_active=True
+                            ).select_related('crypto_currency').first()
+                        else:
+                            crypto_positions = CryptoPosition.objects.filter(
+                                user_id=str(user.id),
+                                crypto_currency__investment_subtype=obj.investment_subtype,
+                                crypto_currency__is_active=True
+                            ).select_related('crypto_currency').first()
+                        
+                        if crypto_positions and crypto_positions.crypto_currency:
+                            return crypto_positions.crypto_currency.symbol
+                    
+                    # Fallback: find any crypto currency with this subtype
+                    crypto_currency = CryptoCurrency.objects.filter(
+                        investment_subtype=obj.investment_subtype,
+                        is_active=True
+                    ).first()
+                    if crypto_currency:
+                        return crypto_currency.symbol
+                except Exception as e:
+                    import traceback
+                    print(f"Error getting crypto currency symbol: {e}")
+                    traceback.print_exc()
+                    pass
+        return None
+    
+    def get_crypto_currency_name(self, obj):
+        """Get crypto currency name if this is a crypto action."""
+        if obj.investment_subtype and not obj.stock:
+            # Check if this is a crypto subtype (e.g., "Bitcoin")
+            subtype_name = obj.investment_subtype.name.lower() if obj.investment_subtype.name else ''
+            if 'bitcoin' in subtype_name or 'crypto' in subtype_name or 'cripto' in subtype_name:
+                # Try to find the crypto currency for this user and subtype
+                try:
+                    from crypto.models import CryptoCurrency, CryptoPosition
+                    # Get user from recommendation - use select_related to avoid N+1 queries
+                    user = None
+                    if hasattr(obj, 'recommendation') and obj.recommendation:
+                        # Use select_related if available
+                        try:
+                            user = obj.recommendation.user
+                        except:
+                            # Fallback: get user from recommendation_id if available
+                            from rebalancing.models import RebalancingRecommendation
+                            try:
+                                recommendation = RebalancingRecommendation.objects.select_related('user').get(id=obj.recommendation_id)
+                                user = recommendation.user
+                            except:
+                                pass
+                    
+                    # Check if subtype_name contains a crypto symbol (e.g., "BTC", "ETH")
+                    # This happens when we store the crypto symbol in subtype_name for individual crypto actions
+                    if obj.subtype_name and len(obj.subtype_name) <= 10 and obj.subtype_name.isupper():
+                        # subtype_name might be the crypto symbol itself
+                        try:
+                            crypto_currency = CryptoCurrency.objects.filter(
+                                symbol=obj.subtype_name,
+                                is_active=True
+                            ).first()
+                            if crypto_currency:
+                                return crypto_currency.name
+                        except:
+                            pass
+                    
+                    if user:
+                        # Find crypto positions for this user with this subtype
+                        # If subtype_name looks like a crypto symbol, use it directly
+                        if obj.subtype_name and len(obj.subtype_name) <= 10 and obj.subtype_name.isupper():
+                            crypto_positions = CryptoPosition.objects.filter(
+                                user_id=str(user.id),
+                                crypto_currency__symbol=obj.subtype_name,
+                                crypto_currency__is_active=True
+                            ).select_related('crypto_currency').first()
+                        else:
+                            crypto_positions = CryptoPosition.objects.filter(
+                                user_id=str(user.id),
+                                crypto_currency__investment_subtype=obj.investment_subtype,
+                                crypto_currency__is_active=True
+                            ).select_related('crypto_currency').first()
+                        
+                        if crypto_positions and crypto_positions.crypto_currency:
+                            return crypto_positions.crypto_currency.name
+                    
+                    # Fallback: find any crypto currency with this subtype
+                    crypto_currency = CryptoCurrency.objects.filter(
+                        investment_subtype=obj.investment_subtype,
+                        is_active=True
+                    ).first()
+                    if crypto_currency:
+                        return crypto_currency.name
+                    
+                    # Fallback to subtype name
+                    if obj.investment_subtype and obj.investment_subtype.name:
+                        return obj.investment_subtype.name
+                except Exception as e:
+                    import traceback
+                    print(f"Error getting crypto currency name: {e}")
+                    traceback.print_exc()
+                    pass
+        return None
 
 
 class RebalancingRecommendationSerializer(serializers.ModelSerializer):
@@ -74,15 +235,15 @@ class RebalancingRecommendationSerializer(serializers.ModelSerializer):
         current_month = today.month
         current_year = today.year
         
-        # Get "Ações em Reais" investment type
+        # Get "Renda Variável em Reais" investment type
         acoes_reais_type = None
         try:
-            acoes_reais_type = InvestmentType.objects.get(code='ACOES_REAIS', is_active=True)
+            acoes_reais_type = InvestmentType.objects.get(code='RENDA_VARIAVEL_REAIS', is_active=True)
         except InvestmentType.DoesNotExist:
             # Try alternative codes/names
             try:
                 acoes_reais_type = InvestmentType.objects.filter(
-                    Q(code__icontains='ACOES') | Q(name__icontains='Ações em Reais'),
+                    Q(code__icontains='RENDA_VARIAVEL') | Q(name__icontains='Renda Variável em Reais'),
                     is_active=True
                 ).first()
             except:

@@ -7,10 +7,11 @@ from .models import InvestmentType, InvestmentSubType
 
 class InvestmentSubTypeSerializer(serializers.ModelSerializer):
     """Serializer for InvestmentSubType."""
+    investment_type = serializers.PrimaryKeyRelatedField(read_only=True)
     
     class Meta:
         model = InvestmentSubType
-        fields = ['id', 'name', 'code', 'display_order', 'is_predefined', 'is_active']
+        fields = ['id', 'name', 'code', 'display_order', 'is_predefined', 'is_active', 'investment_type']
         read_only_fields = ['id']
 
 

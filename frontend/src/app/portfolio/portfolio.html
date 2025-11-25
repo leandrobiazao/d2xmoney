@@ -41,6 +41,13 @@
       >
         Estratégia de Alocação
       </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'crypto'"
+        (click)="activeTab = 'crypto'"
+      >
+        Criptomoedas
+      </button>
     </div>
 
     <!-- Ações Tab Content -->
@@ -257,6 +264,11 @@
     <!-- Estratégia de Alocação Tab Content -->
     @if (activeTab === 'allocation-strategy') {
       <app-allocation-strategy [userId]="userId" />
+    }
+
+    <!-- Crypto Tab Content -->
+    @if (activeTab === 'crypto') {
+      <app-crypto [userId]="userId!" />
     }
   </div>
 } @else {

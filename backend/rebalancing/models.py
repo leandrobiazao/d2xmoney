@@ -5,6 +5,7 @@ from django.db import models
 from users.models import User
 from allocation_strategies.models import UserAllocationStrategy
 from stocks.models import Stock
+from configuration.models import InvestmentSubType
 
 
 class RebalancingRecommendation(models.Model):
@@ -73,6 +74,20 @@ class RebalancingAction(models.Model):
         null=True,
         blank=True,
         related_name='rebalancing_actions'
+    )
+    investment_subtype = models.ForeignKey(
+        InvestmentSubType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rebalancing_actions',
+        help_text='Investment subtype for rebalancing actions (e.g., "CDB Pré-fixado", "Tesouro Direto")'
+    )
+    subtype_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text='Custom subtype name for actions not linked to a specific subtype'
     )
     current_value = models.DecimalField(max_digits=15, decimal_places=2, default=0.0)
     target_value = models.DecimalField(max_digits=15, decimal_places=2, default=0.0)

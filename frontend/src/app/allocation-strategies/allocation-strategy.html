@@ -97,25 +97,25 @@
                       </div>
                     </div>
 
-                    @if (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0) {
+                    @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
                       <div class="sub-allocations">
                         <div class="validation-banner small" [class.invalid]="!isSubTypeTotalValid(typeAlloc)">
-                          <span>Total por subtipo: {{ getSubTypeTotal(typeAlloc) | number:'1.0-2' }}%</span>
+                          <span>Total por subtipo: {{ getSubTypeTotal(typeAlloc) | number:'1.0-2' }}% / {{ typeAlloc.target_percentage | number:'1.0-2' }}%</span>
                           @if (!isSubTypeTotalValid(typeAlloc)) {
-                            <span>Os subtipos precisam somar 100%</span>
+                            <span>Os subtipos precisam somar {{ typeAlloc.target_percentage | number:'1.0-2' }}% (mesmo valor do tipo)</span>
                           }
                         </div>
-                        @for (subAlloc of typeAlloc.sub_type_allocations; track subAlloc.id || subAlloc.sub_type?.id || subAlloc.custom_name; let subIndex = $index) {
+                        @for (subType of getSubTypesForInvestmentType(typeAlloc.investment_type_id); track subType.id; let subIndex = $index) {
                           <div class="sub-allocation-row">
-                            <span>{{ subAlloc.sub_type?.name || subAlloc.custom_name }}</span>
+                            <span>{{ subType.name }}</span>
                             <div class="percentage-input">
                               <input
                                 type="number"
                                 min="0"
                                 max="100"
                                 step="0.1"
-                                [ngModel]="subAlloc.target_percentage"
-                                (ngModelChange)="onSubTypePercentageChange(typeIndex, subIndex, $event)"
+                                [ngModel]="getSubTypeAllocation(typeIndex, subType.id)?.target_percentage || 0"
+                                (ngModelChange)="onSubTypePercentageChange(typeIndex, subIndex, $event, subType.id)"
                               />
                               <span>%</span>
                             </div>
@@ -365,6 +365,10 @@
                                 <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
                               } @else if (action.quantity_to_sell) {
                                 <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                              } @else if (action.difference > 0) {
+                                <span class="badge badge-buy">Aumentar</span>
+                              } @else if (action.difference < 0) {
+                                <span class="badge badge-sell">Reduzir</span>
                               } @else {
                                 <span class="badge badge-maintain">Manter</span>
                               }
@@ -377,77 +381,195 @@
                 }
               </section>
 
-              <!-- Renda Fixa Section -->
+              <!-- Renda Fixa Section - Grouped by Subtype -->
               @if (getRendaFixaActions().length > 0) {
                 <section class="rebalancing-section">
                   <h4>Renda Fixa - Rebalanceamento</h4>
-                  <div class="action-group">
-                    <table class="actions-table">
-                      <thead>
-                        <tr>
-                          <th>Tipo</th>
-                          <th>Valor Atual</th>
-                          <th>Valor Alvo</th>
-                          <th>Diferença</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (action of getRendaFixaActions(); track action.id) {
+                  @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
+                    <div class="subtype-action-group">
+                      <h5>{{ subtypeGroup.subtypeName }}</h5>
+                      <table class="actions-table">
+                        <thead>
                           <tr>
-                            <td>Renda Fixa</td>
-                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                              R$ {{ action.difference | number:'1.2-2' }}
-                            </td>
+                            <th>Sub-Tipo de Investimento</th>
+                            <th>Valor Atual</th>
+                            <th>Valor Alvo</th>
+                            <th>Diferença</th>
                           </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          @for (action of subtypeGroup.subtypeActions; track action.id) {
+                            <tr>
+                              <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                R$ {{ action.difference | number:'1.2-2' }}
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
                 </section>
               }
 
-              <!-- Ações em Dólares Section -->
+              <!-- Renda Variável em Dólares Section - Nested Structure as per Design -->
               @if (getAcoesDolaresActions().length > 0) {
                 <section class="rebalancing-section">
-                  <h4>Ações em Dólares - Rebalanceamento</h4>
-                  <div class="action-group">
-                    <table class="actions-table">
-                      <thead>
-                        <tr>
-                          <th>Ticker</th>
-                          <th>Nome</th>
-                          <th>Valor Atual</th>
-                          <th>Valor Alvo</th>
-                          <th>Diferença</th>
-                          <th>Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (action of getAcoesDolaresActions(); track action.id) {
+                  <h4>Renda Variável em Dólares - Rebalanceamento</h4>
+                  
+                  <!-- Type-Level Summary -->
+                  @if (getRendaVarDolaresTypeActions().length > 0) {
+                    <div class="type-action-group">
+                      <table class="actions-table">
+                        <thead>
                           <tr>
-                            <td><strong>{{ action.stock?.ticker }}</strong></td>
-                            <td>{{ action.stock?.name }}</td>
-                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                              R$ {{ action.difference | number:'1.2-2' }}
-                            </td>
-                            <td>
-                              @if (action.quantity_to_buy) {
-                                <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
-                              } @else if (action.quantity_to_sell) {
-                                <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
-                              } @else {
-                                <span class="badge badge-maintain">Manter</span>
-                              }
-                            </td>
+                            <th>Tipo</th>
+                            <th>Valor Atual</th>
+                            <th>Valor Alvo</th>
+                            <th>Diferença</th>
+                            <th>Ação</th>
                           </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getRendaVarDolaresTypeActions(); track action.id) {
+                            <tr>
+                              <td><strong>Renda Variável em Dólares</strong></td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                R$ {{ action.difference | number:'1.2-2' }}
+                              </td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Comprar</span>
+                                } @else if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Vender</span>
+                                } @else if (action.difference > 0) {
+                                  <span class="badge badge-buy">Aumentar</span>
+                                } @else if (action.difference < 0) {
+                                  <span class="badge badge-sell">Reduzir</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                      
+                      <!-- SubType-Level Summary - Nested inside Type-Level -->
+                      <div class="subtype-level-summary">
+                        <!-- BDRs Subsection -->
+                        @if (getBDRsSubtypeActions().length > 0) {
+                          <div class="subtype-action-group">
+                            <h5>BDRs</h5>
+                            <table class="actions-table">
+                              <thead>
+                                <tr>
+                                  <th>Ticker</th>
+                                  <th>Nome</th>
+                                  <th>Valor Atual</th>
+                                  <th>Valor Alvo</th>
+                                  <th>Diferença</th>
+                                  <th>Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (action of getBDRsSubtypeActions(); track action.id) {
+                                  <tr>
+                                    <td><strong>{{ action.stock?.ticker || '-' }}</strong></td>
+                                    <td>{{ action.stock?.name || '-' }}</td>
+                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                    <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                      R$ {{ action.difference | number:'1.2-2' }}
+                                    </td>
+                                    <td>
+                                      @if (action.quantity_to_buy) {
+                                        <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                      } @else if (action.quantity_to_sell) {
+                                        <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                      } @else if (action.difference > 0) {
+                                        <span class="badge badge-buy">Aumentar</span>
+                                      } @else if (action.difference < 0) {
+                                        <span class="badge badge-sell">Reduzir</span>
+                                      } @else {
+                                        <span class="badge badge-maintain">Manter</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
                         }
-                      </tbody>
-                    </table>
-                  </div>
+                        
+                        <!-- Crypto Subsection -->
+                        @if (getCryptoSubtypeActions().length > 0) {
+                          <div class="subtype-action-group">
+                            <h5>Crypto</h5>
+                            <table class="actions-table">
+                              <thead>
+                                <tr>
+                                  <th>Ticker</th>
+                                  <th>Nome</th>
+                                  <th>Valor Atual</th>
+                                  <th>Valor Alvo</th>
+                                  <th>Diferença</th>
+                                  <th>Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (action of getCryptoSubtypeActions(); track action.id) {
+                                  <tr>
+                                    <td>
+                                      @if (action.crypto_currency_symbol) {
+                                        <strong>{{ action.crypto_currency_symbol }}</strong>
+                                      } @else {
+                                        <strong>{{ action.subtype_name || action.investment_subtype?.name || '-' }}</strong>
+                                      }
+                                    </td>
+                                    <td>
+                                      @if (action.crypto_currency_name) {
+                                        {{ action.crypto_currency_name }}
+                                      } @else {
+                                        {{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || '-' }}
+                                      }
+                                    </td>
+                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                    <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                      R$ {{ action.difference | number:'1.2-2' }}
+                                    </td>
+                                    <td>
+                                      @if (action.quantity_to_buy) {
+                                        <span class="badge badge-buy">
+                                          Comprar {{ (action.quantity_to_buy / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
+                                        </span>
+                                      } @else if (action.quantity_to_sell) {
+                                        <span class="badge badge-sell">
+                                          Vender {{ (Math.abs(action.quantity_to_sell) / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
+                                        </span>
+                                      } @else if (action.difference > 0) {
+                                        <span class="badge badge-buy">Aumentar</span>
+                                      } @else if (action.difference < 0) {
+                                        <span class="badge badge-sell">Reduzir</span>
+                                      } @else {
+                                        <span class="badge badge-maintain">Manter</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
                 </section>
               }
 

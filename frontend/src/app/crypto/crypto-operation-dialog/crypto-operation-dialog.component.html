@@ -1,0 +1,64 @@
+<div class="dialog-overlay" (click)="onOverlayClick($event)">
+  <div class="dialog-container" (click)="$event.stopPropagation()">
+    <div class="dialog-header">
+      <h3>{{ operation ? 'Editar' : 'Nova' }} Operação de Criptomoeda</h3>
+      <button class="btn-close" (click)="onCancel()">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="form-group">
+        <label>Criptomoeda *</label>
+        <select [(ngModel)]="formData.crypto_currency_id" [disabled]="!!operation">
+          <option [ngValue]="undefined">-- Selecionar --</option>
+          @for (currency of currencies; track currency.id) {
+            <option [ngValue]="currency.id">{{ currency.symbol }} - {{ currency.name }}</option>
+          }
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>Tipo de Operação *</label>
+        <select [(ngModel)]="formData.operation_type">
+          <option value="BUY">Compra</option>
+          <option value="SELL">Venda</option>
+        </select>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quantidade *</label>
+          <input type="number" step="0.00000001" [(ngModel)]="formData.quantity" placeholder="0.00000000" />
+        </div>
+        
+        <div class="form-group">
+          <label>Preço por Unidade *</label>
+          <input type="number" step="0.01" [(ngModel)]="formData.price" placeholder="0.00" />
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Valor Total</label>
+        <input type="text" [value]="formatCurrency(totalValue)" readonly />
+      </div>
+      
+      <div class="form-group">
+        <label>Data da Operação *</label>
+        <input type="date" [(ngModel)]="formData.operation_date" />
+      </div>
+      
+      <div class="form-group">
+        <label>Corretora</label>
+        <input type="text" [(ngModel)]="formData.broker" placeholder="Ex: Binance, Coinbase" />
+      </div>
+      
+      <div class="form-group">
+        <label>Observações</label>
+        <textarea [(ngModel)]="formData.notes" rows="3" placeholder="Observações adicionais..."></textarea>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn-secondary" (click)="onCancel()">Cancelar</button>
+      <button class="btn-primary" (click)="onSave()">Salvar</button>
+    </div>
+  </div>
+</div>
+

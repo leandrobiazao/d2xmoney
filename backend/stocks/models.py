@@ -2,7 +2,7 @@
 Django models for stocks app.
 """
 from django.db import models
-from configuration.models import InvestmentType
+from configuration.models import InvestmentType, InvestmentSubType
 
 
 class Stock(models.Model):
@@ -24,12 +24,6 @@ class Stock(models.Model):
     ticker = models.CharField(max_length=20, unique=True, db_index=True)
     name = models.CharField(max_length=255)
     cnpj = models.CharField(max_length=18, null=True, blank=True)
-    investment_type = models.ForeignKey(
-        InvestmentType,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='stocks'
-    )
     financial_market = models.CharField(
         max_length=20,
         choices=FINANCIAL_MARKET_CHOICES,
@@ -43,10 +37,24 @@ class Stock(models.Model):
     current_price = models.DecimalField(max_digits=12, decimal_places=2, default=0.0)
     last_updated = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
-
+    investment_type = models.ForeignKey(
+        InvestmentType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stocks'
+    )
+    investment_subtype = models.ForeignKey(
+        InvestmentSubType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stocks'
+    )
+    
     class Meta:
         db_table = 'stock_catalog'
         ordering = ['ticker']
-
+    
     def __str__(self):
         return f"{self.ticker} - {self.name}"

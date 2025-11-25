@@ -157,13 +157,13 @@
             } @else if (selectedPosition.investment_type_name) {
               {{ selectedPosition.investment_type_name }}
             } @else {
-              Detalhes do CDB
+              Detalhes de Renda Fixa
             }
           </h3>
           <button class="btn-close" (click)="closeDetail()">×</button>
         </div>
         <div class="modal-body">
-          <app-cdb-detail [position]="selectedPosition" />
+          <app-fixed-income-detail [position]="selectedPosition" />
         </div>
       </div>
     </div>

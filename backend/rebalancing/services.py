@@ -10,7 +10,7 @@ from allocation_strategies.models import UserAllocationStrategy
 from allocation_strategies.services import AllocationStrategyService
 from ambb_strategy.services import AMBBStrategyService
 from portfolio_operations.models import PortfolioPosition
-from configuration.models import InvestmentType
+from configuration.models import InvestmentType, InvestmentSubType
 from .models import RebalancingRecommendation, RebalancingAction
 from stocks.models import Stock
 from django.db.models import Sum, Q
@@ -52,14 +52,14 @@ class RebalancingService:
         current_month = today.month
         current_year = today.year
         
-        # Get "Ações em Reais" investment type
+        # Get "Renda Variável em Reais" investment type
         acoes_reais_type = None
         try:
-            acoes_reais_type = InvestmentType.objects.get(code='ACOES_REAIS', is_active=True)
+            acoes_reais_type = InvestmentType.objects.get(code='RENDA_VARIAVEL_REAIS', is_active=True)
         except InvestmentType.DoesNotExist:
             try:
                 acoes_reais_type = InvestmentType.objects.filter(
-                    Q(code__icontains='ACOES') | Q(name__icontains='Ações em Reais'),
+                    Q(code__icontains='RENDA_VARIAVEL') | Q(name__icontains='Renda Variável em Reais'),
                     is_active=True
                 ).first()
             except:
@@ -113,6 +113,25 @@ class RebalancingService:
             total_value = current_allocation['total_value']
             target_value = total_value * target_percentage / 100
             current_value = total_value * current_percentage / 100
+            
+            # For "Renda Variável em Dólares", ensure current_value includes ALL subtypes (BDRs + Bitcoin + others)
+            # The target_value should be based on the type percentage, not subtype percentage
+            if type_alloc.investment_type.code == 'RENDA_VARIAVEL_DOLARES' or 'Dólares' in investment_type_name:
+                # Calculate current value by summing ALL subtypes (BDRs + Bitcoin + others)
+                # Find current subtype data for this investment type
+                for type_data in current_allocation['investment_types']:
+                    if type_data['investment_type_id'] == type_alloc.investment_type.id:
+                        # Sum all subtype current values
+                        current_subtype_data = {
+                            st['sub_type_id']: st for st in type_data.get('sub_types', [])
+                        }
+                        
+                        # Sum all subtype current values
+                        current_value = Decimal('0')
+                        for subtype_data in current_subtype_data.values():
+                            subtype_current_value = Decimal(str(subtype_data.get('current_value', 0)))
+                            current_value += subtype_current_value
+                        break
             difference = target_value - current_value
             
             if abs(difference) > Decimal('1.00'):  # Significant difference
@@ -124,6 +143,166 @@ class RebalancingService:
                     difference=difference,
                     display_order=type_alloc.display_order
                 )
+            
+            # Generate subtype rebalancing recommendations
+            # Get subtype allocations for this investment type
+            subtype_allocations = type_alloc.sub_type_allocations.all()
+            if subtype_allocations.exists():
+                # Find current subtype data for this investment type
+                current_subtype_data = {}
+                for type_data in current_allocation['investment_types']:
+                    if type_data['investment_type_id'] == type_alloc.investment_type.id:
+                        current_subtype_data = {
+                            st['sub_type_id']: st for st in type_data.get('sub_types', [])
+                        }
+                        break
+                
+                # Generate rebalancing actions for each subtype
+                for subtype_alloc in subtype_allocations:
+                    subtype = subtype_alloc.sub_type
+                    subtype_id = subtype.id if subtype else None
+                    subtype_name = subtype.name if subtype else subtype_alloc.custom_name
+                    
+                    # Check if this is a crypto subtype - if so, create individual actions for each crypto position
+                    is_crypto_subtype = False
+                    if subtype_name:
+                        name_lower = subtype_name.lower()
+                        is_crypto_subtype = 'bitcoin' in name_lower or 'crypto' in name_lower or 'cripto' in name_lower
+                    
+                    if is_crypto_subtype and type_alloc.investment_type.code == 'RENDA_VARIAVEL_DOLARES':
+                        # For crypto subtypes, create individual actions for each crypto position
+                        try:
+                            from crypto.models import CryptoPosition, CryptoCurrency
+                            from crypto.services import CryptoService
+                            
+                            # Get all crypto positions for this user with this subtype
+                            crypto_positions = CryptoPosition.objects.filter(
+                                user_id=str(user.id),
+                                quantity__gt=0,
+                                crypto_currency__investment_subtype=subtype,
+                                crypto_currency__investment_type=type_alloc.investment_type,
+                                crypto_currency__is_active=True
+                            ).select_related('crypto_currency').order_by('crypto_currency__symbol')
+                            
+                            # Calculate target value for subtype (as percentage of total portfolio directly, not relative to type)
+                            subtype_target_percentage = subtype_alloc.target_percentage
+                            subtype_total_target_value = total_value * (subtype_target_percentage / 100)
+                            
+                            # Calculate total current value for all cryptos of this subtype
+                            subtype_total_current_value = Decimal('0')
+                            crypto_actions_data = []
+                            
+                            for crypto_position in crypto_positions:
+                                crypto_currency = crypto_position.crypto_currency
+                                
+                                # Calculate current value: quantity * current_price (if available) or average_price
+                                current_price = None
+                                if crypto_currency.symbol:
+                                    try:
+                                        current_price = CryptoService.fetch_crypto_price(crypto_currency.symbol, 'BRL')
+                                    except:
+                                        pass
+                                
+                                position_current_value = Decimal(str(crypto_position.quantity)) * (
+                                    Decimal(str(current_price)) if current_price else Decimal(str(crypto_position.average_price))
+                                )
+                                
+                                subtype_total_current_value += position_current_value
+                                crypto_actions_data.append({
+                                    'crypto_currency': crypto_currency,
+                                    'current_value': position_current_value,
+                                    'quantity': crypto_position.quantity,
+                                    'current_price': current_price
+                                })
+                            
+                            # If we have crypto positions, distribute target value proportionally
+                            if crypto_actions_data and subtype_total_current_value > 0:
+                                crypto_index = 0
+                                for crypto_data in crypto_actions_data:
+                                    crypto_currency = crypto_data['crypto_currency']
+                                    
+                                    # Distribute target value proportionally based on current value
+                                    proportion = crypto_data['current_value'] / subtype_total_current_value
+                                    crypto_target_value = subtype_total_target_value * proportion
+                                    crypto_difference = crypto_target_value - crypto_data['current_value']
+                                    
+                                    # Calculate quantity to buy/sell if we have current price
+                                    quantity_to_adjust = None
+                                    if crypto_data['current_price']:
+                                        try:
+                                            price = Decimal(str(crypto_data['current_price']))
+                                            if price > 0:
+                                                quantity_to_adjust = crypto_difference / price
+                                        except:
+                                            pass
+                                    # If no current price but we have current_value and quantity, estimate price
+                                    elif crypto_data['current_value'] > 0 and crypto_position.quantity > 0:
+                                        try:
+                                            # Estimate price from current value and quantity
+                                            estimated_price = Decimal(str(crypto_data['current_value'])) / Decimal(str(crypto_position.quantity))
+                                            if estimated_price > 0:
+                                                quantity_to_adjust = crypto_difference / estimated_price
+                                        except:
+                                            pass
+                                    
+                                    # Only create action if difference is significant (at least R$ 100)
+                                    if abs(crypto_difference) > Decimal('100.00'):
+                                        RebalancingAction.objects.create(
+                                            recommendation=recommendation,
+                                            action_type='rebalance',
+                                            investment_subtype=subtype,
+                                            subtype_name=crypto_currency.symbol,  # Store crypto symbol in subtype_name for identification
+                                            current_value=crypto_data['current_value'],
+                                            target_value=crypto_target_value,
+                                            difference=crypto_difference,
+                                            # For crypto, store as integer but frontend will handle decimal display
+                                            # Store rounded to 6 decimal places as integer (multiply by 1e6)
+                                            quantity_to_buy=int(quantity_to_adjust * Decimal('1000000')) if quantity_to_adjust and quantity_to_adjust > 0 else None,
+                                            quantity_to_sell=int(abs(quantity_to_adjust) * Decimal('1000000')) if quantity_to_adjust and quantity_to_adjust < 0 else None,
+                                            display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 100 + crypto_index
+                                        )
+                                    crypto_index += 1
+                        except Exception as e:
+                            import traceback
+                            print(f"Error creating individual crypto actions: {e}")
+                            traceback.print_exc()
+                            # Fall back to aggregated action if error occurs
+                            pass
+                    else:
+                        # For non-crypto subtypes or when crypto logic fails, create aggregated action as before
+                        # Calculate target value for subtype (as percentage of total portfolio directly, not relative to type)
+                        subtype_target_percentage = subtype_alloc.target_percentage
+                        subtype_target_value = total_value * (subtype_target_percentage / 100)
+                        
+                        # Find current value for this subtype
+                        subtype_current_value = Decimal('0')
+                        # Try matching by ID first
+                        if subtype_id is not None and subtype_id in current_subtype_data:
+                            subtype_current_value = Decimal(str(current_subtype_data[subtype_id].get('current_value', 0)))
+                        else:
+                            # For custom subtypes or None subtype_id, try to match by name (case-insensitive)
+                            for sub_id, sub_data in current_subtype_data.items():
+                                current_name = sub_data.get('sub_type_name', '').strip().lower()
+                                target_name = subtype_name.strip().lower() if subtype_name else ''
+                                if current_name == target_name or current_name.startswith(target_name) or target_name.startswith(current_name):
+                                    subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
+                                    break
+                        
+                        subtype_difference = subtype_target_value - subtype_current_value
+                        
+                        # Only create action if difference is significant (at least 1% of subtype target or R$ 100)
+                        threshold = max(subtype_target_value * Decimal('0.01'), Decimal('100.00'))
+                        if abs(subtype_difference) > threshold:
+                            RebalancingAction.objects.create(
+                                recommendation=recommendation,
+                                action_type='rebalance',
+                                investment_subtype=subtype,
+                                subtype_name=subtype_name if not subtype else None,
+                                current_value=subtype_current_value,
+                                target_value=subtype_target_value,
+                                difference=subtype_difference,
+                                display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order
+                            )
         
         # Generate AMBB strategy recommendations for "Ações em Reais"
         # Pass the remaining monthly limit to consider previous sales this month
@@ -249,20 +428,20 @@ class RebalancingService:
             except Stock.DoesNotExist:
                 pass
         
-        # Generate recommendations for BERK34 (Ações em Dólares)
+        # Generate recommendations for BERK34 (Renda Variável em Dólares)
         try:
             acoes_dolares_type = InvestmentType.objects.get(
-                code__in=['ACOES_DOLARES', 'AÇÕES_EM_DÓLARES'],
+                code='RENDA_VARIAVEL_DOLARES',
                 is_active=True
             )
         except InvestmentType.DoesNotExist:
             # Try alternative names
             try:
-                acoes_dolares_type = InvestmentType.objects.get(
-                    name__icontains='Ações em Dólares',
+                acoes_dolares_type = InvestmentType.objects.filter(
+                    Q(code__icontains='RENDA_VARIAVEL') | Q(name__icontains='Renda Variável em Dólares'),
                     is_active=True
-                )
-            except InvestmentType.DoesNotExist:
+                ).first()
+            except:
                 acoes_dolares_type = None
         
         if acoes_dolares_type:
@@ -274,78 +453,98 @@ class RebalancingService:
                     break
             
             if acoes_dolares_alloc:
-                # Get target value for Ações em Dólares
-                target_percentage = acoes_dolares_alloc.target_percentage
-                total_value = current_allocation['total_value']
-                target_value = total_value * target_percentage / 100
+                # Get target value for BERK34 using BDRs subtype allocation (15% of type, not 50% of type)
+                # Find BDRs subtype allocation
+                bdr_subtype = InvestmentSubType.objects.filter(
+                    investment_type=acoes_dolares_type,
+                    name__icontains='BDR',
+                    is_active=True
+                ).first()
                 
-                # Get current BERK34 position
-                try:
-                    berk34_stock = Stock.objects.get(ticker='BERK34', is_active=True)
-                    berk34_position = PortfolioPosition.objects.filter(
-                        user_id=str(user.id),
-                        ticker='BERK34'
+                if bdr_subtype:
+                    # Find the BDRs subtype allocation
+                    bdr_subtype_alloc = acoes_dolares_alloc.sub_type_allocations.filter(
+                        sub_type=bdr_subtype
                     ).first()
                     
-                    current_value = Decimal('0')
-                    current_quantity = 0
-                    
-                    if berk34_position:
-                        # Use valor_total_investido as current value (or could use current_price * quantity)
-                        current_value = Decimal(str(berk34_position.valor_total_investido))
-                        current_quantity = berk34_position.quantidade
-                    
-                    difference = target_value - current_value
-                    
-                    # Only create action if difference is significant
-                    if abs(difference) > Decimal('1.00'):
-                        # Get current price for BERK34
-                        current_price = berk34_stock.current_price or Decimal('0')
+                    if bdr_subtype_alloc:
+                        # Calculate target value based on BDRs subtype allocation
+                        # Subtype target_percentage is a direct percentage of total portfolio, not relative to parent type
+                        bdr_subtype_percentage = bdr_subtype_alloc.target_percentage
+                        total_value = current_allocation['total_value']
+                        # Target value = total_value * subtype_percentage / 100 (direct percentage of total portfolio)
+                        target_value = total_value * (bdr_subtype_percentage / 100)
                         
-                        if current_price == 0:
-                            # Price not available - create action without quantity
-                            action_type = 'buy' if current_value == 0 else 'rebalance'
-                            RebalancingAction.objects.create(
-                                recommendation=recommendation,
-                                action_type=action_type,
-                                stock=berk34_stock,
-                                current_value=current_value,
-                                target_value=target_value,
-                                difference=difference,
-                                display_order=action_order
-                            )
-                        else:
-                            # Calculate quantity to buy/sell based on current price
-                            if difference > 0:
-                                # Need to buy more
-                                quantity_to_buy = int(difference / current_price)
-                                action_type = 'buy' if current_value == 0 else 'rebalance'
-                                RebalancingAction.objects.create(
-                                    recommendation=recommendation,
-                                    action_type=action_type,
-                                    stock=berk34_stock,
-                                    current_value=current_value,
-                                    target_value=target_value,
-                                    difference=difference,
-                                    quantity_to_buy=quantity_to_buy,
-                                    display_order=action_order
-                                )
-                            else:
-                                # Need to sell some
-                                quantity_to_sell = int(abs(difference) / current_price)
-                                RebalancingAction.objects.create(
-                                    recommendation=recommendation,
-                                    action_type='rebalance',
-                                    stock=berk34_stock,
-                                    current_value=current_value,
-                                    target_value=target_value,
-                                    difference=difference,
-                                    quantity_to_sell=quantity_to_sell,
-                                    display_order=action_order
-                                )
-                        action_order += 1
-                except Stock.DoesNotExist:
-                    pass
+                        # Get current BERK34 position
+                        try:
+                            berk34_stock = Stock.objects.get(ticker='BERK34', is_active=True)
+                            berk34_position = PortfolioPosition.objects.filter(
+                                user_id=str(user.id),
+                                ticker='BERK34'
+                            ).first()
+                            
+                            current_value = Decimal('0')
+                            current_quantity = 0
+                            
+                            if berk34_position:
+                                # Use valor_total_investido as current value (or could use current_price * quantity)
+                                current_value = Decimal(str(berk34_position.valor_total_investido))
+                                current_quantity = berk34_position.quantidade
+                            
+                            difference = target_value - current_value
+                            
+                            # Only create action if difference is significant
+                            if abs(difference) > Decimal('1.00'):
+                                # Get current price for BERK34
+                                current_price = berk34_stock.current_price or Decimal('0')
+                                
+                                if current_price == 0:
+                                    # Price not available - create action without quantity
+                                    action_type = 'buy' if current_value == 0 else 'rebalance'
+                                    RebalancingAction.objects.create(
+                                        recommendation=recommendation,
+                                        action_type=action_type,
+                                        stock=berk34_stock,
+                                        investment_subtype=bdr_subtype,  # Link to BDRs subtype
+                                        current_value=current_value,
+                                        target_value=target_value,
+                                        difference=difference,
+                                        display_order=action_order
+                                    )
+                                else:
+                                    # Calculate quantity to buy/sell based on current price
+                                    if difference > 0:
+                                        # Need to buy more
+                                        quantity_to_buy = int(difference / current_price)
+                                        action_type = 'buy' if current_value == 0 else 'rebalance'
+                                        RebalancingAction.objects.create(
+                                            recommendation=recommendation,
+                                            action_type=action_type,
+                                            stock=berk34_stock,
+                                            investment_subtype=bdr_subtype,  # Link to BDRs subtype
+                                            current_value=current_value,
+                                            target_value=target_value,
+                                            difference=difference,
+                                            quantity_to_buy=quantity_to_buy,
+                                            display_order=action_order
+                                        )
+                                    else:
+                                        # Need to sell some
+                                        quantity_to_sell = int(abs(difference) / current_price)
+                                        RebalancingAction.objects.create(
+                                            recommendation=recommendation,
+                                            action_type='rebalance',
+                                            stock=berk34_stock,
+                                            investment_subtype=bdr_subtype,  # Link to BDRs subtype
+                                            current_value=current_value,
+                                            target_value=target_value,
+                                            difference=difference,
+                                            quantity_to_sell=quantity_to_sell,
+                                            display_order=action_order
+                                        )
+                                action_order += 1
+                        except Stock.DoesNotExist:
+                            pass
         
         return recommendation
 

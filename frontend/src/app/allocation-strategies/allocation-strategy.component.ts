@@ -11,7 +11,7 @@ import {
   SubTypeAllocation
 } from './allocation-strategy.service';
 import { UserItemComponent } from '../users/user-item/user-item';
-import { ConfigurationService, InvestmentType } from '../configuration/configuration.service';
+import { ConfigurationService, InvestmentType, InvestmentSubType } from '../configuration/configuration.service';
 import { RebalancingService, RebalancingRecommendation, RebalancingAction } from '../rebalancing/rebalancing.service';
 import { HttpClient } from '@angular/common/http';
 
@@ -46,6 +46,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   pieChartData: PieChartData | null = null;
   draftTypeAllocations: DraftTypeAllocation[] = [];
   totalPortfolioValueInput: number | null = null;
+  investmentSubTypes: InvestmentSubType[] = [];
   
   // Tab management
   activeTab: 'configuration' | 'rebalancing' = 'configuration';
@@ -66,6 +67,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   ) {}
 
   ngOnInit(): void {
+    this.loadInvestmentSubTypes();
     // Only load users if userId is not provided (standalone mode)
     if (!this.userId) {
       this.loadUsers();
@@ -123,6 +125,26 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   loadStrategy(userId: string): void {
     this.isLoadingStrategy = true;
+    
+    // Ensure subtypes are loaded before loading strategy
+    if (this.investmentSubTypes.length === 0) {
+      this.configurationService.getInvestmentSubTypes(undefined, true).subscribe({
+        next: (subTypes) => {
+          this.investmentSubTypes = subTypes.filter(s => s.is_active).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+          this.doLoadStrategy(userId);
+        },
+        error: (error) => {
+          console.error('Error loading investment subtypes:', error);
+          // Continue loading strategy even if subtypes fail to load
+          this.doLoadStrategy(userId);
+        }
+      });
+    } else {
+      this.doLoadStrategy(userId);
+    }
+  }
+
+  private doLoadStrategy(userId: string): void {
     this.allocationStrategyService.getAllocationStrategies(userId).subscribe({
       next: (strategies) => {
         if (strategies.length > 0) {
@@ -158,45 +180,93 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   initializeDraftAllocations(): void {
-    // If strategy exists but has no type_allocations, initialize with all investment types at 0%
-    if (!this.strategy?.type_allocations || this.strategy.type_allocations.length === 0) {
-      this.totalPortfolioValueInput = this.strategy?.total_portfolio_value || null;
-      
-      // Load all investment types and initialize them at 0%
-      this.configurationService.getInvestmentTypes(true).subscribe({
-        next: (investmentTypes) => {
-          this.draftTypeAllocations = investmentTypes.map((type, index) => ({
-            investment_type_id: type.id,
-            investment_type: {
-              id: type.id,
-              name: type.name,
-              code: type.code
-            },
-            target_percentage: 0,
-            display_order: index,
-            sub_type_allocations: []
+    this.totalPortfolioValueInput = this.strategy?.total_portfolio_value || null;
+    
+    // Always load all active investment types to ensure we show all current types
+    this.configurationService.getInvestmentTypes(true).subscribe({
+      next: (allInvestmentTypes) => {
+        // Create a map of existing allocations by investment_type_id for quick lookup
+        const existingAllocationsMap = new Map<number, any>();
+        if (this.strategy?.type_allocations) {
+          this.strategy.type_allocations.forEach((typeAlloc) => {
+            existingAllocationsMap.set(typeAlloc.investment_type.id, typeAlloc);
+          });
+        }
+
+        // Merge existing allocations with all active investment types
+        this.draftTypeAllocations = allInvestmentTypes.map((type, index) => {
+          const existingAlloc = existingAllocationsMap.get(type.id);
+          
+          // Get available subtypes for this investment type
+          const availableSubtypes = this.getSubTypesForInvestmentType(type.id);
+          
+          if (availableSubtypes.length > 0) {
+            // Always show subtypes if they exist for this investment type
+            const initializedSubtypes = availableSubtypes.map((subType, subIndex) => {
+              // Check if this subtype was in the existing allocation
+              const existingSubAlloc = existingAlloc?.sub_type_allocations?.find((sa: any) => sa.sub_type?.id === subType.id || sa.sub_type_id === subType.id);
+              
+              return {
+                ...existingSubAlloc,
+                sub_type_id: subType.id,
+                sub_type: {
+                  id: subType.id,
+                  name: subType.name,
+                  code: subType.code
+                },
+                target_percentage: existingSubAlloc ? existingSubAlloc.target_percentage : 0,
+                display_order: existingSubAlloc?.display_order ?? subIndex
+              };
+            });
+            
+            return {
+              ...existingAlloc,
+              investment_type_id: type.id,
+              investment_type: {
+                id: type.id,
+                name: type.name,
+                code: type.code
+              },
+              target_percentage: existingAlloc?.target_percentage ?? 0,
+              display_order: existingAlloc?.display_order ?? index,
+              sub_type_allocations: initializedSubtypes
+            };
+          } else {
+            // No subtypes available - use existing allocation or create new
+            return {
+              ...existingAlloc,
+              investment_type_id: type.id,
+              investment_type: {
+                id: type.id,
+                name: type.name,
+                code: type.code
+              },
+              target_percentage: existingAlloc?.target_percentage ?? 0,
+              display_order: existingAlloc?.display_order ?? index,
+              sub_type_allocations: existingAlloc?.sub_type_allocations || []
+            };
+          }
+        });
+      },
+      error: (error) => {
+        console.error('Error loading investment types:', error);
+        // Fallback to existing allocations if loading fails
+        if (this.strategy?.type_allocations) {
+          this.draftTypeAllocations = this.strategy.type_allocations.map((typeAlloc, index) => ({
+            ...typeAlloc,
+            investment_type_id: typeAlloc.investment_type.id,
+            display_order: typeAlloc.display_order ?? index,
+            sub_type_allocations: typeAlloc.sub_type_allocations?.map((subAlloc, subIndex) => ({
+              ...subAlloc,
+              sub_type_id: subAlloc.sub_type?.id,
+              display_order: subAlloc.display_order ?? subIndex
+            })) || []
           }));
-        },
-        error: (error) => {
-          console.error('Error loading investment types:', error);
+        } else {
           this.draftTypeAllocations = [];
         }
-      });
-      return;
-    }
-
-    this.draftTypeAllocations = this.strategy.type_allocations.map((typeAlloc, index) => ({
-      ...typeAlloc,
-      investment_type_id: typeAlloc.investment_type.id,
-      display_order: typeAlloc.display_order ?? index,
-      sub_type_allocations: typeAlloc.sub_type_allocations?.map((subAlloc, subIndex) => ({
-        ...subAlloc,
-        sub_type_id: subAlloc.sub_type?.id,
-        display_order: subAlloc.display_order ?? subIndex
-      })) || []
-    }));
-
-    this.totalPortfolioValueInput = this.strategy.total_portfolio_value || null;
+      }
+    });
   }
 
   get typeAllocationTotal(): number {
@@ -218,7 +288,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     if (!typeAlloc.sub_type_allocations || typeAlloc.sub_type_allocations.length === 0) {
       return true;
     }
-    return Math.abs(this.getSubTypeTotal(typeAlloc) - 100) < 0.01;
+    // Subtypes should sum to the same percentage as the parent type allocation
+    const typePercentage = Number(typeAlloc.target_percentage || 0);
+    const subTotal = this.getSubTypeTotal(typeAlloc);
+    return Math.abs(subTotal - typePercentage) < 0.01;
   }
 
   onTypePercentageChange(index: number, value: string): void {
@@ -226,13 +299,62 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     this.draftTypeAllocations[index].target_percentage = numericValue;
   }
 
-  onSubTypePercentageChange(typeIndex: number, subIndex: number, value: string): void {
+  onSubTypePercentageChange(typeIndex: number, subIndex: number, value: string, subTypeId: number): void {
     const numericValue = Number(value);
-    const subAllocations = this.draftTypeAllocations[typeIndex].sub_type_allocations;
-    if (subAllocations) {
-      subAllocations[subIndex].target_percentage = numericValue;
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    
+    if (!typeAlloc.sub_type_allocations) {
+      typeAlloc.sub_type_allocations = [];
+    }
+    
+    // Find or create the subtype allocation
+    let subAlloc = typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
+    
+    if (!subAlloc) {
+      const subType = this.investmentSubTypes.find(s => s.id === subTypeId);
+      if (subType) {
+        subAlloc = {
+          sub_type_id: subTypeId,
+          sub_type: {
+            id: subType.id,
+            name: subType.name,
+            code: subType.code
+          },
+          target_percentage: 0,
+          display_order: typeAlloc.sub_type_allocations.length
+        };
+        typeAlloc.sub_type_allocations.push(subAlloc);
+      }
+    }
+    
+    if (subAlloc) {
+      subAlloc.target_percentage = numericValue;
     }
   }
+
+  loadInvestmentSubTypes(): void {
+    this.configurationService.getInvestmentSubTypes(undefined, true).subscribe({
+      next: (subTypes) => {
+        this.investmentSubTypes = subTypes.filter(s => s.is_active).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      },
+      error: (error) => {
+        console.error('Error loading investment subtypes:', error);
+      }
+    });
+  }
+
+  getSubTypesForInvestmentType(investmentTypeId: number): InvestmentSubType[] {
+    return this.investmentSubTypes.filter(s => s.investment_type === investmentTypeId);
+  }
+
+  getSubTypeAllocation(typeIndex: number, subTypeId: number): DraftSubTypeAllocation | undefined {
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc?.sub_type_allocations) {
+      return undefined;
+    }
+    return typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
+  }
+
 
   onConfigureStrategy(): void {
     if (!this.selectedUser) {
@@ -288,6 +410,16 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   onSaveStrategy(): void {
     if (!this.selectedUser || !this.isTypeTotalValid) {
       return;
+    }
+
+    // Validate subtype totals for each type allocation
+    for (const typeAlloc of this.draftTypeAllocations) {
+      if (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0) {
+        if (!this.isSubTypeTotalValid(typeAlloc)) {
+          alert(`Os subtipos de "${typeAlloc.investment_type.name}" precisam somar 100%`);
+          return;
+        }
+      }
     }
 
     const payload = this.draftTypeAllocations.map((typeAlloc, index) => ({
@@ -468,13 +600,80 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   getAcoesDolaresActions(): RebalancingAction[] {
-    if (!this.currentRecommendation) {
+    if (!this.currentRecommendation || !this.strategy) {
       return [];
     }
-    // Filter actions for BERK34 (Ações em Dólares)
-    return this.currentRecommendation.actions.filter(action => 
-      action.stock && action.stock.ticker === 'BERK34'
+    
+    // Find "Renda Variável em Dólares" investment type from strategy
+    const rendaVarDolaresTypeAlloc = this.strategy.type_allocations?.find(
+      typeAlloc => typeAlloc.investment_type?.code === 'RENDA_VARIAVEL_DOLARES' || 
+                   typeAlloc.investment_type?.name?.toLowerCase().includes('renda variável em dólares')
     );
+    
+    if (!rendaVarDolaresTypeAlloc) {
+      // Fallback: filter by BERK34 ticker (old behavior)
+      return this.currentRecommendation.actions.filter(action => 
+        action.stock && action.stock.ticker === 'BERK34'
+      );
+    }
+    
+    // Filter actions for "Renda Variável em Dólares" type
+    // This includes both stock actions (BERK34) and subtype actions (BDRs, Bitcoin, etc.)
+    return this.currentRecommendation.actions.filter(action => 
+      (action.stock && 
+       action.stock.investment_type?.code === 'RENDA_VARIAVEL_DOLARES') ||
+      (action.investment_subtype && 
+       rendaVarDolaresTypeAlloc.sub_type_allocations?.some(
+         subAlloc => subAlloc.sub_type?.id === action.investment_subtype?.id
+       )) ||
+      (!action.stock && !action.investment_subtype && 
+       action.display_order === rendaVarDolaresTypeAlloc.display_order)
+    );
+  }
+
+  getRendaVarDolaresTypeActions(): RebalancingAction[] {
+    // Get type-level actions (no stock, no subtype) - these represent the total type allocation
+    const actions = this.getAcoesDolaresActions();
+    return actions.filter(action => !action.stock && !action.investment_subtype);
+  }
+
+  getBDRsSubtypeActions(): RebalancingAction[] {
+    const actions = this.getAcoesDolaresActions();
+    // Get BDRs actions: stocks with investment_subtype = BDRs
+    return actions.filter(action => {
+      // Must have a stock (individual stock recommendations like BERK34)
+      if (!action.stock) {
+        return false;
+      }
+      // Check if stock's investment_subtype is BDRs
+      const subtypeName = action.stock.investment_subtype?.name || '';
+      return subtypeName.toLowerCase().includes('bdr');
+    }).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+  }
+
+  getCryptoSubtypeActions(): RebalancingAction[] {
+    const actions = this.getAcoesDolaresActions();
+    // Get Crypto actions: actions with investment_subtype = Bitcoin/Crypto (no stock)
+    return actions.filter(action => {
+      // Must have investment_subtype but no stock (crypto positions)
+      if (!action.investment_subtype || action.stock) {
+        return false;
+      }
+      // Check if investment_subtype is Bitcoin or Crypto
+      const subtypeName = action.investment_subtype.name || 
+                         action.subtype_display_name || 
+                         action.subtype_name || '';
+      const nameLower = subtypeName.toLowerCase();
+      // Also check if subtype_name is a crypto symbol (like "BTC", "ETH")
+      const isCryptoSymbol = action.subtype_name && 
+                            action.subtype_name.length <= 10 && 
+                            action.subtype_name === action.subtype_name.toUpperCase() &&
+                            /^[A-Z0-9]+$/.test(action.subtype_name);
+      return nameLower.includes('bitcoin') || 
+             nameLower.includes('crypto') || 
+             nameLower.includes('cripto') ||
+             isCryptoSymbol;
+    }).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   }
 
   getRendaFixaActions(): RebalancingAction[] {
@@ -492,11 +691,41 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       return [];
     }
     
-    // Filter actions without stock AND matching Renda Fixa display_order
+    // Filter actions without stock (type-level and subtype-level rebalancing actions for Renda Fixa)
+    // Actions can match either the type display_order OR be subtype actions (which have investment_subtype)
     return this.currentRecommendation.actions.filter(action => 
-      !action.stock && 
-      action.display_order === rendaFixaTypeAlloc.display_order
+      !action.stock && (
+        action.display_order === rendaFixaTypeAlloc.display_order ||
+        (action.investment_subtype && 
+         rendaFixaTypeAlloc.sub_type_allocations?.some(
+           subAlloc => subAlloc.sub_type?.id === action.investment_subtype?.id
+         ))
+      )
     );
+  }
+
+  getRendaFixaActionsBySubtype(): Array<{subtypeName: string, subtypeActions: RebalancingAction[]}> {
+    const actions = this.getRendaFixaActions();
+    const grouped = new Map<string, RebalancingAction[]>();
+    
+    // Group by subtype
+    actions.forEach(action => {
+      const subtypeName = action.subtype_display_name || 
+                         action.investment_subtype?.name || 
+                         action.subtype_name || 
+                         'Renda Fixa';
+      
+      if (!grouped.has(subtypeName)) {
+        grouped.set(subtypeName, []);
+      }
+      grouped.get(subtypeName)!.push(action);
+    });
+    
+    // Convert Map to Array for template iteration
+    return Array.from(grouped.entries()).map(([subtypeName, subtypeActions]) => ({ 
+      subtypeName, 
+      subtypeActions: subtypeActions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+    }));
   }
 
   // Expose Math for template

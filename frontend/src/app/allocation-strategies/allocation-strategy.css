@@ -161,6 +161,25 @@
   transform: translateY(-1px);
 }
 
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.btn-danger {
+  background: #d70015;
+  color: var(--white);
+}
+
+.btn-danger:hover {
+  background: #c00012;
+}
+
+.btn.active {
+  background: var(--primary-blue);
+  color: var(--white);
+}
+
 .details-card {
   background: var(--white);
   padding: 1.5rem;
@@ -279,6 +298,8 @@
 
 .sub-allocations {
   margin-top: 0.75rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--primary-blue);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -287,8 +308,75 @@
 .sub-allocation-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 0.875rem;
   color: #666;
+  gap: 0.5rem;
+}
+
+.allocation-actions {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.subtype-config-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--primary-blue-light);
+  border-radius: 6px;
+  border: 1px solid var(--primary-blue);
+}
+
+.subtype-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.subtype-config-header h6 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-close:hover {
+  color: var(--text-primary);
+}
+
+.available-subtypes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.available-subtypes .btn-small.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.no-subtypes {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
 }
 
 .actions-bar {
@@ -426,6 +514,36 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+
+.type-action-group {
+  margin-bottom: 1.5rem;
+  margin-top: 1rem;
+}
+
+.subtype-level-summary {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.subtype-action-group {
+  margin-bottom: 1.5rem;
+  margin-top: 1rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--primary-blue);
+}
+
+.subtype-action-group:first-child {
+  margin-top: 0;
+}
+
+.subtype-action-group h5 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary-blue);
+}
+
 
 .action-group {
   margin-top: 1rem;

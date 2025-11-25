@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from users.models import User
 from portfolio_operations.models import PortfolioPosition
 from fixed_income.models import FixedIncomePosition
+from crypto.models import CryptoPosition
 from .models import (
     UserAllocationStrategy,
     InvestmentTypeAllocation,
@@ -99,9 +100,11 @@ class AllocationStrategyService:
                     Decimal(str(sta['target_percentage']))
                     for sta in sub_type_allocations
                 ]
-                if not AllocationStrategyService.validate_percentage_sum(sub_percentages):
+                # Subtypes should sum to the parent type's target_percentage, not 100%
+                expected_sum = Decimal(str(type_alloc_data['target_percentage']))
+                if not AllocationStrategyService.validate_percentage_sum(sub_percentages, expected_sum):
                     raise ValidationError(
-                        f"Sub-type allocations for {investment_type.name} must sum to 100%"
+                        f"Sub-type allocations for {investment_type.name} must sum to {expected_sum}% (same as the parent type allocation)"
                     )
                 
                 for sub_alloc_data in sub_type_allocations:
@@ -205,15 +208,62 @@ class AllocationStrategyService:
             for pos in renda_fixa_positions
         )
         
-        # Total portfolio value = stocks + fixed income (including CAIXA)
-        total_value = stock_total_value + renda_fixa_total_value
+        # Get crypto positions for "Renda Variável em Dólares" type
+        # Only include crypto with investment_type = "Renda Variável em Dólares" and investment_subtype = Crypto/Bitcoin
+        renda_var_dolares_type = None
+        try:
+            renda_var_dolares_type = InvestmentType.objects.get(code='RENDA_VARIAVEL_DOLARES', is_active=True)
+        except InvestmentType.DoesNotExist:
+            try:
+                renda_var_dolares_type = InvestmentType.objects.filter(
+                    name__icontains='Renda Variável em Dólares',
+                    is_active=True
+                ).first()
+            except:
+                pass
         
-        # Group positions by investment type (via stock)
+        # Filter crypto positions by investment_type and investment_subtype
+        if renda_var_dolares_type:
+            crypto_positions = CryptoPosition.objects.filter(
+                user_id=str(user.id),
+                quantity__gt=0,
+                crypto_currency__investment_type=renda_var_dolares_type,
+                crypto_currency__is_active=True
+            ).select_related('crypto_currency', 'crypto_currency__investment_type', 'crypto_currency__investment_subtype')
+        else:
+            crypto_positions = CryptoPosition.objects.none()
+        
+        # Calculate crypto value using current prices (if available) or average price
+        crypto_total_value = Decimal('0')
+        if crypto_positions.exists():
+            from crypto.services import CryptoService
+            for crypto_pos in crypto_positions:
+                crypto_currency = crypto_pos.crypto_currency
+                # Try to get current price, fallback to average price
+                current_price = None
+                if crypto_currency and crypto_currency.symbol:
+                    try:
+                        current_price = CryptoService.fetch_crypto_price(crypto_currency.symbol, 'BRL')
+                    except:
+                        pass
+                
+                price = current_price if current_price else Decimal(str(crypto_pos.average_price))
+                crypto_total_value += Decimal(str(crypto_pos.quantity)) * price
+        
+        # Total portfolio value = stocks + fixed income (including CAIXA) + crypto
+        total_value = stock_total_value + renda_fixa_total_value + crypto_total_value
+        
+        # Group positions by investment type and subtype (via stock)
         type_values = {}
         for position in positions:
             try:
-                stock = Stock.objects.get(ticker=position.ticker, is_active=True)
+                stock = Stock.objects.select_related('investment_type', 'investment_subtype').get(
+                    ticker=position.ticker, 
+                    is_active=True
+                )
                 investment_type = stock.investment_type
+                investment_subtype = stock.investment_subtype
+                
                 if investment_type:
                     type_id = investment_type.id
                     if type_id not in type_values:
@@ -223,12 +273,26 @@ class AllocationStrategyService:
                             'current_value': Decimal('0'),
                             'sub_types': {}
                         }
+                    
+                    # Group by subtype within the investment type
+                    subtype_id = investment_subtype.id if investment_subtype else None
+                    subtype_name = investment_subtype.name if investment_subtype else 'Não categorizado'
+                    
+                    if subtype_id not in type_values[type_id]['sub_types']:
+                        type_values[type_id]['sub_types'][subtype_id] = {
+                            'sub_type_id': subtype_id,
+                            'sub_type_name': subtype_name,
+                            'current_value': Decimal('0')
+                        }
+                    
+                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += Decimal(str(position.valor_total_investido))
                     type_values[type_id]['current_value'] += Decimal(str(position.valor_total_investido))
             except Stock.DoesNotExist:
                 # Stock not in catalog - treat as unallocated
                 pass
         
         # Add RENDA_FIXA from FixedIncomePosition (including CAIXA)
+        # Group by subtype within RENDA_FIXA
         if renda_fixa_type:
             type_id = renda_fixa_type.id
             if type_id not in type_values:
@@ -238,9 +302,77 @@ class AllocationStrategyService:
                     'current_value': Decimal('0'),
                     'sub_types': {}
                 }
+            
+            # Group fixed income positions by subtype
+            for fi_position in renda_fixa_positions:
+                subtype = fi_position.investment_sub_type
+                subtype_id = subtype.id if subtype else None
+                subtype_name = subtype.name if subtype else 'Não categorizado'
+                
+                if subtype_id not in type_values[type_id]['sub_types']:
+                    type_values[type_id]['sub_types'][subtype_id] = {
+                        'sub_type_id': subtype_id,
+                        'sub_type_name': subtype_name,
+                        'current_value': Decimal('0')
+                    }
+                
+                position_value = Decimal(str(fi_position.net_value)) if fi_position.net_value > 0 else Decimal(str(fi_position.position_value))
+                type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
+            
+            # Also add CAIXA positions
+            caixa_subtype_id = None  # CAIXA might not have a subtype assigned
+            caixa_subtype_name = 'Caixa'
+            
+            if caixa_total_value > 0:
+                if caixa_subtype_id not in type_values[type_id]['sub_types']:
+                    type_values[type_id]['sub_types'][caixa_subtype_id] = {
+                        'sub_type_id': caixa_subtype_id,
+                        'sub_type_name': caixa_subtype_name,
+                        'current_value': Decimal('0')
+                    }
+                type_values[type_id]['sub_types'][caixa_subtype_id]['current_value'] += caixa_total_value
+            
             type_values[type_id]['current_value'] += renda_fixa_total_value
         
-        # Calculate percentages
+        # Add crypto positions to "Renda Variável em Dólares"
+        if renda_var_dolares_type and crypto_positions.exists():
+            type_id = renda_var_dolares_type.id
+            if type_id not in type_values:
+                type_values[type_id] = {
+                    'investment_type_id': type_id,
+                    'investment_type_name': renda_var_dolares_type.name,
+                    'current_value': Decimal('0'),
+                    'sub_types': {}
+                }
+            
+            # Group crypto positions by subtype
+            for crypto_position in crypto_positions:
+                crypto_currency = crypto_position.crypto_currency
+                subtype = crypto_currency.investment_subtype
+                subtype_id = subtype.id if subtype else None
+                subtype_name = subtype.name if subtype else 'Não categorizado'
+                
+                # Calculate current value: quantity * current_price (if available) or average_price
+                from crypto.services import CryptoService
+                current_price = None
+                if crypto_currency.symbol:
+                    current_price = CryptoService.fetch_crypto_price(crypto_currency.symbol, 'BRL')
+                
+                position_value = Decimal(str(crypto_position.quantity)) * (
+                    current_price if current_price else Decimal(str(crypto_position.average_price))
+                )
+                
+                if subtype_id not in type_values[type_id]['sub_types']:
+                    type_values[type_id]['sub_types'][subtype_id] = {
+                        'sub_type_id': subtype_id,
+                        'sub_type_name': subtype_name,
+                        'current_value': Decimal('0')
+                    }
+                
+                type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
+                type_values[type_id]['current_value'] += position_value
+        
+        # Calculate percentages for types and subtypes
         investment_types = []
         for type_id, type_data in type_values.items():
             percentage = (
@@ -248,6 +380,18 @@ class AllocationStrategyService:
                 if total_value > 0 else Decimal('0')
             )
             type_data['current_percentage'] = percentage
+            
+            # Calculate percentages for subtypes within this type
+            sub_types_list = []
+            for subtype_id, subtype_data in type_data['sub_types'].items():
+                subtype_percentage = (
+                    (subtype_data['current_value'] / type_data['current_value'] * 100)
+                    if type_data['current_value'] > 0 else Decimal('0')
+                )
+                subtype_data['current_percentage'] = subtype_percentage
+                sub_types_list.append(subtype_data)
+            
+            type_data['sub_types'] = sub_types_list
             investment_types.append(type_data)
         
         # CAIXA is part of RENDA_FIXA, not unallocated
