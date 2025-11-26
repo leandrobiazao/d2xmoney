@@ -33,4 +33,11 @@ main {
   }
 }
 
+/* Router outlet should span full grid width */
+router-outlet {
+  grid-column: 1 / -1;
+  width: 100%;
+  display: block; /* Keep as block element to maintain proper grid behavior */
+}
+
 /* History and Clube do Valor components now handle their own layout */

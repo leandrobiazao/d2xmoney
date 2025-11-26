@@ -1,35 +1,38 @@
 import { Component } from '@angular/core';
+import { Router, RouterOutlet, NavigationEnd } from '@angular/router';
 import { HeaderComponent } from "./header/header";
 import { UserListComponent } from "./users/user-list/user-list";
 import { CreateUserComponent } from "./users/create-user/create-user";
 import { PortfolioComponent } from './portfolio/portfolio';
-import { HistoryListComponent } from './brokerage-history/history-list/history-list';
-import { ClubeDoValorComponent } from './clubedovalor/clubedovalor/clubedovalor';
-import { ConfigurationComponent } from './configuration/configuration.component';
-import { AllocationStrategyComponent } from './allocation-strategies/allocation-strategy.component';
 import { UserService } from './users/user.service';
 import { User } from './users/user.model';
 import { DebugService } from './shared/services/debug.service';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent, HistoryListComponent, ClubeDoValorComponent, ConfigurationComponent, AllocationStrategyComponent],
+  imports: [CommonModule, RouterOutlet, HeaderComponent, UserListComponent, CreateUserComponent, PortfolioComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
 export class App {
   selectedUser: User | null = null;
   showCreateUser: boolean = false;
-  showBrokerageHistory: boolean = false;
-  showClubeDoValor: boolean = false;
-  showConfiguration: boolean = false;
-  showAllocationStrategy: boolean = false;
+  isHomePage: boolean = true;
 
   constructor(
     private userService: UserService,
-    private debug: DebugService
-  ) {}
+    private debug: DebugService,
+    private router: Router
+  ) {
+    // Track if we're on the home page to show user list and portfolio
+    this.router.events.subscribe(event => {
+      if (event instanceof NavigationEnd) {
+        this.isHomePage = event.url === '/' || event.url === '/home' || event.url.startsWith('/home/');
+      }
+    });
+  }
 
   onUserSelected(userId: string): void {
     this.debug.log('User selected:', userId);
@@ -72,48 +75,5 @@ export class App {
     this.showCreateUser = false;
     // Trigger user list refresh by emitting a custom event
     window.dispatchEvent(new CustomEvent('user-created'));
-  }
-
-  onShowHome(): void {
-    this.showBrokerageHistory = false;
-    this.showClubeDoValor = false;
-    this.showConfiguration = false;
-    this.showAllocationStrategy = false;
-    this.selectedUser = null;
-  }
-
-  onShowHistory(): void {
-    this.showBrokerageHistory = true;
-    this.showClubeDoValor = false;
-    this.showConfiguration = false;
-    this.showAllocationStrategy = false;
-  }
-
-  onShowClubeDoValor(): void {
-    this.showClubeDoValor = true;
-    this.showBrokerageHistory = false;
-    this.showConfiguration = false;
-    this.showAllocationStrategy = false;
-  }
-
-  onShowConfiguration(): void {
-    this.showConfiguration = true;
-    this.showBrokerageHistory = false;
-    this.showClubeDoValor = false;
-    this.showAllocationStrategy = false;
-  }
-
-  onShowAllocationStrategy(): void {
-    this.showAllocationStrategy = true;
-    this.showBrokerageHistory = false;
-    this.showClubeDoValor = false;
-    this.showConfiguration = false;
-  }
-
-  onBackToMain(): void {
-    this.showBrokerageHistory = false;
-    this.showClubeDoValor = false;
-    this.showConfiguration = false;
-    this.showAllocationStrategy = false;
   }
 }

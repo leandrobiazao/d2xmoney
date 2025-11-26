@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ConfigurationService, InvestmentType } from '../configuration.service';
@@ -10,11 +10,10 @@ import { ConfigurationService, InvestmentType } from '../configuration.service';
   templateUrl: './investment-types.html',
   styleUrl: './investment-types.css'
 })
-export class InvestmentTypesComponent {
-  @Input() investmentTypes: InvestmentType[] = [];
-  @Output() typeCreated = new EventEmitter<void>();
-  @Output() typeUpdated = new EventEmitter<void>();
-  @Output() typeDeleted = new EventEmitter<void>();
+export class InvestmentTypesComponent implements OnInit {
+  investmentTypes: InvestmentType[] = [];
+  isLoading = false;
+  errorMessage: string | null = null;
 
   showCreateModal = false;
   editingType: InvestmentType | null = null;
@@ -26,6 +25,27 @@ export class InvestmentTypesComponent {
   };
 
   constructor(private configService: ConfigurationService) {}
+
+  ngOnInit(): void {
+    this.loadInvestmentTypes();
+  }
+
+  loadInvestmentTypes(): void {
+    this.isLoading = true;
+    this.errorMessage = null;
+
+    this.configService.getInvestmentTypes(false).subscribe({
+      next: (types) => {
+        this.investmentTypes = types;
+        this.isLoading = false;
+      },
+      error: (error) => {
+        this.errorMessage = 'Erro ao carregar tipos de investimento';
+        this.isLoading = false;
+        console.error('Error loading investment types:', error);
+      }
+    });
+  }
 
   onCreate(): void {
     this.formData = { name: '', code: '', display_order: 0, is_active: true };
@@ -44,7 +64,7 @@ export class InvestmentTypesComponent {
       this.configService.updateInvestmentType(this.editingType.id, this.formData).subscribe({
         next: () => {
           this.showCreateModal = false;
-          this.typeUpdated.emit();
+          this.loadInvestmentTypes();
         },
         error: (error) => {
           console.error('Error updating investment type:', error);
@@ -55,7 +75,7 @@ export class InvestmentTypesComponent {
       this.configService.createInvestmentType(this.formData).subscribe({
         next: () => {
           this.showCreateModal = false;
-          this.typeCreated.emit();
+          this.loadInvestmentTypes();
         },
         error: (error) => {
           console.error('Error creating investment type:', error);
@@ -69,7 +89,7 @@ export class InvestmentTypesComponent {
     if (confirm(`Tem certeza que deseja excluir "${type.name}"?`)) {
       this.configService.deleteInvestmentType(type.id).subscribe({
         next: () => {
-          this.typeDeleted.emit();
+          this.loadInvestmentTypes();
         },
         error: (error) => {
           console.error('Error deleting investment type:', error);

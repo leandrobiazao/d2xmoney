@@ -1,12 +1,7 @@
-<app-header 
-  (showHome)="onShowHome()" 
-  (showHistory)="onShowHistory()" 
-  (showClubeDoValor)="onShowClubeDoValor()"
-  (showConfiguration)="onShowConfiguration()"
-  (showAllocationStrategy)="onShowAllocationStrategy()" />
+<app-header />
 
 <main>
-  @if (!showBrokerageHistory && !showClubeDoValor && !showConfiguration && !showAllocationStrategy) {
+  @if (isHomePage) {
     <app-user-list
       (userSelected)="onUserSelected($event)"
       (createUser)="onCreateUser()"
@@ -24,14 +19,7 @@
     } @else {
       <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
     }
-  } @else if (showBrokerageHistory) {
-    <app-history-list />
-  } @else if (showClubeDoValor) {
-    <!-- Component with Sidebar + Content -->
-    <app-clubedovalor />
-  } @else if (showConfiguration) {
-    <app-configuration />
-  } @else if (showAllocationStrategy) {
-    <app-allocation-strategy />
+  } @else {
+    <router-outlet></router-outlet>
   }
 </main>

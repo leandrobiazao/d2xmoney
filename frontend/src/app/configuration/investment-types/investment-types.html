@@ -9,7 +9,14 @@
     </button>
   </div>
 
-  @if (investmentTypes.length === 0) {
+  @if (isLoading) {
+    <div class="loading">Carregando...</div>
+  } @else if (errorMessage) {
+    <div class="error">
+      <p>{{ errorMessage }}</p>
+      <button class="retry-btn" (click)="loadInvestmentTypes()">Tentar Novamente</button>
+    </div>
+  } @else if (investmentTypes.length === 0) {
     <div class="empty-state">
       <p>Nenhum tipo de investimento cadastrado.</p>
     </div>

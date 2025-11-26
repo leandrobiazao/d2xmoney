@@ -1,0 +1,56 @@
+<div class="fiis-container">
+  <div class="summary-cards">
+    <div class="summary-card">
+      <span class="label">Total Investido</span>
+      <span class="value">{{ formatCurrency(totalInvested) }}</span>
+    </div>
+    <div class="summary-card">
+      <span class="label">Valor Atual</span>
+      <span class="value">{{ formatCurrency(totalCurrentValue) }}</span>
+    </div>
+    <div class="summary-card">
+      <span class="label">FIIs na Carteira</span>
+      <span class="value">{{ fiiPositions.length }}</span>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="fiis-table">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Segmento</th>
+          <th>Quantidade</th>
+          <th>Preço Médio</th>
+          <th>Total Investido</th>
+          <th>DY (12m)</th>
+          <th>P/VP</th>
+          <th>Último Rend.</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (pos of fiiPositions; track pos.ticker) {
+          <tr>
+            <td class="ticker">{{ pos.ticker }}</td>
+            <td>{{ pos.profile?.segment || '-' }}</td>
+            <td>{{ pos.quantity }}</td>
+            <td>{{ formatCurrency(pos.averagePrice) }}</td>
+            <td>{{ formatCurrency(pos.totalInvested) }}</td>
+            <td>{{ pos.profile?.average_yield_12m_percentage ? pos.profile?.average_yield_12m_percentage + '%' : '-' }}</td>
+            <td>{{ pos.profile?.price_to_vp || '-' }}</td>
+            <td>{{ pos.profile?.last_yield ? formatCurrency(pos.profile?.last_yield!) : '-' }}</td>
+          </tr>
+        }
+        @if (fiiPositions.length === 0 && !isLoading) {
+          <tr>
+            <td colspan="8" class="no-data">Nenhum Fundo Imobiliário encontrado na carteira.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  
+  @if (isLoading) {
+    <div class="loading">Carregando...</div>
+  }
+</div>

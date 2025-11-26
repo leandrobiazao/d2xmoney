@@ -1,55 +1,33 @@
 <div class="configuration-container">
   <div class="configuration-layout">
-    <!-- Left Column: Configuration -->
+    <!-- Left Column: Configuration Navigation -->
     <div class="configuration-left">
       <div class="configuration-header">
         <h2>Configuração</h2>
         <p>Gerencie tipos de investimento e sub-tipos</p>
       </div>
 
-      <div class="tabs">
-        <button 
-          class="tab-button" 
-          [class.active]="activeTab === 'types'"
-          (click)="activeTab = 'types'">
-          Tipos de Investimento
-        </button>
-        <button 
-          class="tab-button" 
-          [class.active]="activeTab === 'subtypes'"
-          (click)="activeTab = 'subtypes'">
-          Sub-Tipos
-        </button>
+      <div class="configuration-nav-content">
+        <div class="tabs">
+          <a class="tab-button" routerLink="/configuration/types" routerLinkActive="active">
+            Tipos de Investimento
+          </a>
+          <a class="tab-button" routerLink="/configuration/subtypes" routerLinkActive="active">
+            Sub-Tipos
+          </a>
+          <a class="tab-button" routerLink="/configuration/stocks" routerLinkActive="active">
+            Ações
+          </a>
+          <a class="tab-button" routerLink="/configuration/fii-catalog" routerLinkActive="active">
+            Fundos Imobiliários
+          </a>
+        </div>
       </div>
-
-      @if (isLoading) {
-        <div class="loading">Carregando...</div>
-      } @else if (errorMessage) {
-        <div class="error">
-          <p>{{ errorMessage }}</p>
-          <button class="retry-btn" (click)="loadInvestmentTypes()">Tentar Novamente</button>
-        </div>
-      } @else {
-        <div class="content-area">
-          @if (activeTab === 'types') {
-            <app-investment-types
-              [investmentTypes]="investmentTypes"
-              (typeCreated)="onTypeCreated()"
-              (typeUpdated)="onTypeUpdated()"
-              (typeDeleted)="onTypeDeleted()"
-            />
-          } @else if (activeTab === 'subtypes') {
-            <app-investment-subtypes />
-          }
-        </div>
-      }
     </div>
 
-    <!-- Right Column: Stocks -->
+    <!-- Right Column: Router outlet content -->
     <div class="configuration-right">
-      <app-stocks />
+      <router-outlet></router-outlet>
     </div>
   </div>
 </div>
-
-

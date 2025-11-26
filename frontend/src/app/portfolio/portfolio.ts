@@ -14,11 +14,12 @@ import { PortfolioImportComponent } from '../fixed-income/portfolio-import.compo
 import { HistoryListComponent } from '../brokerage-history/history-list/history-list';
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
 import { CryptoComponent } from '../crypto/crypto.component';
+import { FIIListComponent } from '../fiis/fiis-list.component';
 
 @Component({
   selector: 'app-portfolio',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, PortfolioImportComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent],
+  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, PortfolioImportComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent, FIIListComponent],
   templateUrl: './portfolio.html',
   styleUrl: './portfolio.css'
 })
@@ -29,7 +30,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   operations: Operation[] = [];
   positions: Position[] = [];
   filteredOperations: Operation[] = [];
-  
+
   // Filters
   filterTitulo: string = '';
   filterTipoOperacao: string = '';
@@ -40,12 +41,12 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   // View settings
   showPositions = true;
   showOperations = true;
-  activeTab: 'acoes' | 'renda-fixa' | 'import' | 'historico' | 'allocation-strategy' | 'crypto' = 'acoes';
-  
+  activeTab: 'acoes' | 'renda-fixa' | 'import' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' = 'acoes';
+
   // Sorting
   sortField: string = '';
   sortDirection: 'asc' | 'desc' = 'asc';
-  
+
   // Store bound event handler for cleanup
   private noteDeletedHandler = (event: Event) => this.onNoteDeleted(event);
 
@@ -53,31 +54,31 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     private portfolioService: PortfolioService,
     private historyService: BrokerageHistoryService,
     private debug: DebugService
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     // Load data if userId is already set (when component is created with input)
     if (this.userId) {
       this.loadData();
     }
-    
+
     // Listen for note deletion events to refresh portfolio
     if (typeof window !== 'undefined') {
       window.addEventListener('brokerage-note-deleted', this.noteDeletedHandler);
     }
   }
-  
+
   ngOnDestroy(): void {
     // Clean up event listener
     if (typeof window !== 'undefined') {
       window.removeEventListener('brokerage-note-deleted', this.noteDeletedHandler);
     }
   }
-  
+
   onNoteDeleted(event: Event): void {
     const customEvent = event as CustomEvent;
     this.debug.log('📢 Note deleted event received, refreshing portfolio:', customEvent.detail);
-    
+
     // Refresh portfolio data if this component is for the affected user
     // Note: We refresh regardless of user since we don't know which user's note was deleted
     // The backend refresh will update all users' portfolios correctly
@@ -102,9 +103,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       this.debug.warn('⚠️ loadData() called but userId is not set');
       return;
     }
-    
+
     this.debug.log(`🔄 Loading portfolio data for user: ${this.userId}`);
-    
+
     this.portfolioService.getOperationsAsync(this.userId).subscribe({
       next: (operations) => {
         this.debug.log(`✅ Loaded ${operations.length} operations`);
@@ -115,11 +116,11 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         this.debug.error('❌ Error loading operations:', error);
       }
     });
-    
+
     this.portfolioService.getPositionsAsync(this.userId).subscribe({
       next: (positions) => {
         this.debug.log(`✅ Loaded ${positions.length} positions`);
-        
+
         // Fetch current prices for all positions
         const tickers = positions.map(p => p.titulo);
         if (tickers.length > 0) {
@@ -131,7 +132,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
                 let unrealizedPnL: number | undefined;
                 let valorAtual: number | undefined;
                 let totalLucro: number | undefined;
-                
+
                 if (currentPrice !== undefined && position.quantidadeTotal > 0) {
                   // Calculate unrealized P&L: (Current Price - Average Cost) × Quantity
                   unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
@@ -146,7 +147,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
                   // No quantity, total lucro is just realized profit
                   totalLucro = position.lucroRealizado || 0;
                 }
-                
+
                 return {
                   ...position,
                   currentPrice,
@@ -155,7 +156,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
                   totalLucro
                 };
               });
-              
+
               this.positions = this.sortPositions(positionsWithPrices);
             },
             error: (error) => {
@@ -187,7 +188,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     if (!this.userId || operations.length === 0) {
       return;
     }
-    
+
     const firstOperation = operations[0];
     const noteDate = firstOperation.data;
     const noteNumber = firstOperation.nota || '';
@@ -212,14 +213,14 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       },
       error: (error) => {
         this.debug.error('❌ Error saving brokerage note:', error);
-        
+
         if (error.status === 409) {
           const errorMessage = error.error?.message || 'This brokerage note has already been processed.';
           alert(`⚠️ ${errorMessage}\n\nOperations were NOT added to portfolio.`);
         } else if (error.status === 400) {
           const validationErrors = error.error?.details || error.error || {};
-          const errorDetails = typeof validationErrors === 'string' 
-            ? validationErrors 
+          const errorDetails = typeof validationErrors === 'string'
+            ? validationErrors
             : JSON.stringify(validationErrors, null, 2);
           alert(`❌ Validation error:\n\n${errorDetails}\n\nOperations were NOT added to portfolio.`);
         } else {
@@ -239,33 +240,33 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     }
     this.applyFilters();
   }
-  
+
   getSortIcon(field: string): string {
     if (this.sortField !== field) {
       return '⇅';
     }
     return this.sortDirection === 'asc' ? '↑' : '↓';
   }
-  
+
   applyFilters(): void {
     let filtered = this.operations.filter(op => {
-      const matchesTitulo = !this.filterTitulo || 
+      const matchesTitulo = !this.filterTitulo ||
         op.titulo.toUpperCase().includes(this.filterTitulo.toUpperCase());
-      
-      const matchesTipoOperacao = !this.filterTipoOperacao || 
+
+      const matchesTipoOperacao = !this.filterTipoOperacao ||
         op.tipoOperacao === this.filterTipoOperacao;
-      
-      const matchesTipoMercado = !this.filterTipoMercado || 
+
+      const matchesTipoMercado = !this.filterTipoMercado ||
         op.tipoMercado.toUpperCase().includes(this.filterTipoMercado.toUpperCase());
-      
-      const matchesDataInicio = !this.filterDataInicio || 
+
+      const matchesDataInicio = !this.filterDataInicio ||
         compareDate(op.data, this.filterDataInicio) >= 0;
-      
-      const matchesDataFim = !this.filterDataFim || 
+
+      const matchesDataFim = !this.filterDataFim ||
         compareDate(op.data, this.filterDataFim) <= 0;
 
-      return matchesTitulo && matchesTipoOperacao && matchesTipoMercado && 
-             matchesDataInicio && matchesDataFim;
+      return matchesTitulo && matchesTipoOperacao && matchesTipoMercado &&
+        matchesDataInicio && matchesDataFim;
     });
 
     // Apply sorting
@@ -364,7 +365,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       // Sort by Valor Atual (descending - highest value first)
       const valorA = a.valorAtual || 0;
       const valorB = b.valorAtual || 0;
-      
+
       if (valorB !== valorA) {
         return valorB - valorA;
       }

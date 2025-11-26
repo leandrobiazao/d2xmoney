@@ -13,6 +13,42 @@ project-root/
 └── doc/               # Documentation
 ```
 
+## Key Features
+
+### Portfolio Management
+- Multi-user portfolio tracking
+- Real-time position valuation
+- Comprehensive transaction history
+- Support for stocks, fixed income, cryptocurrencies, and FIIs (Real Estate Investment Funds)
+
+### Investment Types
+- **Stocks**: Brazilian and international stocks with automated price updates
+- **Fixed Income**: CDB, LCI, LCA, and other fixed income instruments
+- **FIIs (Fundos Imobiliários)**: Complete catalog of Brazilian Real Estate Investment Funds
+  - 520+ FII profiles with detailed financial metrics
+  - Automated data import from fiis.com.br
+  - Dividend yield tracking (DY), P/VP ratios, IFIX participation
+  - Portfolio FII positions with comprehensive metrics
+- **Cryptocurrencies**: Bitcoin and other digital assets
+- **ETFs and BDRs**: International exposure instruments
+
+### Brokerage Note Processing
+- Automated PDF parsing for B3 brokerage notes
+- Ticker mapping and validation
+- Transaction categorization and position calculation
+
+### Allocation Strategies
+- Define target allocations by investment type and stock
+- AMBB (Achieve Minimum Balance Before) strategy implementation
+- Rebalancing recommendations with sales limits
+- Portfolio optimization tools
+
+### Configuration & Catalog Management
+- Investment type and subtype classification
+- Stock catalog with automated price synchronization
+- FII catalog with filtering and search capabilities
+- Ticker mapping management
+
 ## Development server
 
 ### Frontend
@@ -68,6 +104,23 @@ python manage.py runserver
 ```
 
 The backend API will be available at `http://localhost:8000/`.
+
+**Important: FII Data Import**
+
+To import FII (Real Estate Investment Fund) data, you need to install Playwright browsers first:
+
+```bash
+# After activating venv and installing requirements
+playwright install chromium
+```
+
+Then run the import command:
+
+```bash
+python manage.py import_fiis
+```
+
+This will scrape and import 500+ FII profiles from fiis.com.br with complete financial data.
 
 ## Code scaffolding
 

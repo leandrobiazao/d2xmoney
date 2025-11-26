@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rebalancing',
     'fixed_income',
     'crypto',
+    'fiis',
 ]
 
 MIDDLEWARE = [

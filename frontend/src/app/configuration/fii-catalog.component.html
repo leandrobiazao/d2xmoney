@@ -1,0 +1,93 @@
+<div class="fii-catalog">
+    <div class="catalog-header">
+        <h3>Catálogo de Fundos Imobiliários</h3>
+        <p class="catalog-count">{{ filteredFIIs.length }} FIIs disponíveis</p>
+    </div>
+
+    <div class="filters">
+        <div class="filter-group">
+            <label>Buscar Ticker:</label>
+            <input type="text" [(ngModel)]="searchTicker" (input)="applyFilters()" placeholder="Ex: HGLG11" />
+        </div>
+
+        <div class="filter-group">
+            <label>Segmento:</label>
+            <input type="text" [(ngModel)]="filterSegment" (input)="applyFilters()" placeholder="Ex: Tijolo, Papel" />
+        </div>
+
+        <button class="reset-btn" (click)="resetFilters()">Limpar Filtros</button>
+    </div>
+
+    @if (isLoading) {
+    <div class="loading">Carregando FIIs...</div>
+    } @else {
+    <div class="table-container">
+        <table class="fii-table">
+            <thead>
+                <tr>
+                    <th>Ticker</th>
+                    <th>Segmento</th>
+                    <th>Público Alvo</th>
+                    <th>Administrador</th>
+                    <th>Último Rend. (R$)</th>
+                    <th>DY (%)</th>
+                    <th>Data Base</th>
+                    <th>Data Pagamento</th>
+                    <th>Rend. Méd. 12m (R$)</th>
+                    <th>Rend. Méd. 12m (%)</th>
+                    <th>Patrimônio/Cota</th>
+                    <th>Cotação/VP</th>
+                    <th>Nº Negócios/Mês</th>
+                    <th>Partic. IFIX (%)</th>
+                    <th>Nº Cotistas</th>
+                    <th>Patrimônio</th>
+                    <th>Cota Base</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (fii of paginatedFIIs; track fii.ticker) {
+                <tr>
+                    <td class="ticker">{{ fii.ticker }}</td>
+                    <td>{{ fii.segment || '-' }}</td>
+                    <td>{{ fii.target_audience || '-' }}</td>
+                    <td class="admin">{{ fii.administrator || '-' }}</td>
+                    <td class="number">{{ fii.last_yield ? formatCurrency(fii.last_yield) : '-' }}</td>
+                    <td class="number">{{ formatPercentage(fii.dividend_yield) }}</td>
+                    <td>{{ fii.base_date || '-' }}</td>
+                    <td>{{ fii.payment_date || '-' }}</td>
+                    <td class="number">{{ fii.average_yield_12m_value ? formatCurrency(fii.average_yield_12m_value) :
+                        '-' }}</td>
+                    <td class="number">{{ formatPercentage(fii.average_yield_12m_percentage) }}</td>
+                    <td class="number">{{ fii.equity_per_share ? formatCurrency(fii.equity_per_share) : '-' }}</td>
+                    <td class="number">{{ formatNumber(fii.price_to_vp) }}</td>
+                    <td class="number">{{ fii.trades_per_month || '-' }}</td>
+                    <td class="number">{{ formatPercentage(fii.ifix_participation) }}</td>
+                    <td class="number">{{ fii.shareholders_count || '-' }}</td>
+                    <td class="number">{{ fii.equity ? formatCurrency(fii.equity) : '-' }}</td>
+                    <td class="number">{{ fii.base_share_price ? formatCurrency(fii.base_share_price) : '-' }}</td>
+                </tr>
+                }
+                @if (paginatedFIIs.length === 0) {
+                <tr>
+                    <td colspan="17" class="no-data">Nenhum FII encontrado.</td>
+                </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (totalPages > 1) {
+    <div class="pagination">
+        <button class="page-btn" (click)="previousPage()" [disabled]="currentPage === 1">
+            Anterior
+        </button>
+        <span class="page-info">
+            Página {{ currentPage }} de {{ totalPages }}
+        </span>
+        <button class="page-btn" (click)="nextPage()" [disabled]="currentPage === totalPages">
+            Próxima
+        </button>
+    </div>
+    }
+    }
+</div>

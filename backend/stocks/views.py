@@ -21,6 +21,11 @@ class StockViewSet(viewsets.ModelViewSet):
         investment_type_id = self.request.query_params.get('investment_type_id')
         financial_market = self.request.query_params.get('financial_market')
         active_only = self.request.query_params.get('active_only', 'true').lower() == 'true'
+        exclude_fiis = self.request.query_params.get('exclude_fiis', 'true').lower() == 'true'
+        
+        # Exclude FIIs by default (they have their own catalog)
+        if exclude_fiis:
+            queryset = queryset.exclude(stock_class='FII')
         
         if active_only:
             queryset = queryset.filter(is_active=True)

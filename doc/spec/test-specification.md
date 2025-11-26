@@ -4,7 +4,7 @@
 **Application**: EasyTask - Angular Task Management Application  
 **Test Framework**: Playwright MCP Server  
 **Test Date**: October 21, 2025  
-**Test Environment**: http://localhost:4200  
+**Test Environment**: http://localhost:4400  
 **Tester**: Automated E2E Testing Suite  
 
 ---
@@ -31,7 +31,7 @@ This document contains comprehensive end-to-end test specifications for the Easy
 - Node.js and npm installed
 - Angular CLI configured
 - Playwright MCP server configured in `.cursor/mcp.json`
-- Application running on `http://localhost:4200`
+- Application running on `http://localhost:4400`
 
 ### MCP Server Configuration
 ```json
@@ -56,11 +56,11 @@ This document contains comprehensive end-to-end test specifications for the Easy
 Verify that the application loads correctly and displays all users in the user list.
 
 ### Prerequisites
-- Application server running on port 4200
+- Application server running on port 4400
 - Browser accessible via Playwright MCP
 
 ### Test Steps
-1. Navigate to `http://localhost:4200`
+1. Navigate to `http://localhost:4400`
 2. Verify page loads successfully
 3. Check page title is "FirstAngularApp"
 4. Verify header displays "EasyTask" branding
@@ -91,7 +91,7 @@ All expected results achieved. Application loaded successfully with all users di
 
 ### Playwright MCP Commands Used
 ```javascript
-await page.goto('http://localhost:4200');
+await page.goto('http://localhost:4400');
 await page.screenshot({ type: 'png' });
 ```
 

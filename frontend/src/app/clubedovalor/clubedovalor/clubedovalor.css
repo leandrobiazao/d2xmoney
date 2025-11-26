@@ -13,6 +13,7 @@
   margin: 0;
   padding: 0;
   min-height: calc(100vh - 80px);
+  grid-column: 1 / -1; /* Span full width of parent grid */
 }
 
 @media (min-width: 768px) {

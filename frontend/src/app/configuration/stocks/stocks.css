@@ -1,9 +1,5 @@
 .stocks-container {
-  padding: 1.5rem;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  height: fit-content;
+  width: 100%;
 }
 
 .stocks-header {
@@ -15,6 +11,7 @@
   font-size: 1.5rem;
   font-weight: 600;
   color: #1d1d1f;
+  letter-spacing: -0.01em;
 }
 
 .stocks-header p {
@@ -38,10 +35,18 @@
   flex: 1;
   min-width: 200px;
   max-width: 400px;
-  padding: 0.625rem 1rem;
-  border: 1px solid #ddd;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e5e5e7;
   border-radius: 8px;
   font-size: 0.9375rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #0071e3;
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
 .sync-button {
@@ -49,36 +54,34 @@
   background: #0071e3;
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 0.9375rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .sync-button:hover:not(:disabled) {
   background: #0077ed;
+  box-shadow: 0 2px 6px rgba(0, 113, 227, 0.3);
+  transform: translateY(-1px);
 }
 
 .sync-button:disabled {
   background: #86868b;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .sync-message {
   margin-top: 0.5rem;
-  padding: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
   background: #e8f4fd;
   color: #0071e3;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.875rem;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #0071e3;
-  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
 }
 
 .loading,
@@ -88,12 +91,19 @@
   padding: 3rem 1.5rem;
   color: #86868b;
   font-size: 0.9375rem;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e5e5e7;
 }
 
 .error {
   color: #d70015;
   background: #fff5f5;
-  border-radius: 8px;
+  border-color: #ffebee;
+}
+
+.error p {
+  margin: 0 0 1rem 0;
 }
 
 .retry-btn {
@@ -102,9 +112,11 @@
   background: #0071e3;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.2s;
 }
 
 .retry-btn:hover {
@@ -113,6 +125,9 @@
 
 .stocks-table-container {
   overflow-x: auto;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e5e5e7;
 }
 
 .stocks-table {
@@ -146,6 +161,10 @@
   background: #fafafa;
 }
 
+.stocks-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .ticker-cell {
   font-weight: 600;
   color: #0071e3;
@@ -170,18 +189,19 @@
 .investment-subtype-select {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  border: 1px solid #e5e5e7;
+  border-radius: 8px;
   font-size: 0.9375rem;
   background: white;
   color: #1d1d1f;
   cursor: pointer;
+  transition: border-color 0.2s;
+  font-family: inherit;
 }
 
-.investment-type-select option,
-.investment-subtype-select option {
-  color: #1d1d1f;
-  background: white;
+.investment-type-select:hover,
+.investment-subtype-select:hover {
+  border-color: #d2d2d7;
 }
 
 .investment-type-select:focus,
@@ -189,13 +209,6 @@
   outline: none;
   border-color: #0071e3;
   box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
-  color: #1d1d1f;
-}
-
-.investment-type-select:hover,
-.investment-subtype-select:hover {
-  border-color: #0071e3;
-  color: #1d1d1f;
 }
 
 .investment-type-select:disabled,
@@ -205,4 +218,3 @@
   cursor: not-allowed;
   border-color: #e5e5e7;
 }
-
