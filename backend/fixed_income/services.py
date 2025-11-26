@@ -489,6 +489,18 @@ class PortfolioExcelImportService:
                     # Set maturity far in the future for cash (or use a default)
                     future_date = datetime(today.year + 10, 12, 31).date()
                     
+                    # Get or create Caixa subtype
+                    caixa_subtype, _ = InvestmentSubType.objects.get_or_create(
+                        investment_type=renda_fixa_type,
+                        code='CAIXA',
+                        defaults={
+                            'name': 'Caixa',
+                            'display_order': 1,
+                            'is_predefined': False,
+                            'is_active': True
+                        }
+                    )
+                    
                     caixa_position, created = FixedIncomePosition.objects.update_or_create(
                         user_id=user_id,
                         asset_code=caixa_asset_code,
@@ -508,6 +520,7 @@ class PortfolioExcelImportService:
                             'iof': Decimal('0.00'),
                             'liquidity': 'Imediata',
                             'investment_type': renda_fixa_type,
+                            'investment_sub_type': caixa_subtype,
                             'source': 'Excel Import',
                             'import_date': timezone.now(),
                         }

@@ -304,10 +304,17 @@ class AllocationStrategyService:
                 }
             
             # Group fixed income positions by subtype
+            # Track which Caixa positions have been processed (those with subtype assigned)
+            caixa_processed_value = Decimal('0')
+            
             for fi_position in renda_fixa_positions:
                 subtype = fi_position.investment_sub_type
                 subtype_id = subtype.id if subtype else None
                 subtype_name = subtype.name if subtype else 'Não categorizado'
+                
+                # Track Caixa positions that have subtype assigned
+                if fi_position.asset_code.startswith('CAIXA_'):
+                    caixa_processed_value += Decimal(str(fi_position.net_value)) if fi_position.net_value > 0 else Decimal(str(fi_position.position_value))
                 
                 if subtype_id not in type_values[type_id]['sub_types']:
                     type_values[type_id]['sub_types'][subtype_id] = {
@@ -319,18 +326,20 @@ class AllocationStrategyService:
                 position_value = Decimal(str(fi_position.net_value)) if fi_position.net_value > 0 else Decimal(str(fi_position.position_value))
                 type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
             
-            # Also add CAIXA positions
-            caixa_subtype_id = None  # CAIXA might not have a subtype assigned
-            caixa_subtype_name = 'Caixa'
-            
-            if caixa_total_value > 0:
+            # Also add CAIXA positions that don't have a subtype assigned (legacy data)
+            # Only add if there are Caixa positions that weren't processed above (no subtype)
+            remaining_caixa_value = caixa_total_value - caixa_processed_value
+            if remaining_caixa_value > 0:
+                caixa_subtype_id = None  # CAIXA without subtype assigned
+                caixa_subtype_name = 'Caixa'
+                
                 if caixa_subtype_id not in type_values[type_id]['sub_types']:
                     type_values[type_id]['sub_types'][caixa_subtype_id] = {
                         'sub_type_id': caixa_subtype_id,
                         'sub_type_name': caixa_subtype_name,
                         'current_value': Decimal('0')
                     }
-                type_values[type_id]['sub_types'][caixa_subtype_id]['current_value'] += caixa_total_value
+                type_values[type_id]['sub_types'][caixa_subtype_id]['current_value'] += remaining_caixa_value
             
             type_values[type_id]['current_value'] += renda_fixa_total_value
         

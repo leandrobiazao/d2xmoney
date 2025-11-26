@@ -190,79 +190,48 @@
         <!-- Rebalancing Tab -->
         @if (activeTab === 'rebalancing') {
           <div class="rebalancing-content">
-            <!-- Generate Recommendations Button -->
-            <div class="actions-bar">
-              <button 
-                class="btn btn-primary" 
-                (click)="generateRecommendations()" 
-                [disabled]="isGeneratingRecommendations || !strategy"
-              >
-                {{ isGeneratingRecommendations ? 'Gerando...' : 'Gerar Recomendações de Rebalanceamento' }}
-              </button>
-            </div>
-
             <!-- Summary Section -->
             @if (currentAllocation) {
               <section class="summary-card">
-                <h4>Resumo do Portfólio</h4>
+                <div class="summary-header">
+                  <h4>Resumo do Portfólio</h4>
+                </div>
+                <div class="summary-total summary-item">
+                  <div class="summary-total-content">
+                    <span class="summary-label">Valor Total</span>
+                    <span class="summary-value summary-total-value">R$ {{ currentAllocation.current?.total_value | number:'1.2-2' }}</span>
+                  </div>
+                  <button 
+                    type="button"
+                    class="btn-primary" 
+                    (click)="generateRecommendations()" 
+                    [disabled]="isGeneratingRecommendations || !strategy"
+                  >
+                    {{ isGeneratingRecommendations ? 'Gerando...' : 'Gerar Recomendações de Rebalanceamento' }}
+                  </button>
+                </div>
                 <div class="summary-grid">
                   <div class="summary-item">
-                    <span class="summary-label">Valor Total do Portfólio</span>
-                    <span class="summary-value">R$ {{ currentAllocation.current?.total_value | number:'1.2-2' }}</span>
+                    <span class="summary-label">Valor Total Renda Fixa</span>
+                    <div class="summary-item-content">
+                      <span class="summary-value">R$ {{ (getRendaFixaTotal()?.value || 0) | number:'1.2-2' }}</span>
+                      <span class="summary-percentage">{{ (getRendaFixaTotal()?.percentage || 0) | number:'1.2-2' }}%</span>
+                    </div>
                   </div>
-                  @if (getRendaFixaTotal()) {
-                    <div class="summary-item">
-                      <span class="summary-label">Valor Total Renda Fixa</span>
-                      <div class="summary-value-row">
-                        <span class="summary-value">R$ {{ getRendaFixaTotal()?.value | number:'1.2-2' }}</span>
-                        <span class="summary-percentage">{{ getRendaFixaTotal()?.percentage | number:'1.2-2' }}%</span>
-                      </div>
+                  <div class="summary-item">
+                    <span class="summary-label">Valor Total Renda Variável em Dólar</span>
+                    <div class="summary-item-content">
+                      <span class="summary-value">R$ {{ (getRendaVarDolaresTotal()?.value || 0) | number:'1.2-2' }}</span>
+                      <span class="summary-percentage">{{ (getRendaVarDolaresTotal()?.percentage || 0) | number:'1.2-2' }}%</span>
                     </div>
-                  }
-                  @if (getRendaVarDolaresTotal()) {
-                    <div class="summary-item">
-                      <span class="summary-label">Valor Total Renda Variável em Dólar</span>
-                      <div class="summary-value-row">
-                        <span class="summary-value">R$ {{ getRendaVarDolaresTotal()?.value | number:'1.2-2' }}</span>
-                        <span class="summary-percentage">{{ getRendaVarDolaresTotal()?.percentage | number:'1.2-2' }}%</span>
-                      </div>
+                  </div>
+                  <div class="summary-item">
+                    <span class="summary-label">Valor Total Renda Variável em Reais</span>
+                    <div class="summary-item-content">
+                      <span class="summary-value">R$ {{ (getRendaVarReaisTotal()?.value || 0) | number:'1.2-2' }}</span>
+                      <span class="summary-percentage">{{ (getRendaVarReaisTotal()?.percentage || 0) | number:'1.2-2' }}%</span>
                     </div>
-                  }
-                  @if (getRendaVarReaisTotal()) {
-                    <div class="summary-item">
-                      <span class="summary-label">Valor Total Renda Variável em Reais</span>
-                      <div class="summary-value-row">
-                        <span class="summary-value">R$ {{ getRendaVarReaisTotal()?.value | number:'1.2-2' }}</span>
-                        <span class="summary-percentage">{{ getRendaVarReaisTotal()?.percentage | number:'1.2-2' }}%</span>
-                      </div>
-                    </div>
-                  }
-                  @if (currentRecommendation) {
-                    <div class="summary-item">
-                      <span class="summary-label">Limite de Vendas Restante</span>
-                      <span class="summary-value" [class.warning]="currentRecommendation.sales_limit_remaining < 5000">
-                        R$ {{ currentRecommendation.sales_limit_remaining | number:'1.2-2' }}
-                      </span>
-                      @if (currentRecommendation.sales_limit_reached) {
-                        <span class="warning-badge">Limite atingido!</span>
-                      }
-                    </div>
-                    <div class="summary-item">
-                      <span class="summary-label">Vendas Já Realizadas no Mês</span>
-                      <span class="summary-value">R$ {{ currentRecommendation.previous_sales_this_month | number:'1.2-2' }}</span>
-                    </div>
-                    <div class="summary-item">
-                      <span class="summary-label">Vendas Completas Recomendadas</span>
-                      <span class="summary-value">R$ {{ currentRecommendation.total_complete_sales_value | number:'1.2-2' }}</span>
-                    </div>
-                    <div class="summary-item">
-                      <span class="summary-label">Vendas Parciais Recomendadas</span>
-                      <span class="summary-value">
-                        R$ {{ currentRecommendation.total_partial_sales_value | number:'1.2-2' }}
-                        <span class="info-badge">({{ currentRecommendation.partial_sales_count }} ações)</span>
-                      </span>
-                    </div>
-                  }
+                  </div>
                 </div>
               </section>
             }
@@ -320,62 +289,6 @@
                       
                       <!-- SubType-Level Summary -->
                       <div class="subtype-level-summary">
-                        @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
-                          <div class="subtype-action-group">
-                            <h5>{{ subtypeGroup.subtypeName }}</h5>
-                            <table class="actions-table">
-                              <thead>
-                                <tr>
-                                  <th>Sub-Tipo de Investimento</th>
-                                  <th>Valor Atual</th>
-                                  <th>Valor Alvo</th>
-                                  <th>Diferença</th>
-                                  <th>Recomendação</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                @if (subtypeGroup.subtypeActions.length > 0) {
-                                  @for (action of subtypeGroup.subtypeActions; track action.id) {
-                                    <tr>
-                                      <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
-                                      <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                                      <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                                      <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                        R$ {{ action.difference | number:'1.2-2' }}
-                                      </td>
-                                      <td>
-                                        @if (action.quantity_to_buy) {
-                                          <span class="badge badge-buy">Aumentar</span>
-                                        } @else if (action.quantity_to_sell) {
-                                          <span class="badge badge-sell">Reduzir</span>
-                                        } @else if (action.difference > 0) {
-                                          <span class="badge badge-buy">Aumentar</span>
-                                        } @else if (action.difference < 0) {
-                                          <span class="badge badge-sell">Reduzir</span>
-                                        } @else {
-                                          <span class="badge badge-maintain">Manter</span>
-                                        }
-                                      </td>
-                                    </tr>
-                                  }
-                                } @else {
-                                  <tr>
-                                    <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1rem;">
-                                      Nenhuma ação de rebalanceamento necessária para este subtipo
-                                    </td>
-                                  </tr>
-                                }
-                              </tbody>
-                            </table>
-                          </div>
-                        }
-                      </div>
-                    </div>
-                  } @else {
-                    <!-- Fallback: Show subtype groups if no type-level actions -->
-                    @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
-                      <div class="subtype-action-group">
-                        <h5>{{ subtypeGroup.subtypeName }}</h5>
                         <table class="actions-table">
                           <thead>
                             <tr>
@@ -387,41 +300,79 @@
                             </tr>
                           </thead>
                           <tbody>
-                            @if (subtypeGroup.subtypeActions.length > 0) {
-                              @for (action of subtypeGroup.subtypeActions; track action.id) {
-                                <tr>
-                                  <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
-                                  <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                                  <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                                  <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                    R$ {{ action.difference | number:'1.2-2' }}
-                                  </td>
-                                  <td>
-                                    @if (action.quantity_to_buy) {
-                                      <span class="badge badge-buy">Aumentar</span>
-                                    } @else if (action.quantity_to_sell) {
-                                      <span class="badge badge-sell">Reduzir</span>
-                                    } @else if (action.difference > 0) {
-                                      <span class="badge badge-buy">Aumentar</span>
-                                    } @else if (action.difference < 0) {
-                                      <span class="badge badge-sell">Reduzir</span>
-                                    } @else {
-                                      <span class="badge badge-maintain">Manter</span>
-                                    }
-                                  </td>
-                                </tr>
+                            @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
+                              @if (subtypeGroup.subtypeActions.length > 0) {
+                                @for (action of subtypeGroup.subtypeActions; track action.id) {
+                                  <tr>
+                                    <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                    <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                      R$ {{ action.difference | number:'1.2-2' }}
+                                    </td>
+                                    <td>
+                                      @if (action.quantity_to_buy) {
+                                        <span class="badge badge-buy">Aumentar</span>
+                                      } @else if (action.quantity_to_sell) {
+                                        <span class="badge badge-sell">Reduzir</span>
+                                      } @else if (action.difference > 0) {
+                                        <span class="badge badge-buy">Aumentar</span>
+                                      } @else if (action.difference < 0) {
+                                        <span class="badge badge-sell">Reduzir</span>
+                                      } @else {
+                                        <span class="badge badge-maintain">Manter</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                }
                               }
-                            } @else {
-                              <tr>
-                                <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1rem;">
-                                  Nenhuma ação de rebalanceamento necessária para este subtipo
-                                </td>
-                              </tr>
                             }
                           </tbody>
                         </table>
                       </div>
-                    }
+                    </div>
+                  } @else {
+                    <!-- Fallback: Show subtype groups if no type-level actions -->
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Sub-Tipo de Investimento</th>
+                          <th>Valor Atual</th>
+                          <th>Valor Alvo</th>
+                          <th>Diferença</th>
+                          <th>Recomendação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
+                          @if (subtypeGroup.subtypeActions.length > 0) {
+                            @for (action of subtypeGroup.subtypeActions; track action.id) {
+                              <tr>
+                                <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                                <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                  R$ {{ action.difference | number:'1.2-2' }}
+                                </td>
+                                <td>
+                                  @if (action.quantity_to_buy) {
+                                    <span class="badge badge-buy">Aumentar</span>
+                                  } @else if (action.quantity_to_sell) {
+                                    <span class="badge badge-sell">Reduzir</span>
+                                  } @else if (action.difference > 0) {
+                                    <span class="badge badge-buy">Aumentar</span>
+                                  } @else if (action.difference < 0) {
+                                    <span class="badge badge-sell">Reduzir</span>
+                                  } @else {
+                                    <span class="badge badge-maintain">Manter</span>
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          }
+                        }
+                      </tbody>
+                    </table>
                   }
                 </section>
               }

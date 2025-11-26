@@ -819,6 +819,19 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   // Helper methods for Summary Card portfolio totals
   getRendaFixaTotal(): { value: number; percentage: number } | null {
+    // First try to get from type-level actions (most reliable source)
+    const typeActions = this.getRendaFixaTypeActions();
+    if (typeActions.length > 0 && typeActions[0].current_value) {
+      const totalValue = this.currentAllocation?.current?.total_value || 0;
+      const currentValue = Number(typeActions[0].current_value);
+      const percentage = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
+      return {
+        value: currentValue,
+        percentage: percentage
+      };
+    }
+    
+    // Fallback to currentAllocation data
     if (!this.currentAllocation?.current?.investment_types) {
       return null;
     }
@@ -836,6 +849,19 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   getRendaVarDolaresTotal(): { value: number; percentage: number } | null {
+    // First try to get from type-level actions (most reliable source)
+    const typeActions = this.getRendaVarDolaresTypeActions();
+    if (typeActions.length > 0 && typeActions[0].current_value) {
+      const totalValue = this.currentAllocation?.current?.total_value || 0;
+      const currentValue = Number(typeActions[0].current_value);
+      const percentage = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
+      return {
+        value: currentValue,
+        percentage: percentage
+      };
+    }
+    
+    // Fallback to currentAllocation data
     if (!this.currentAllocation?.current?.investment_types) {
       return null;
     }
@@ -854,6 +880,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   getRendaVarReaisTotal(): { value: number; percentage: number } | null {
+    // First try to sum from all Ações em Reais actions (most reliable source)
+    const acoesReaisActions = this.getAcoesReaisActions();
+    if (acoesReaisActions.length > 0) {
+      const totalValue = acoesReaisActions.reduce((sum, action) => {
+        return sum + Number(action.current_value || 0);
+      }, 0);
+      const portfolioTotal = this.currentAllocation?.current?.total_value || 0;
+      const percentage = portfolioTotal > 0 ? (totalValue / portfolioTotal) * 100 : 0;
+      if (totalValue > 0) {
+        return {
+          value: totalValue,
+          percentage: percentage
+        };
+      }
+    }
+    
+    // Fallback to currentAllocation data
     if (!this.currentAllocation?.current?.investment_types) {
       return null;
     }

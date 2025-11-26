@@ -152,16 +152,47 @@ class RebalancingService:
                 current_subtype_data = {}
                 for type_data in current_allocation['investment_types']:
                     if type_data['investment_type_id'] == type_alloc.investment_type.id:
-                        current_subtype_data = {
-                            st['sub_type_id']: st for st in type_data.get('sub_types', [])
-                        }
+                        # Convert list to dict, ensuring consistent key types
+                        for st in type_data.get('sub_types', []):
+                            key = st.get('sub_type_id')  # Use .get() to handle missing keys gracefully
+                            # Normalize key: None stays None, numbers convert to int
+                            # This ensures consistent matching regardless of how data was serialized
+                            if key is not None:
+                                try:
+                                    key = int(key)
+                                except (ValueError, TypeError):
+                                    pass  # Keep as-is if conversion fails
+                            current_subtype_data[key] = st
                         break
+                
+                # Debug: Print current_subtype_data for Renda Fixa
+                if type_alloc.investment_type.name == 'Renda Fixa':
+                    print(f"DEBUG Renda Fixa current_subtype_data keys: {list(current_subtype_data.keys())}")
+                    for k, v in current_subtype_data.items():
+                        print(f"DEBUG   key={k} (type={type(k).__name__}): {v.get('sub_type_name')} = R$ {v.get('current_value', 0):,.2f}")
+                    # Also print the raw data structure before normalization
+                    print(f"DEBUG Raw current_allocation sub_types (before normalization):")
+                    for st in type_data.get('sub_types', []):
+                        print(f"DEBUG   raw sub_type_id={st.get('sub_type_id')} (type={type(st.get('sub_type_id')).__name__}), name={st.get('sub_type_name')}, value={st.get('current_value', 0)}")
                 
                 # Generate rebalancing actions for each subtype
                 for subtype_alloc in subtype_allocations:
                     subtype = subtype_alloc.sub_type
                     subtype_id = subtype.id if subtype else None
+                    # Normalize subtype_id to int (or None) for consistent matching
+                    if subtype_id is not None:
+                        try:
+                            subtype_id = int(subtype_id)
+                        except (ValueError, TypeError):
+                            pass  # Keep as-is if conversion fails
                     subtype_name = subtype.name if subtype else subtype_alloc.custom_name
+                    
+                    # Debug: Print matching info for Tesouro Direto
+                    if subtype_name and 'tesouro' in subtype_name.lower():
+                        print(f"DEBUG Tesouro Direto: subtype_id={subtype_id} (type={type(subtype_id)}), subtype_name={subtype_name}")
+                        print(f"DEBUG current_subtype_data keys: {list(current_subtype_data.keys())}")
+                        for k, v in current_subtype_data.items():
+                            print(f"DEBUG   key={k} (type={type(k)}), name={v.get('sub_type_name')}, value={v.get('current_value')}")
                     
                     # Check if this is a crypto subtype - if so, create individual actions for each crypto position
                     is_crypto_subtype = False
@@ -276,23 +307,85 @@ class RebalancingService:
                         
                         # Find current value for this subtype
                         subtype_current_value = Decimal('0')
-                        # Try matching by ID first
-                        if subtype_id is not None and subtype_id in current_subtype_data:
-                            subtype_current_value = Decimal(str(current_subtype_data[subtype_id].get('current_value', 0)))
-                        else:
-                            # For custom subtypes or None subtype_id, try to match by name (case-insensitive)
-                            for sub_id, sub_data in current_subtype_data.items():
-                                current_name = sub_data.get('sub_type_name', '').strip().lower()
-                                target_name = subtype_name.strip().lower() if subtype_name else ''
-                                if current_name == target_name or current_name.startswith(target_name) or target_name.startswith(current_name):
-                                    subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
-                                    break
+                        matched = False
+                        
+                        # Debug for Tesouro Direto
+                        is_tesouro = subtype_name and 'tesouro' in subtype_name.lower()
+                        if is_tesouro:
+                            print(f"DEBUG Matching Tesouro: subtype_id={subtype_id} (type={type(subtype_id)})")
+                            print(f"DEBUG current_subtype_data keys: {list(current_subtype_data.keys())}")
+                            for k, v in current_subtype_data.items():
+                                print(f"DEBUG   key={k} (type={type(k)}), name={v.get('sub_type_name')}, value={v.get('current_value')}")
+                        
+                        if current_subtype_data:
+                            # Try multiple matching strategies to handle type inconsistencies
+                            # Strategy 1: Direct key lookup (fastest) - try both original and normalized
+                            if subtype_id in current_subtype_data:
+                                subtype_current_value = Decimal(str(current_subtype_data[subtype_id].get('current_value', 0)))
+                                matched = True
+                                if is_tesouro:
+                                    print(f"DEBUG Strategy 1 - Direct match found: subtype_id={subtype_id} -> value={subtype_current_value}")
+                            else:
+                                # Strategy 2: Iterate and try exact match, then type conversion
+                                for sub_id, sub_data in current_subtype_data.items():
+                                    # Try exact match first (handles None == None case)
+                                    if sub_id == subtype_id:
+                                        subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
+                                        matched = True
+                                        if is_tesouro:
+                                            print(f"DEBUG Strategy 2a - Exact match found: sub_id={sub_id} (type={type(sub_id).__name__}) == subtype_id={subtype_id} (type={type(subtype_id).__name__}) -> value={subtype_current_value}")
+                                        break
+                                    
+                                    # Try type conversion match (handles int vs string, etc.)
+                                    try:
+                                        if sub_id is not None and subtype_id is not None:
+                                            # Normalize both to int for comparison
+                                            normalized_sub_id = int(sub_id)
+                                            normalized_subtype_id = int(subtype_id)
+                                            if normalized_sub_id == normalized_subtype_id:
+                                                subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
+                                                matched = True
+                                                if is_tesouro:
+                                                    print(f"DEBUG Strategy 2b - Type conversion match found: {normalized_sub_id}=={normalized_subtype_id} -> value={subtype_current_value}")
+                                                break
+                                    except (ValueError, TypeError) as e:
+                                        if is_tesouro:
+                                            print(f"DEBUG Strategy 2b - Type conversion failed: sub_id={sub_id}, subtype_id={subtype_id}, error={e}")
+                                        pass
+                                
+                                # Strategy 3: Name matching (fallback)
+                                if not matched:
+                                    for sub_id, sub_data in current_subtype_data.items():
+                                        current_name = sub_data.get('sub_type_name', '').strip().lower()
+                                        target_name = subtype_name.strip().lower() if subtype_name else ''
+                                        if current_name == target_name or current_name.startswith(target_name) or target_name.startswith(current_name):
+                                            subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
+                                            matched = True
+                                            if is_tesouro:
+                                                print(f"DEBUG Strategy 3 - Name match found: '{current_name}' == '{target_name}' -> value={subtype_current_value}")
+                                            break
+                            
+                            if is_tesouro and not matched:
+                                print(f"DEBUG No match found for Tesouro Direto!")
+                                print(f"DEBUG   Looking for: subtype_id={subtype_id} (type={type(subtype_id)}), subtype_name={subtype_name}")
+                                print(f"DEBUG   Available keys: {list(current_subtype_data.keys())}")
+                                for k, v in current_subtype_data.items():
+                                    print(f"DEBUG     key={k} (type={type(k)}), name={v.get('sub_type_name')}")
+                                for k, v in current_subtype_data.items():
+                                    print(f"DEBUG     key={k}, name={v.get('sub_type_name')}, value={v.get('current_value')}")
                         
                         subtype_difference = subtype_target_value - subtype_current_value
                         
-                        # Only create action if difference is significant (at least 1% of subtype target or R$ 100)
-                        threshold = max(subtype_target_value * Decimal('0.01'), Decimal('100.00'))
-                        if abs(subtype_difference) > threshold:
+                        # Always create action if there's a current value, even if difference is small
+                        # This ensures the frontend can display the current value correctly
+                        # Only skip if current_value is zero AND target_value is zero (no allocation configured)
+                        should_create_action = (
+                            subtype_current_value > 0 or 
+                            subtype_target_value > 0 or
+                            abs(subtype_difference) > max(subtype_target_value * Decimal('0.01'), Decimal('100.00'))
+                        )
+                        
+                        if should_create_action:
                             RebalancingAction.objects.create(
                                 recommendation=recommendation,
                                 action_type='rebalance',
@@ -303,6 +396,8 @@ class RebalancingService:
                                 difference=subtype_difference,
                                 display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order
                             )
+                            if is_tesouro:
+                                print(f"DEBUG Created action for Tesouro Direto: current_value={subtype_current_value}, target_value={subtype_target_value}, difference={subtype_difference}")
         
         # Generate AMBB strategy recommendations for "Ações em Reais"
         # Pass the remaining monthly limit to consider previous sales this month
