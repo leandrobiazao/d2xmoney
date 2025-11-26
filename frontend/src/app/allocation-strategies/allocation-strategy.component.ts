@@ -219,6 +219,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
               };
             });
             
+            // Calculate target_percentage from subtypes if they exist
+            const subtypeTotal = initializedSubtypes.reduce((sum, sub) => sum + Number(sub.target_percentage || 0), 0);
+            const calculatedPercentage = subtypeTotal > 0 ? subtypeTotal : (existingAlloc?.target_percentage ?? 0);
+            
             return {
               ...existingAlloc,
               investment_type_id: type.id,
@@ -227,7 +231,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
                 name: type.name,
                 code: type.code
               },
-              target_percentage: existingAlloc?.target_percentage ?? 0,
+              target_percentage: calculatedPercentage,
               display_order: existingAlloc?.display_order ?? index,
               sub_type_allocations: initializedSubtypes
             };
@@ -329,6 +333,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     
     if (subAlloc) {
       subAlloc.target_percentage = numericValue;
+      // Update the parent type percentage to match the sum of subtypes
+      typeAlloc.target_percentage = this.getSubTypeTotal(typeAlloc);
     }
   }
 
@@ -816,6 +822,55 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   // Expose Math for template
   Math = Math;
+
+  // Helper methods to get current values for allocation configuration
+  getCurrentTypeValue(typeId: number): number {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return 0;
+    }
+    const typeData = this.currentAllocation.current.investment_types.find(
+      (type: any) => type.investment_type_id === typeId
+    );
+    return typeData ? Number(typeData.current_value || 0) : 0;
+  }
+
+  getCurrentSubTypeValue(typeId: number, subTypeId: number): number {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return 0;
+    }
+    const typeData = this.currentAllocation.current.investment_types.find(
+      (type: any) => type.investment_type_id === typeId
+    );
+    if (!typeData?.sub_types) {
+      return 0;
+    }
+    const subTypeData = typeData.sub_types.find(
+      (st: any) => st.sub_type_id === subTypeId
+    );
+    return subTypeData ? Number(subTypeData.current_value || 0) : 0;
+  }
+
+  getTotalPortfolioValue(): number {
+    return this.currentAllocation?.current?.total_value || 0;
+  }
+
+  getTargetTypeValue(typeAlloc: any): number {
+    const totalValue = this.getTotalPortfolioValue();
+    const percentage = Number(typeAlloc.target_percentage || 0);
+    return totalValue * (percentage / 100);
+  }
+
+  getTargetSubTypeValue(typeAlloc: any, subTypeId: number): number {
+    const totalValue = this.getTotalPortfolioValue();
+    const subAlloc = typeAlloc.sub_type_allocations?.find(
+      (sa: any) => sa.sub_type_id === subTypeId
+    );
+    if (!subAlloc) {
+      return 0;
+    }
+    const percentage = Number(subAlloc.target_percentage || 0);
+    return totalValue * (percentage / 100);
+  }
 
   // Helper methods for Summary Card portfolio totals
   getRendaFixaTotal(): { value: number; percentage: number } | null {
