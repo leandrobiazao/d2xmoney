@@ -483,64 +483,57 @@
                         }
                         
                         <!-- Crypto Subsection -->
-                        @if (getCryptoSubtypeActions().length > 0) {
-                          <div class="subtype-action-group">
-                            <h5>Crypto</h5>
-                            <table class="actions-table">
-                              <thead>
-                                <tr>
-                                  <th>Ticker</th>
-                                  <th>Nome</th>
-                                  <th>Valor Atual</th>
-                                  <th>Valor Alvo</th>
-                                  <th>Diferença</th>
-                                  <th>Ação</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                @for (action of getCryptoSubtypeActions(); track action.id) {
+                        @for (subtypeGroup of getCryptoSubtypeActionsGrouped(); track subtypeGroup.subtypeName) {
+                          @if (subtypeGroup.subtypeActions.length > 0) {
+                            <div class="subtype-action-group">
+                              <h5>{{ subtypeGroup.subtypeName }}</h5>
+                              <table class="actions-table">
+                                <thead>
                                   <tr>
-                                    <td>
-                                      @if (action.crypto_currency_symbol) {
-                                        <strong>{{ action.crypto_currency_symbol }}</strong>
-                                      } @else {
-                                        <strong>{{ action.subtype_name || action.investment_subtype?.name || '-' }}</strong>
-                                      }
-                                    </td>
-                                    <td>
-                                      @if (action.crypto_currency_name) {
-                                        {{ action.crypto_currency_name }}
-                                      } @else {
-                                        {{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || '-' }}
-                                      }
-                                    </td>
-                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                                    <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                      R$ {{ action.difference | number:'1.2-2' }}
-                                    </td>
-                                    <td>
-                                      @if (action.quantity_to_buy) {
-                                        <span class="badge badge-buy">
-                                          Comprar {{ (action.quantity_to_buy / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
-                                        </span>
-                                      } @else if (action.quantity_to_sell) {
-                                        <span class="badge badge-sell">
-                                          Vender {{ (Math.abs(action.quantity_to_sell) / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
-                                        </span>
-                                      } @else if (action.difference > 0) {
-                                        <span class="badge badge-buy">Aumentar</span>
-                                      } @else if (action.difference < 0) {
-                                        <span class="badge badge-sell">Reduzir</span>
-                                      } @else {
-                                        <span class="badge badge-maintain">Manter</span>
-                                      }
-                                    </td>
+                                    <th>Ticker</th>
+                                    <th>Nome</th>
+                                    <th>Valor Atual</th>
+                                    <th>Valor Alvo</th>
+                                    <th>Diferença</th>
+                                    <th>Ação</th>
                                   </tr>
-                                }
-                              </tbody>
-                            </table>
-                          </div>
+                                </thead>
+                                <tbody>
+                                  @for (action of subtypeGroup.subtypeActions; track action.id) {
+                                    <!-- Only show individual crypto actions (with crypto symbol like "BTC") -->
+                                    @if (isCryptoSymbol(action.subtype_name)) {
+                                      <tr>
+                                        <td><strong>{{ action.subtype_name || action.crypto_currency_symbol || '-' }}</strong></td>
+                                        <td>{{ getCryptoDisplayName(action.crypto_currency_name) }}</td>
+                                        <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                        <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                        <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                          R$ {{ action.difference | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                          @if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+                                            <span class="badge badge-buy">
+                                              Comprar {{ (action.quantity_to_buy / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
+                                            </span>
+                                          } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+                                            <span class="badge badge-sell">
+                                              Vender {{ (action.quantity_to_sell / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
+                                            </span>
+                                          } @else if (action.difference > 0) {
+                                            <span class="badge badge-buy">Comprar {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
+                                          } @else if (action.difference < 0) {
+                                            <span class="badge badge-sell">Vender {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
+                                          } @else {
+                                            <span class="badge badge-maintain">Manter</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                    }
+                                  }
+                                </tbody>
+                              </table>
+                            </div>
+                          }
                         }
                       </div>
                     </div>

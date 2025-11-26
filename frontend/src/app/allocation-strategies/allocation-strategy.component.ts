@@ -660,26 +660,102 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   getCryptoSubtypeActions(): RebalancingAction[] {
     const actions = this.getAcoesDolaresActions();
     // Get Crypto actions: actions with investment_subtype = Bitcoin/Crypto (no stock)
+    // This includes both aggregated subtype actions and individual crypto actions
     return actions.filter(action => {
       // Must have investment_subtype but no stock (crypto positions)
       if (!action.investment_subtype || action.stock) {
         return false;
       }
       // Check if investment_subtype is Bitcoin or Crypto
-      const subtypeName = action.investment_subtype.name || 
-                         action.subtype_display_name || 
-                         action.subtype_name || '';
-      const nameLower = subtypeName.toLowerCase();
+      // Use investment_subtype.name as primary source (works for aggregated actions with subtype_name=None)
+      const investmentSubtypeName = action.investment_subtype.name || '';
+      const subtypeName = action.subtype_name || '';
+      const nameLower = investmentSubtypeName.toLowerCase();
+      const subtypeNameLower = subtypeName.toLowerCase();
+      
       // Also check if subtype_name is a crypto symbol (like "BTC", "ETH")
-      const isCryptoSymbol = action.subtype_name && 
-                            action.subtype_name.length <= 10 && 
-                            action.subtype_name === action.subtype_name.toUpperCase() &&
-                            /^[A-Z0-9]+$/.test(action.subtype_name);
+      const isCryptoSymbol = subtypeName && 
+                            subtypeName.length <= 10 && 
+                            subtypeName === subtypeName.toUpperCase() &&
+                            /^[A-Z0-9]+$/.test(subtypeName);
+      
+      // Match if investment_subtype name contains crypto keywords OR subtype_name is a crypto symbol
       return nameLower.includes('bitcoin') || 
              nameLower.includes('crypto') || 
              nameLower.includes('cripto') ||
+             subtypeNameLower.includes('bitcoin') ||
+             subtypeNameLower.includes('crypto') ||
+             subtypeNameLower.includes('cripto') ||
              isCryptoSymbol;
     }).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+  }
+
+  getCryptoSubtypeActionsGrouped(): { subtypeName: string; subtypeActions: RebalancingAction[] }[] {
+    const allCryptoActions = this.getCryptoSubtypeActions();
+    
+    if (allCryptoActions.length === 0) {
+      return [];
+    }
+    
+    // Filter only individual crypto actions (crypto symbol like "BTC")
+    // Exclude aggregated subtype actions
+    const individualActions: RebalancingAction[] = [];
+    
+    for (const action of allCryptoActions) {
+      const subtypeName = action.subtype_name || '';
+      const investmentSubtypeName = action.investment_subtype?.name || '';
+      
+      // Only include individual crypto actions (crypto symbol like "BTC")
+      const isIndividual = subtypeName && 
+                           subtypeName.length <= 10 && 
+                           /^[A-Z0-9]+$/.test(subtypeName) &&
+                           subtypeName !== investmentSubtypeName;
+      
+      if (isIndividual) {
+        individualActions.push(action);
+      }
+    }
+    
+    // Group individual actions by subtype
+    const grouped: { [key: string]: RebalancingAction[] } = {};
+    for (const action of individualActions) {
+      const subtypeName = action.investment_subtype?.name || 'Crypto';
+      if (!grouped[subtypeName]) {
+        grouped[subtypeName] = [];
+      }
+      grouped[subtypeName].push(action);
+    }
+    
+    // Return grouped structure (only individual actions, no aggregated)
+    const result: { subtypeName: string; subtypeActions: RebalancingAction[] }[] = [];
+    
+    // Add individual actions grouped by subtype
+    for (const [subtypeName, actions] of Object.entries(grouped)) {
+      if (actions.length > 0) {
+        result.push({
+          subtypeName: subtypeName,
+          subtypeActions: actions
+        });
+      }
+    }
+    
+    return result;
+  }
+
+  isCryptoSymbol(subtypeName: string | null | undefined): boolean {
+    if (!subtypeName) return false;
+    return subtypeName.length <= 10 && 
+           subtypeName === subtypeName.toUpperCase() &&
+           /^[A-Z0-9]+$/.test(subtypeName);
+  }
+
+  getCryptoDisplayName(cryptoCurrencyName: string | null | undefined): string {
+    if (!cryptoCurrencyName) return 'Bitcoin';
+    // Remove "BTC - " or similar prefix if present
+    if (cryptoCurrencyName.includes(' - ')) {
+      return cryptoCurrencyName.split(' - ')[1];
+    }
+    return cryptoCurrencyName;
   }
 
   getRendaFixaActions(): RebalancingAction[] {

@@ -246,6 +246,30 @@ class RebalancingService:
                                     'current_price': current_price
                                 })
                             
+                            # Also try to get current value from current_allocation if no positions found
+                            if subtype_total_current_value == 0:
+                                if current_subtype_data and subtype_id in current_subtype_data:
+                                    subtype_total_current_value = Decimal(str(current_subtype_data[subtype_id].get('current_value', 0)))
+                            
+                            # Create aggregated subtype-level action for crypto (similar to other subtypes)
+                            subtype_difference = subtype_total_target_value - subtype_total_current_value
+                            should_create_subtype_action = (
+                                subtype_total_current_value > 0 or 
+                                subtype_total_target_value > 0
+                            )
+                            
+                            if should_create_subtype_action:
+                                RebalancingAction.objects.create(
+                                    recommendation=recommendation,
+                                    action_type='rebalance',
+                                    investment_subtype=subtype,
+                                    subtype_name=None,  # Use investment_subtype name for aggregated action
+                                    current_value=subtype_total_current_value,
+                                    target_value=subtype_total_target_value,
+                                    difference=subtype_difference,
+                                    display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 10
+                                )
+                            
                             # If we have crypto positions, distribute target value proportionally
                             if crypto_actions_data and subtype_total_current_value > 0:
                                 crypto_index = 0
@@ -267,17 +291,18 @@ class RebalancingService:
                                         except:
                                             pass
                                     # If no current price but we have current_value and quantity, estimate price
-                                    elif crypto_data['current_value'] > 0 and crypto_position.quantity > 0:
+                                    elif crypto_data['current_value'] > 0 and crypto_data['quantity'] > 0:
                                         try:
                                             # Estimate price from current value and quantity
-                                            estimated_price = Decimal(str(crypto_data['current_value'])) / Decimal(str(crypto_position.quantity))
+                                            estimated_price = Decimal(str(crypto_data['current_value'])) / Decimal(str(crypto_data['quantity']))
                                             if estimated_price > 0:
                                                 quantity_to_adjust = crypto_difference / estimated_price
                                         except:
                                             pass
                                     
-                                    # Only create action if difference is significant (at least R$ 100)
-                                    if abs(crypto_difference) > Decimal('100.00'):
+                                    # For crypto, create action even for small differences since Bitcoin can be bought in fractions
+                                    # Use a much lower threshold (R$ 1) or always create if there's a difference
+                                    if abs(crypto_difference) > Decimal('1.00') or (quantity_to_adjust and abs(quantity_to_adjust) > Decimal('0.000001')):
                                         RebalancingAction.objects.create(
                                             recommendation=recommendation,
                                             action_type='rebalance',
