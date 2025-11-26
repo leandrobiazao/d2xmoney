@@ -449,7 +449,7 @@
 }
 
 .summary-label {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--text-secondary);
 }
 
@@ -459,8 +459,21 @@
   color: var(--text-primary);
 }
 
+.summary-value-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.summary-percentage {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .summary-value.warning {
-  color: #d70015;
+  color: #ff9500;
 }
 
 .warning-badge {
@@ -504,8 +517,9 @@
 
 .rebalancing-section h4 {
   margin: 0 0 1rem 0;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 .rebalancing-section h5 {
@@ -556,24 +570,25 @@
 }
 
 .actions-table thead {
-  background: #f8f9fa;
-  border-bottom: 2px solid var(--border);
+  background: #f5f5f7;
+  border-bottom: 1px solid var(--border);
 }
 
 .actions-table th {
-  padding: 0.75rem;
+  padding: 0.75rem 1rem;
   text-align: left;
   font-weight: 600;
   color: var(--text-primary);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .actions-table td {
-  padding: 0.75rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
+  font-size: 0.9375rem;
 }
 
 .actions-table tbody tr:hover {
@@ -593,18 +608,24 @@
 }
 
 .badge-buy {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: #34c759;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .badge-sell {
-  background: #ffebee;
-  color: #c62828;
+  background: #d70015;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .badge-maintain {
-  background: #fff9c4;
-  color: #f57f17;
+  background: #ff9500;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .positive {

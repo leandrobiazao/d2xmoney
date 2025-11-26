@@ -704,12 +704,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     );
   }
 
+  getRendaFixaTypeActions(): RebalancingAction[] {
+    // Get type-level actions (no stock, no subtype) - these represent the total type allocation
+    const actions = this.getRendaFixaActions();
+    return actions.filter(action => !action.stock && !action.investment_subtype);
+  }
+
   getRendaFixaActionsBySubtype(): Array<{subtypeName: string, subtypeActions: RebalancingAction[]}> {
     const actions = this.getRendaFixaActions();
     const grouped = new Map<string, RebalancingAction[]>();
     
-    // Group by subtype
+    // First, group actions by subtype
     actions.forEach(action => {
+      // Skip type-level actions (no investment_subtype)
+      if (!action.investment_subtype) {
+        return;
+      }
+      
       const subtypeName = action.subtype_display_name || 
                          action.investment_subtype?.name || 
                          action.subtype_name || 
@@ -721,15 +732,145 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       grouped.get(subtypeName)!.push(action);
     });
     
-    // Convert Map to Array for template iteration
+    // Also include all configured subtypes from strategy, and create synthetic actions from currentAllocation
+    // when there are no rebalancing actions (difference below threshold)
+    if (this.strategy && this.currentAllocation?.current) {
+      const rendaFixaTypeAlloc = this.strategy.type_allocations?.find(
+        typeAlloc => typeAlloc.investment_type?.code === 'RENDA_FIXA' || 
+                     typeAlloc.investment_type?.name?.toLowerCase().includes('renda fixa')
+      );
+      
+      // Get current allocation data for Renda Fixa
+      const rendaFixaCurrentData = this.currentAllocation.current.investment_types?.find(
+        (type: any) => type.code === 'RENDA_FIXA' || 
+                       type.name?.toLowerCase().includes('renda fixa')
+      );
+      
+      const totalValue = this.currentAllocation.current.total_value || 0;
+      
+      if (rendaFixaTypeAlloc?.sub_type_allocations) {
+        rendaFixaTypeAlloc.sub_type_allocations.forEach(subAlloc => {
+          const subtypeName = subAlloc.sub_type?.name || subAlloc.custom_name || 'Renda Fixa';
+          const subtypeId = subAlloc.sub_type?.id;
+          
+          // If this subtype doesn't have any actions, try to create a synthetic one from currentAllocation
+          if (!grouped.has(subtypeName) || grouped.get(subtypeName)!.length === 0) {
+            // Find current value from currentAllocation
+            let currentValue = 0;
+            if (rendaFixaCurrentData?.sub_types) {
+              const subtypeData = rendaFixaCurrentData.sub_types.find(
+                (st: any) => st.sub_type_id === subtypeId || 
+                            st.sub_type_name?.toLowerCase() === subtypeName.toLowerCase()
+              );
+              if (subtypeData) {
+                currentValue = Number(subtypeData.current_value || 0);
+              }
+            }
+            
+            // Calculate target value from strategy allocation percentage
+            const targetValue = totalValue * (subAlloc.target_percentage / 100);
+            const difference = targetValue - currentValue;
+            
+            // Only create synthetic action if we have meaningful data
+            if (currentValue > 0 || targetValue > 0) {
+              const syntheticAction: any = {
+                id: `synthetic_${subtypeId || subtypeName}`,
+                action_type: 'rebalance',
+                investment_subtype: subAlloc.sub_type ? {
+                  id: subAlloc.sub_type.id,
+                  name: subAlloc.sub_type.name,
+                  code: subAlloc.sub_type.code
+                } : null,
+                subtype_name: subAlloc.custom_name || null,
+                subtype_display_name: subtypeName,
+                current_value: currentValue,
+                target_value: targetValue,
+                difference: difference,
+                display_order: subAlloc.display_order || 9999
+              };
+              
+              if (!grouped.has(subtypeName)) {
+                grouped.set(subtypeName, []);
+              }
+              grouped.get(subtypeName)!.push(syntheticAction);
+            } else if (!grouped.has(subtypeName)) {
+              // Still add empty array to show the subtype header
+              grouped.set(subtypeName, []);
+            }
+          }
+        });
+      }
+    }
+    
+    // Convert Map to Array for template iteration, sorted by display_order
     return Array.from(grouped.entries()).map(([subtypeName, subtypeActions]) => ({ 
       subtypeName, 
       subtypeActions: subtypeActions.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-    }));
+    })).sort((a, b) => {
+      // Sort by the first action's display_order, or by subtype name if no actions
+      const aOrder = a.subtypeActions.length > 0 ? (a.subtypeActions[0].display_order || 0) : 999999;
+      const bOrder = b.subtypeActions.length > 0 ? (b.subtypeActions[0].display_order || 0) : 999999;
+      return aOrder - bOrder;
+    });
   }
 
   // Expose Math for template
   Math = Math;
+
+  // Helper methods for Summary Card portfolio totals
+  getRendaFixaTotal(): { value: number; percentage: number } | null {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return null;
+    }
+    const rendaFixa = this.currentAllocation.current.investment_types.find(
+      (type: any) => type.code === 'RENDA_FIXA' || 
+                     type.name?.toLowerCase().includes('renda fixa')
+    );
+    if (!rendaFixa) {
+      return null;
+    }
+    return {
+      value: Number(rendaFixa.current_value || 0),
+      percentage: Number(rendaFixa.current_percentage || 0)
+    };
+  }
+
+  getRendaVarDolaresTotal(): { value: number; percentage: number } | null {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return null;
+    }
+    const rendaVarDolares = this.currentAllocation.current.investment_types.find(
+      (type: any) => type.code === 'RENDA_VARIAVEL_DOLARES' || 
+                     type.name?.toLowerCase().includes('renda variável em dólar') ||
+                     type.name?.toLowerCase().includes('renda variavel em dolar')
+    );
+    if (!rendaVarDolares) {
+      return null;
+    }
+    return {
+      value: Number(rendaVarDolares.current_value || 0),
+      percentage: Number(rendaVarDolares.current_percentage || 0)
+    };
+  }
+
+  getRendaVarReaisTotal(): { value: number; percentage: number } | null {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return null;
+    }
+    const rendaVarReais = this.currentAllocation.current.investment_types.find(
+      (type: any) => type.code === 'RENDA_VARIAVEL_REAIS' || 
+                     type.name?.toLowerCase().includes('renda variável em reais') ||
+                     type.name?.toLowerCase().includes('renda variavel em reais') ||
+                     type.name?.toLowerCase().includes('ações em reais')
+    );
+    if (!rendaVarReais) {
+      return null;
+    }
+    return {
+      value: Number(rendaVarReais.current_value || 0),
+      percentage: Number(rendaVarReais.current_percentage || 0)
+    };
+  }
 
 }
 

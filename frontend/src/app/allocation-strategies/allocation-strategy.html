@@ -190,6 +190,17 @@
         <!-- Rebalancing Tab -->
         @if (activeTab === 'rebalancing') {
           <div class="rebalancing-content">
+            <!-- Generate Recommendations Button -->
+            <div class="actions-bar">
+              <button 
+                class="btn btn-primary" 
+                (click)="generateRecommendations()" 
+                [disabled]="isGeneratingRecommendations || !strategy"
+              >
+                {{ isGeneratingRecommendations ? 'Gerando...' : 'Gerar Recomendações de Rebalanceamento' }}
+              </button>
+            </div>
+
             <!-- Summary Section -->
             @if (currentAllocation) {
               <section class="summary-card">
@@ -199,6 +210,33 @@
                     <span class="summary-label">Valor Total do Portfólio</span>
                     <span class="summary-value">R$ {{ currentAllocation.current?.total_value | number:'1.2-2' }}</span>
                   </div>
+                  @if (getRendaFixaTotal()) {
+                    <div class="summary-item">
+                      <span class="summary-label">Valor Total Renda Fixa</span>
+                      <div class="summary-value-row">
+                        <span class="summary-value">R$ {{ getRendaFixaTotal()?.value | number:'1.2-2' }}</span>
+                        <span class="summary-percentage">{{ getRendaFixaTotal()?.percentage | number:'1.2-2' }}%</span>
+                      </div>
+                    </div>
+                  }
+                  @if (getRendaVarDolaresTotal()) {
+                    <div class="summary-item">
+                      <span class="summary-label">Valor Total Renda Variável em Dólar</span>
+                      <div class="summary-value-row">
+                        <span class="summary-value">R$ {{ getRendaVarDolaresTotal()?.value | number:'1.2-2' }}</span>
+                        <span class="summary-percentage">{{ getRendaVarDolaresTotal()?.percentage | number:'1.2-2' }}%</span>
+                      </div>
+                    </div>
+                  }
+                  @if (getRendaVarReaisTotal()) {
+                    <div class="summary-item">
+                      <span class="summary-label">Valor Total Renda Variável em Reais</span>
+                      <div class="summary-value-row">
+                        <span class="summary-value">R$ {{ getRendaVarReaisTotal()?.value | number:'1.2-2' }}</span>
+                        <span class="summary-percentage">{{ getRendaVarReaisTotal()?.percentage | number:'1.2-2' }}%</span>
+                      </div>
+                    </div>
+                  }
                   @if (currentRecommendation) {
                     <div class="summary-item">
                       <span class="summary-label">Limite de Vendas Restante</span>
@@ -229,188 +267,161 @@
               </section>
             }
 
-            <!-- Generate Recommendations Button -->
-            <div class="actions-bar">
-              <button 
-                class="btn btn-primary" 
-                (click)="generateRecommendations()" 
-                [disabled]="isGeneratingRecommendations || !strategy"
-              >
-                {{ isGeneratingRecommendations ? 'Gerando...' : 'Gerar Recomendações de Rebalanceamento' }}
-              </button>
-            </div>
-
             <!-- Recommendations Display -->
             @if (isLoadingRecommendations) {
               <div class="status-card">
                 <p>Carregando recomendações...</p>
               </div>
             } @else if (currentRecommendation) {
-              <!-- Ações em Reais Section -->
-              <section class="rebalancing-section">
-                <h4>Ações em Reais - Rebalanceamento</h4>
-                @if (currentRecommendation.sales_limit_reached) {
-                  <div class="warning-banner">
-                    <strong>Atenção:</strong> O limite de vendas de R$ 19.000 foi atingido. Algumas ações não puderam ser vendidas.
-                  </div>
-                }
-                
-                <!-- Stocks to Sell -->
-                @if (getAcoesReaisSellActions().length > 0) {
-                  <div class="action-group">
-                    <h5>Ações para Vender</h5>
-                    <table class="actions-table">
-                      <thead>
-                        <tr>
-                          <th>Ranking</th>
-                          <th>Ticker</th>
-                          <th>Nome</th>
-                          <th>Valor Atual</th>
-                          <th>Quantidade</th>
-                          <th>Motivo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (action of getAcoesReaisSellActions(); track action.id) {
-                          <tr>
-                            <td>
-                              @if (action.display_order && action.display_order < 9999) {
-                                {{ action.display_order }}
-                              } @else {
-                                -
-                              }
-                            </td>
-                            <td><strong>{{ action.stock?.ticker }}</strong></td>
-                            <td>{{ action.stock?.name }}</td>
-                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                            <td>{{ action.quantity_to_sell }}</td>
-                            <td>
-                              <span class="badge">
-                                @if (action.reason) {
-                                  {{ action.reason }}
-                                } @else {
-                                  @if (action.display_order && action.display_order < 9999) {
-                                    Rank {{ action.display_order }} > 30
-                                  } @else {
-                                    Não está no AMBB 2.0
-                                  }
-                                }
-                              </span>
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-
-                <!-- Stocks to Buy -->
-                @if (getAcoesReaisBuyActions().length > 0) {
-                  <div class="action-group">
-                    <h5>Ações para Comprar</h5>
-                    <table class="actions-table">
-                      <thead>
-                        <tr>
-                          <th>Ranking</th>
-                          <th>Ticker</th>
-                          <th>Nome</th>
-                          <th>Valor Alvo</th>
-                          <th>Quantidade</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (action of getAcoesReaisBuyActions(); track action.id) {
-                          <tr>
-                            <td>{{ action.display_order }}</td>
-                            <td><strong>{{ action.stock?.ticker }}</strong></td>
-                            <td>{{ action.stock?.name }}</td>
-                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                            <td>{{ action.quantity_to_buy }}</td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-
-                <!-- Stocks to Balance -->
-                @if (getAcoesReaisRebalanceActions().length > 0) {
-                  <div class="action-group">
-                    <h5>Ações para Rebalancear</h5>
-                    <table class="actions-table">
-                      <thead>
-                        <tr>
-                          <th>Ranking</th>
-                          <th>Ticker</th>
-                          <th>Nome</th>
-                          <th>Valor Atual</th>
-                          <th>Valor Alvo</th>
-                          <th>Diferença</th>
-                          <th>Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (action of getAcoesReaisRebalanceActions(); track action.id) {
-                          <tr>
-                            <td>{{ action.display_order }}</td>
-                            <td><strong>{{ action.stock?.ticker }}</strong></td>
-                            <td>{{ action.stock?.name }}</td>
-                            <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                            <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                            <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                              R$ {{ action.difference | number:'1.2-2' }}
-                            </td>
-                            <td>
-                              @if (action.quantity_to_buy) {
-                                <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
-                              } @else if (action.quantity_to_sell) {
-                                <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
-                              } @else if (action.difference > 0) {
-                                <span class="badge badge-buy">Aumentar</span>
-                              } @else if (action.difference < 0) {
-                                <span class="badge badge-sell">Reduzir</span>
-                              } @else {
-                                <span class="badge badge-maintain">Manter</span>
-                              }
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </section>
-
-              <!-- Renda Fixa Section - Grouped by Subtype -->
+              <!-- Renda Fixa Section - Type-Level Summary and Subtype Groups -->
               @if (getRendaFixaActions().length > 0) {
                 <section class="rebalancing-section">
                   <h4>Renda Fixa - Rebalanceamento</h4>
-                  @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
-                    <div class="subtype-action-group">
-                      <h5>{{ subtypeGroup.subtypeName }}</h5>
+                  
+                  <!-- Type-Level Summary -->
+                  @if (getRendaFixaTypeActions().length > 0) {
+                    <div class="type-action-group">
                       <table class="actions-table">
                         <thead>
                           <tr>
-                            <th>Sub-Tipo de Investimento</th>
+                            <th>Tipo</th>
                             <th>Valor Atual</th>
                             <th>Valor Alvo</th>
                             <th>Diferença</th>
+                            <th>Recomendação</th>
                           </tr>
                         </thead>
                         <tbody>
-                          @for (action of subtypeGroup.subtypeActions; track action.id) {
+                          @for (action of getRendaFixaTypeActions(); track action.id) {
                             <tr>
-                              <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                              <td><strong>Renda Fixa</strong></td>
                               <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
                               <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
                               <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
                                 R$ {{ action.difference | number:'1.2-2' }}
                               </td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Aumentar</span>
+                                } @else if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Reduzir</span>
+                                } @else if (action.difference > 0) {
+                                  <span class="badge badge-buy">Aumentar</span>
+                                } @else if (action.difference < 0) {
+                                  <span class="badge badge-sell">Reduzir</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
                             </tr>
                           }
                         </tbody>
                       </table>
+                      
+                      <!-- SubType-Level Summary -->
+                      <div class="subtype-level-summary">
+                        @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
+                          <div class="subtype-action-group">
+                            <h5>{{ subtypeGroup.subtypeName }}</h5>
+                            <table class="actions-table">
+                              <thead>
+                                <tr>
+                                  <th>Sub-Tipo de Investimento</th>
+                                  <th>Valor Atual</th>
+                                  <th>Valor Alvo</th>
+                                  <th>Diferença</th>
+                                  <th>Recomendação</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @if (subtypeGroup.subtypeActions.length > 0) {
+                                  @for (action of subtypeGroup.subtypeActions; track action.id) {
+                                    <tr>
+                                      <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                                      <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                      <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                      <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                        R$ {{ action.difference | number:'1.2-2' }}
+                                      </td>
+                                      <td>
+                                        @if (action.quantity_to_buy) {
+                                          <span class="badge badge-buy">Aumentar</span>
+                                        } @else if (action.quantity_to_sell) {
+                                          <span class="badge badge-sell">Reduzir</span>
+                                        } @else if (action.difference > 0) {
+                                          <span class="badge badge-buy">Aumentar</span>
+                                        } @else if (action.difference < 0) {
+                                          <span class="badge badge-sell">Reduzir</span>
+                                        } @else {
+                                          <span class="badge badge-maintain">Manter</span>
+                                        }
+                                      </td>
+                                    </tr>
+                                  }
+                                } @else {
+                                  <tr>
+                                    <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                                      Nenhuma ação de rebalanceamento necessária para este subtipo
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                      </div>
                     </div>
+                  } @else {
+                    <!-- Fallback: Show subtype groups if no type-level actions -->
+                    @for (subtypeGroup of getRendaFixaActionsBySubtype(); track subtypeGroup.subtypeName) {
+                      <div class="subtype-action-group">
+                        <h5>{{ subtypeGroup.subtypeName }}</h5>
+                        <table class="actions-table">
+                          <thead>
+                            <tr>
+                              <th>Sub-Tipo de Investimento</th>
+                              <th>Valor Atual</th>
+                              <th>Valor Alvo</th>
+                              <th>Diferença</th>
+                              <th>Recomendação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @if (subtypeGroup.subtypeActions.length > 0) {
+                              @for (action of subtypeGroup.subtypeActions; track action.id) {
+                                <tr>
+                                  <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
+                                  <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                  <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                  <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                    R$ {{ action.difference | number:'1.2-2' }}
+                                  </td>
+                                  <td>
+                                    @if (action.quantity_to_buy) {
+                                      <span class="badge badge-buy">Aumentar</span>
+                                    } @else if (action.quantity_to_sell) {
+                                      <span class="badge badge-sell">Reduzir</span>
+                                    } @else if (action.difference > 0) {
+                                      <span class="badge badge-buy">Aumentar</span>
+                                    } @else if (action.difference < 0) {
+                                      <span class="badge badge-sell">Reduzir</span>
+                                    } @else {
+                                      <span class="badge badge-maintain">Manter</span>
+                                    }
+                                  </td>
+                                </tr>
+                              }
+                            } @else {
+                              <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1rem;">
+                                  Nenhuma ação de rebalanceamento necessária para este subtipo
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
                   }
                 </section>
               }
@@ -568,6 +579,143 @@
                           </div>
                         }
                       </div>
+                    </div>
+                  }
+                </section>
+              }
+
+              <!-- Ações em Reais Section -->
+              @if (getAcoesReaisSellActions().length > 0 || getAcoesReaisBuyActions().length > 0 || getAcoesReaisRebalanceActions().length > 0) {
+                <section class="rebalancing-section">
+                  <h4>Ações em Reais - Rebalanceamento</h4>
+                  @if (currentRecommendation.sales_limit_reached) {
+                    <div class="warning-banner">
+                      <strong>Atenção:</strong> O limite de vendas de R$ 19.000 foi atingido. Algumas ações não puderam ser vendidas.
+                    </div>
+                  }
+                  
+                  <!-- Stocks to Sell -->
+                  @if (getAcoesReaisSellActions().length > 0) {
+                    <div class="action-group">
+                      <h5>Ações para Vender</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ranking</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Atual</th>
+                            <th>Quantidade</th>
+                            <th>Motivo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getAcoesReaisSellActions(); track action.id) {
+                            <tr>
+                              <td>
+                                @if (action.display_order && action.display_order < 9999) {
+                                  {{ action.display_order }}
+                                } @else {
+                                  -
+                                }
+                              </td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>{{ action.quantity_to_sell }}</td>
+                              <td>
+                                <span class="badge">
+                                  @if (action.reason) {
+                                    {{ action.reason }}
+                                  } @else {
+                                    @if (action.display_order && action.display_order < 9999) {
+                                      Rank {{ action.display_order }} > 30
+                                    } @else {
+                                      Não está no AMBB 2.0
+                                    }
+                                  }
+                                </span>
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+
+                  <!-- Stocks to Buy -->
+                  @if (getAcoesReaisBuyActions().length > 0) {
+                    <div class="action-group">
+                      <h5>Ações para Comprar</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ranking</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Alvo</th>
+                            <th>Quantidade</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getAcoesReaisBuyActions(); track action.id) {
+                            <tr>
+                              <td>{{ action.display_order }}</td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td>{{ action.quantity_to_buy }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+
+                  <!-- Stocks to Balance -->
+                  @if (getAcoesReaisRebalanceActions().length > 0) {
+                    <div class="action-group">
+                      <h5>Ações para Rebalancear</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ranking</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Atual</th>
+                            <th>Valor Alvo</th>
+                            <th>Diferença</th>
+                            <th>Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getAcoesReaisRebalanceActions(); track action.id) {
+                            <tr>
+                              <td>{{ action.display_order }}</td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                R$ {{ action.difference | number:'1.2-2' }}
+                              </td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                } @else if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                } @else if (action.difference > 0) {
+                                  <span class="badge badge-buy">Aumentar</span>
+                                } @else if (action.difference < 0) {
+                                  <span class="badge badge-sell">Reduzir</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
                     </div>
                   }
                 </section>
