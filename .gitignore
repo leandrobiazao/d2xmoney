@@ -184,3 +184,4 @@ backend/media/brokerage_notes/*/*.pdf
 .cursor/*
 backend/media/portafolio_wallet/*/*.xlsx
 .cursorrules
+.vscode/settings.json

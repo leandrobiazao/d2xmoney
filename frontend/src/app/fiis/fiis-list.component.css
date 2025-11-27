@@ -1,77 +1,274 @@
 .fiis-container {
-  padding: 20px;
+  padding: 2rem;
+}
+
+.positions-section,
+.operations-section {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #555;
+  font-size: 1.3rem;
+}
+
+.toggle-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toggle-btn {
+  padding: 0.5rem 1rem;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  background: #e9e9e9;
+}
+
+.toggle-btn.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
 }
 
 .summary-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .summary-card {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  flex: 1;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #007bff;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
 }
 
 .summary-card .label {
+  font-size: 0.9rem;
   color: #666;
-  font-size: 0.9em;
-  margin-bottom: 5px;
 }
 
 .summary-card .value {
-  font-size: 1.5em;
+  font-size: 1.5rem;
   font-weight: bold;
   color: #333;
 }
 
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filter-group label {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.filter-group input,
+.filter-group select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.reset-btn {
+  padding: 0.5rem 1rem;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-end;
+  transition: background 0.2s;
+}
+
+.reset-btn:hover {
+  background: #5a6268;
+}
+
 .table-container {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   overflow-x: auto;
 }
 
-.fiis-table {
+.positions-table,
+.operations-table {
   width: 100%;
   border-collapse: collapse;
+  font-size: 0.9rem;
 }
 
-.fiis-table th,
-.fiis-table td {
-  padding: 12px 15px;
+.positions-table th,
+.operations-table th {
+  background: #f8f9fa;
+  padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #eee;
-}
-
-.fiis-table th {
-  background-color: #f8f9fa;
   font-weight: 600;
-  color: #444;
+  color: #555;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
 }
 
-.fiis-table tr:hover {
-  background-color: #f5f5f5;
+.operations-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background-color 0.2s;
+  padding-right: 1.5rem;
 }
 
-.ticker {
-  font-weight: bold;
-  color: #2196f3;
+.operations-table th.sortable:hover {
+  background: #e9ecef;
 }
 
-.no-data {
+.operations-table th.sortable .header-text {
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.operations-table th.sortable .sort-icon {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  opacity: 0.4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
   text-align: center;
+  transition: opacity 0.2s, color 0.2s;
   color: #666;
-  padding: 30px;
+  font-weight: normal;
 }
 
+.operations-table th.sortable:hover .sort-icon {
+  opacity: 0.7;
+}
+
+.operations-table th.sortable.active .sort-icon {
+  opacity: 1;
+  color: #007bff;
+  font-weight: bold;
+}
+
+.operations-table th.sortable.active {
+  color: #007bff;
+}
+
+.positions-table td,
+.operations-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.operations-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.operations-table tbody tr.venda {
+  background: #fff5f5;
+}
+
+.compra {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.venda-badge {
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.positive {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.negative {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+.no-data,
 .loading {
   text-align: center;
-  padding: 20px;
+  padding: 2rem;
   color: #666;
+  font-style: italic;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .fiis-container {
+    padding: 1rem;
+  }
+
+  .summary-cards {
+    flex-direction: column;
+  }
+
+  .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .positions-table,
+  .operations-table {
+    font-size: 0.8rem;
+    min-width: 1000px;
+  }
+
+  .positions-table th,
+  .positions-table td,
+  .operations-table th,
+  .operations-table td {
+    padding: 0.5rem;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
 }

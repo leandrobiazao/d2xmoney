@@ -659,8 +659,9 @@ class PortfolioExcelImportService:
                             if not investment_sub_type and sub_type_name:
                                 investment_sub_type = subtype_map.get(sub_type_name)
                             
-                            # For Tesouro positions, check if position exists by user_id and asset_code first
-                            # to avoid duplicates when application_date differs
+                            # For Tesouro positions, use only user_id and asset_code to prevent duplicates
+                            # The same bond (e.g., "LFT mar/2029") should always update the same position
+                            # regardless of application_date or which subsection it appears in
                             existing_positions = FixedIncomePosition.objects.filter(
                                 user_id=tesouro_data['user_id'],
                                 asset_code=tesouro_data['asset_code']
@@ -676,13 +677,17 @@ class PortfolioExcelImportService:
                                 if duplicates_count > 0:
                                     # Delete all except the first one
                                     for dup_position in position_list[1:]:
+                                        # Also delete associated TesouroDiretoPosition if exists
+                                        try:
+                                            dup_position.tesourodiretoposition.delete()
+                                        except TesouroDiretoPosition.DoesNotExist:
+                                            pass
                                         dup_position.delete()
                                     results['debug_info'].append(f"Row {row_idx}: Removed {duplicates_count} duplicate(s) for {tesouro_data['asset_code']}")
                                 
-                                # Update existing position with new data, but keep its original application_date
+                                # Update existing position with new data
                                 for key, value in tesouro_data.items():
-                                    if key != 'application_date':  # Don't overwrite application_date
-                                        setattr(existing_position, key, value)
+                                    setattr(existing_position, key, value)
                                 existing_position.investment_type = renda_fixa_type
                                 existing_position.investment_sub_type = investment_sub_type or tesouro_subtype
                                 existing_position.source = 'Excel Import'
@@ -691,11 +696,11 @@ class PortfolioExcelImportService:
                                 position = existing_position
                                 created = False
                             else:
-                                # Create new position with the fixed application_date
+                                # Create new position using only user_id and asset_code as unique identifiers
+                                # This ensures the same bond always updates the same position
                                 position, created = FixedIncomePosition.objects.update_or_create(
                                     user_id=tesouro_data['user_id'],
                                     asset_code=tesouro_data['asset_code'],
-                                    application_date=tesouro_data['application_date'],
                                     defaults={
                                         **tesouro_data,
                                         'investment_type': renda_fixa_type,  # RENDA_FIXA, not Tesouro Direto

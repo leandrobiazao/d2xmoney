@@ -116,8 +116,18 @@
                 <td>{{ formatCurrency(operation.total_value) }}</td>
                 <td>{{ operation.broker || '-' }}</td>
                 <td>
-                  <button class="btn-small" (click)="onEditOperation(operation)">Editar</button>
-                  <button class="btn-small btn-danger" (click)="onDeleteOperation(operation)">Deletar</button>
+                  <div class="action-buttons">
+                    <button class="btn-icon" (click)="onEditOperation(operation)" title="Editar">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                    <button class="btn-icon btn-danger" (click)="onDeleteOperation(operation)" title="Excluir">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M2 4h12M6 4V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7.333v4M10 7.333v4M3.333 4l.667 9.333a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1L12.667 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
                 </td>
               </tr>
             }

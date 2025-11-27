@@ -1,56 +1,175 @@
 <div class="fiis-container">
-  <div class="summary-cards">
-    <div class="summary-card">
-      <span class="label">Total Investido</span>
-      <span class="value">{{ formatCurrency(totalInvested) }}</span>
+  <!-- Positions Section -->
+  <section class="positions-section">
+    <div class="section-header">
+      <h3>Posições Atuais</h3>
     </div>
-    <div class="summary-card">
-      <span class="label">Valor Atual</span>
-      <span class="value">{{ formatCurrency(totalCurrentValue) }}</span>
-    </div>
-    <div class="summary-card">
-      <span class="label">FIIs na Carteira</span>
-      <span class="value">{{ fiiPositions.length }}</span>
-    </div>
-  </div>
 
-  <div class="table-container">
-    <table class="fiis-table">
+    @if (showPositions && fiiPositions.length > 0) {
+    <div class="summary-cards">
+      <div class="summary-card">
+        <span class="label">Total Investido:</span>
+        <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="label">Valor Atual:</span>
+        <span class="value">{{ formatCurrency(getTotalValorAtual()) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="label">FIIs na Carteira:</span>
+        <span class="value">{{ getActivePositionsCount() }}</span>
+      </div>
+    </div>
+
+    <table class="positions-table">
       <thead>
         <tr>
-          <th>Ticker</th>
-          <th>Segmento</th>
+          <th>Título</th>
           <th>Quantidade</th>
           <th>Preço Médio</th>
-          <th>Total Investido</th>
-          <th>DY (12m)</th>
-          <th>P/VP</th>
-          <th>Último Rend.</th>
+          <th>Valor Total Investido</th>
+          <th>Preço Atual</th>
+          <th>Valor Atual</th>
+          <th>Lucro</th>
         </tr>
       </thead>
       <tbody>
-        @for (pos of fiiPositions; track pos.ticker) {
-          <tr>
-            <td class="ticker">{{ pos.ticker }}</td>
-            <td>{{ pos.profile?.segment || '-' }}</td>
-            <td>{{ pos.quantity }}</td>
-            <td>{{ formatCurrency(pos.averagePrice) }}</td>
-            <td>{{ formatCurrency(pos.totalInvested) }}</td>
-            <td>{{ pos.profile?.average_yield_12m_percentage ? pos.profile?.average_yield_12m_percentage + '%' : '-' }}</td>
-            <td>{{ pos.profile?.price_to_vp || '-' }}</td>
-            <td>{{ pos.profile?.last_yield ? formatCurrency(pos.profile?.last_yield!) : '-' }}</td>
-          </tr>
-        }
-        @if (fiiPositions.length === 0 && !isLoading) {
-          <tr>
-            <td colspan="8" class="no-data">Nenhum Fundo Imobiliário encontrado na carteira.</td>
-          </tr>
+        @for (position of fiiPositions; track position.titulo) {
+        <tr>
+          <td>{{ position.titulo }}</td>
+          <td>{{ position.quantidadeTotal }}</td>
+          <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
+          <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
+          <td>{{ position.currentPrice !== undefined ? formatCurrency(position.currentPrice) : 'N/A' }}</td>
+          <td>{{ position.valorAtual !== undefined ? formatCurrency(position.valorAtual) : 'N/A' }}</td>
+          <td [class.positive]="(position.totalLucro || 0) > 0" [class.negative]="(position.totalLucro || 0) < 0">
+            {{ formatCurrency(position.totalLucro || 0) }}
+          </td>
+        </tr>
         }
       </tbody>
     </table>
-  </div>
-  
+    }
+  </section>
+
+  <!-- Operations Section -->
+  @if (showOperations) {
+  <section class="operations-section">
+    <div class="section-header">
+      <h3>Operações</h3>
+      <div class="toggle-buttons">
+        <button class="toggle-btn" [class.active]="showPositions" (click)="showPositions = !showPositions">
+          {{ showPositions ? 'Ocultar' : 'Mostrar' }} Posições
+        </button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label>Título:</label>
+        <input type="text" [(ngModel)]="filterTitulo" (input)="applyFilters()" placeholder="Ex: HGLG11" />
+      </div>
+
+      <div class="filter-group">
+        <label>Tipo:</label>
+        <select [(ngModel)]="filterTipoOperacao" (change)="applyFilters()">
+          <option value="">Todos</option>
+          <option value="C">Compra</option>
+          <option value="V">Venda</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Mercado:</label>
+        <input type="text" [(ngModel)]="filterTipoMercado" (input)="applyFilters()" placeholder="Ex: VISTA" />
+      </div>
+
+      <div class="filter-group">
+        <label>Data Início:</label>
+        <input type="date" [(ngModel)]="filterDataInicio" (change)="applyFilters()" />
+      </div>
+
+      <div class="filter-group">
+        <label>Data Fim:</label>
+        <input type="date" [(ngModel)]="filterDataFim" (change)="applyFilters()" />
+      </div>
+
+      <button class="reset-btn" (click)="resetFilters()">Limpar Filtros</button>
+    </div>
+
+    @if (filteredOperations.length > 0) {
+    <div class="table-container">
+      <table class="operations-table">
+        <thead>
+          <tr>
+            <th class="sortable" [class.active]="sortField === 'data'" (click)="selectSortField('data')">
+              <span class="header-text">Data</span>
+              <span class="sort-icon">{{ getSortIcon('data') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'tipo'" (click)="selectSortField('tipo')">
+              <span class="header-text">Tipo</span>
+              <span class="sort-icon">{{ getSortIcon('tipo') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'titulo'" (click)="selectSortField('titulo')">
+              <span class="header-text">Título</span>
+              <span class="sort-icon">{{ getSortIcon('titulo') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'mercado'" (click)="selectSortField('mercado')">
+              <span class="header-text">Mercado</span>
+              <span class="sort-icon">{{ getSortIcon('mercado') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'quantidade'" (click)="selectSortField('quantidade')">
+              <span class="header-text">Quantidade</span>
+              <span class="sort-icon">{{ getSortIcon('quantidade') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'preco'" (click)="selectSortField('preco')">
+              <span class="header-text">Preço</span>
+              <span class="sort-icon">{{ getSortIcon('preco') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'valorOperacao'"
+              (click)="selectSortField('valorOperacao')">
+              <span class="header-text">Valor Operação</span>
+              <span class="sort-icon">{{ getSortIcon('valorOperacao') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'corretora'" (click)="selectSortField('corretora')">
+              <span class="header-text">Corretora</span>
+              <span class="sort-icon">{{ getSortIcon('corretora') }}</span>
+            </th>
+            <th class="sortable" [class.active]="sortField === 'nota'" (click)="selectSortField('nota')">
+              <span class="header-text">Nota</span>
+              <span class="sort-icon">{{ getSortIcon('nota') }}</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (operation of filteredOperations; track operation.id) {
+          <tr [class.venda]="operation.tipoOperacao === 'V'">
+            <td>{{ operation.data }}</td>
+            <td>
+              <span [class.compra]="operation.tipoOperacao === 'C'"
+                [class.venda-badge]="operation.tipoOperacao === 'V'">
+                {{ operation.tipoOperacao === 'C' ? 'Compra' : 'Venda' }}
+              </span>
+            </td>
+            <td>{{ operation.titulo }}</td>
+            <td>{{ operation.tipoMercado }}</td>
+            <td>{{ operation.quantidade > 0 ? '+' : '' }}{{ operation.quantidade }}</td>
+            <td>{{ formatCurrency(operation.preco) }}</td>
+            <td>{{ formatCurrency(operation.valorOperacao) }}</td>
+            <td>{{ operation.corretora }}</td>
+            <td>{{ operation.nota }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    } @else {
+    <p class="no-data">Nenhuma operação encontrada.</p>
+    }
+  </section>
+  }
+
   @if (isLoading) {
-    <div class="loading">Carregando...</div>
+  <div class="loading">Carregando...</div>
   }
 </div>
