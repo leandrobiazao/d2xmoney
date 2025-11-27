@@ -1,22 +1,78 @@
 <div class="fixed-income-list-container">
+  <!-- Hidden file input -->
+  <input 
+    type="file" 
+    accept=".xlsx,.xls" 
+    #fileInput 
+    (change)="onFileSelected($event)" 
+    style="display: none;"
+  />
+
   <div class="header-section">
     <h2>Renda Fixa</h2>
-    <div class="filters">
-      <input 
-        type="text" 
-        placeholder="Buscar..." 
-        [(ngModel)]="searchTerm"
-        (input)="onSearchChange()"
-        class="search-input"
-      />
-      <select [(ngModel)]="filterType" (change)="onFilterChange()" class="type-filter">
-        <option value="all">Todos os Tipos</option>
-        @for (group of groupedPositions; track group.type) {
-          <option [value]="group.typeName">{{ group.typeName }}</option>
-        }
-      </select>
-    </div>
+    <button 
+      class="btn-import" 
+      (click)="onImportClick()" 
+      [disabled]="isImporting || !userId"
+    >
+      @if (isImporting) {
+        Importando...
+      } @else {
+        Importar Portfólio
+      }
+    </button>
   </div>
+
+  <!-- Import Result/Error Messages -->
+  @if (importResult && (!importResult.errors || importResult.errors.length === 0) && (importResult.created > 0 || importResult.updated > 0)) {
+    <div class="import-notification success">
+      <div class="notification-content">
+        <strong>Importação concluída com sucesso!</strong>
+        <div class="import-stats">
+          <span>Criados: {{ importResult.created }}</span>
+          <span>Atualizados: {{ importResult.updated }}</span>
+          @if (importResult.cdb_count !== undefined) {
+            <span>CDBs: {{ importResult.cdb_count }}</span>
+          }
+          @if (importResult.tesouro_count !== undefined) {
+            <span>Tesouro Direto: {{ importResult.tesouro_count }}</span>
+          }
+          @if (importResult.caixa_count !== undefined) {
+            <span>CAIXA: {{ importResult.caixa_count }}</span>
+          }
+        </div>
+      </div>
+      <button class="btn-dismiss" (click)="dismissImportMessage()">×</button>
+    </div>
+  }
+
+  @if (importErrorMessage) {
+    <div class="import-notification error">
+      <div class="notification-content">
+        <strong>Erro na importação</strong>
+        <pre>{{ importErrorMessage }}</pre>
+      </div>
+      <button class="btn-dismiss" (click)="dismissImportMessage()">×</button>
+    </div>
+  }
+
+  <!-- Summary Cards -->
+  @if (!isLoading && groupedPositions.length > 0) {
+    <div class="summary-cards">
+      <div class="summary-card">
+        <span class="label">Total Investido:</span>
+        <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="label">Valor Atual:</span>
+        <span class="value">{{ formatCurrency(getValorAtual()) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="label">Ativos na Carteira:</span>
+        <span class="value">{{ getActivePositionsCount() }}</span>
+      </div>
+    </div>
+  }
 
   @if (isLoading) {
     <div class="loading-state">
@@ -33,13 +89,7 @@
   } @else {
     <!-- Grouped Positions -->
     @for (group of groupedPositions; track group.type) {
-      @if (filterType === 'all' || filterType === group.typeName) {
         <div class="group-section">
-          <div class="group-header">
-            <h3>{{ group.percentage.toFixed(1) }}% | {{ group.typeName }}</h3>
-            <span class="group-total">{{ formatCurrency(group.totalValue) }}</span>
-          </div>
-          
           @if (group.isTesouroDireto && group.subTypeGroups) {
             <!-- Tesouro Direto with sub-type grouping -->
             @for (subTypeGroup of group.subTypeGroups; track subTypeGroup.subTypeName) {
@@ -52,8 +102,10 @@
                   <table>
                     <thead>
                       <tr>
+                        <th>Tipo</th>
                         <th>Ativo</th>
                         <th>Posição</th>
+                        <th>%</th>
                         <th>% Alocação</th>
                         <th>Total aplicado</th>
                         <th>Qtd.</th>
@@ -63,14 +115,15 @@
                     </thead>
                     <tbody>
                       @for (position of subTypeGroup.positions; track position.id) {
-                        @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
                           <tr (click)="selectPosition(position)" class="position-row">
                             <td>
+                              <strong>{{ getSubtypeName(position) }}</strong>
+                            </td>
+                            <td>
                               <strong>{{ position.asset_name }}</strong>
-                              <br>
-                              <small>{{ position.asset_code }}</small>
                             </td>
                             <td>{{ formatCurrency(position.position_value) }}</td>
+                            <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                             <td>
                               @if (subTypeGroup.totalValue > 0) {
                                 {{ ((getPositionValue(position.position_value) / subTypeGroup.totalValue) * 100).toFixed(2) }}%
@@ -83,7 +136,6 @@
                             <td>{{ position.available_quantity }}</td>
                             <td>{{ formatDate(position.maturity_date) }}</td>
                           </tr>
-                        }
                       }
                     </tbody>
                   </table>
@@ -96,6 +148,7 @@
               <table>
                 <thead>
                   <tr>
+                    <th>Tipo</th>
                     <th>Ativo</th>
                     <th>Aplicação</th>
                     <th>Vencimento</th>
@@ -104,25 +157,24 @@
                     <th>Valor Aplicado</th>
                     <th>Posição</th>
                     <th>Valor Líquido</th>
+                    <th>%</th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (position of group.positions; track position.id) {
-                    @if (filterType === 'all' || filterType === group.typeName) {
-                      @if (!searchTerm || position.asset_name.toLowerCase().includes(searchTerm.toLowerCase()) || position.asset_code.toLowerCase().includes(searchTerm.toLowerCase())) {
                         <tr (click)="selectPosition(position)" class="position-row">
                           <td>
+                            <strong>{{ getSubtypeName(position) }}</strong>
+                          </td>
+                          <td>
                             <strong>{{ position.asset_name }}</strong>
-                            @if (!isCaixaPosition(position)) {
-                              <br>
-                              <small>{{ position.asset_code }}</small>
-                            }
                           </td>
                           @if (isCaixaPosition(position)) {
-                            <!-- CAIXA: Only show Posição and Valor Líquido -->
+                            <!-- CAIXA: Only show Posição, Valor Líquido, and % -->
                             <td colspan="5"></td>
                             <td>{{ formatCurrency(position.position_value) }}</td>
                             <td>{{ formatCurrency(position.net_value) }}</td>
+                            <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           } @else {
                             <!-- Regular positions: Show all columns -->
                             <td>{{ formatDate(position.application_date) }}</td>
@@ -132,17 +184,15 @@
                             <td>{{ formatCurrency(position.applied_value) }}</td>
                             <td>{{ formatCurrency(position.position_value) }}</td>
                             <td>{{ formatCurrency(position.net_value) }}</td>
+                            <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           }
                         </tr>
-                      }
-                    }
                   }
                 </tbody>
               </table>
             </div>
           }
         </div>
-      }
     }
   }
 

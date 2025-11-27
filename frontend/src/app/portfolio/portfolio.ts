@@ -10,16 +10,18 @@ import { BrokerageNote } from '../brokerage-history/note.model';
 import { DebugService } from '../shared/services/debug.service';
 import { parseDate, formatCurrency, compareDate } from '../shared/utils/common-utils';
 import { FixedIncomeListComponent } from '../fixed-income/fixed-income-list.component';
-import { PortfolioImportComponent } from '../fixed-income/portfolio-import.component';
 import { HistoryListComponent } from '../brokerage-history/history-list/history-list';
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
 import { CryptoComponent } from '../crypto/crypto.component';
 import { FIIListComponent } from '../fiis/fiis-list.component';
+import { StocksService } from '../configuration/stocks/stocks.service';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Stock } from '../configuration/stocks/stocks.models';
 
 @Component({
   selector: 'app-portfolio',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, PortfolioImportComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent, FIIListComponent],
+  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent, FIIListComponent],
   templateUrl: './portfolio.html',
   styleUrl: './portfolio.css'
 })
@@ -30,6 +32,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   operations: Operation[] = [];
   positions: Position[] = [];
   filteredOperations: Operation[] = [];
+  
+  // Cache for FII tickers to avoid repeated API calls
+  private fiiTickers: Set<string> = new Set();
 
   // Filters
   filterTitulo: string = '';
@@ -41,7 +46,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   // View settings
   showPositions = true;
   showOperations = true;
-  activeTab: 'acoes' | 'renda-fixa' | 'import' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' = 'acoes';
+  activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' = 'acoes';
 
   // Sorting
   sortField: string = '';
@@ -53,6 +58,8 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   constructor(
     private portfolioService: PortfolioService,
     private historyService: BrokerageHistoryService,
+    private stocksService: StocksService,
+    private http: HttpClient,
     private debug: DebugService
   ) { }
 
@@ -88,12 +95,24 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    // Load data whenever userId changes (including first change)
-    if (changes['userId'] && this.userId) {
-      this.loadData();
-      // Only reset filters if this is not the first change
+    // Handle userId changes
+    if (changes['userId']) {
+      // Clear data immediately when userId changes (not first change)
       if (!changes['userId'].firstChange) {
+        this.operations = [];
+        this.positions = [];
+        this.filteredOperations = [];
         this.resetFilters();
+      }
+      
+      // Load data for the new user
+      if (this.userId) {
+        this.loadData();
+      } else {
+        // If userId is removed, clear all data
+        this.operations = [];
+        this.positions = [];
+        this.filteredOperations = [];
       }
     }
   }
@@ -104,28 +123,115 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
 
-    this.debug.log(`🔄 Loading portfolio data for user: ${this.userId}`);
+    // Store the userId at the start of loading to prevent race conditions
+    const loadingUserId = this.userId;
 
-    this.portfolioService.getOperationsAsync(this.userId).subscribe({
+    this.debug.log(`🔄 Loading portfolio data for user: ${loadingUserId}`);
+
+    // Clear existing data immediately when loading for a new user
+    this.operations = [];
+    this.positions = [];
+    this.filteredOperations = [];
+
+    this.portfolioService.getOperationsAsync(loadingUserId).subscribe({
       next: (operations) => {
+        // Ignore response if userId has changed during loading
+        if (this.userId !== loadingUserId) {
+          this.debug.warn(`⚠️ Ignoring operations response - userId changed from ${loadingUserId} to ${this.userId}`);
+          return;
+        }
         this.debug.log(`✅ Loaded ${operations.length} operations`);
         this.operations = operations;
         this.applyFilters();
       },
       error: (error) => {
+        // Ignore error if userId has changed during loading
+        if (this.userId !== loadingUserId) {
+          this.debug.warn(`⚠️ Ignoring operations error - userId changed from ${loadingUserId} to ${this.userId}`);
+          return;
+        }
         this.debug.error('❌ Error loading operations:', error);
+        // Ensure operations are cleared on error
+        this.operations = [];
+        this.filteredOperations = [];
       }
     });
 
-    this.portfolioService.getPositionsAsync(this.userId).subscribe({
+    this.portfolioService.getPositionsAsync(loadingUserId).subscribe({
       next: (positions) => {
+        // Ignore response if userId has changed during loading
+        if (this.userId !== loadingUserId) {
+          this.debug.warn(`⚠️ Ignoring positions response - userId changed from ${loadingUserId} to ${this.userId}`);
+          return;
+        }
         this.debug.log(`✅ Loaded ${positions.length} positions`);
 
-        // Fetch current prices for all positions
+        // Filter out FIIs from positions before processing
+        // Only filter based on stock catalog - tickers marked as FII in the catalog
         const tickers = positions.map(p => p.titulo);
         if (tickers.length > 0) {
+          // Fetch all stocks including FIIs by setting exclude_fiis to false
+          let params = new HttpParams();
+          params = params.set('exclude_fiis', 'false');
+          params = params.set('active_only', 'false');
+          
+          this.http.get<Stock[]>(`/api/stocks/stocks/`, { params }).subscribe({
+            next: (stocks) => {
+              // Build set of FII tickers ONLY from stock catalog
+              // Only filter stocks explicitly marked as FII (stock_class = 'FII' or investment_type code = 'FIIS')
+              this.fiiTickers.clear();
+              stocks.forEach(stock => {
+                if (stock.stock_class === 'FII' || stock.investment_type?.code === 'FIIS') {
+                  this.fiiTickers.add(stock.ticker);
+                }
+              });
+              
+              this.debug.log(`[FII Filter] Found ${this.fiiTickers.size} FII tickers from catalog: ${Array.from(this.fiiTickers).join(', ')}`);
+              
+              // Filter out FII positions - only filter what's confirmed in catalog
+              const nonFiiPositions = positions.filter(pos => !this.fiiTickers.has(pos.titulo));
+              this.debug.log(`[FII Filter] Filtered ${positions.length} positions to ${nonFiiPositions.length} (removed ${positions.length - nonFiiPositions.length} FIIs)`);
+              
+              // Continue with filtered positions
+              this.processPositions(nonFiiPositions, loadingUserId);
+            },
+            error: (error) => {
+              this.debug.error('❌ Error loading stocks for FII filtering:', error);
+              // If we can't load stocks, don't filter anything (show all positions)
+              // Better to show too much than to incorrectly filter out non-FIIs
+              this.debug.log(`[FII Filter] Error loading stocks - showing all positions without filtering`);
+              this.processPositions(positions, loadingUserId);
+            }
+          });
+        } else {
+          // No positions - ensure array is empty
+          this.positions = [];
+        }
+      },
+      error: (error) => {
+        // Ignore error if userId has changed during loading
+        if (this.userId !== loadingUserId) {
+          this.debug.warn(`⚠️ Ignoring positions error - userId changed from ${loadingUserId} to ${this.userId}`);
+          return;
+        }
+        this.debug.error('❌ Error loading positions:', error);
+        // Ensure positions are cleared on error
+        this.positions = [];
+      }
+    });
+  }
+
+  private processPositions(positions: Position[], loadingUserId: string): void {
+    // Fetch current prices for all positions
+    const tickers = positions.map(p => p.titulo);
+    if (tickers.length > 0) {
           this.portfolioService.fetchCurrentPrices(tickers).subscribe({
             next: (priceMap) => {
+              // Ignore response if userId has changed during loading
+              if (this.userId !== loadingUserId) {
+                this.debug.warn(`⚠️ Ignoring price fetch response - userId changed from ${loadingUserId} to ${this.userId}`);
+                return;
+              }
               // Update positions with current prices and calculate unrealized P&L, valor atual, and total lucro
               const positionsWithPrices = positions.map(position => {
                 const currentPrice = priceMap.get(position.titulo);
@@ -160,6 +266,11 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
               this.positions = this.sortPositions(positionsWithPrices);
             },
             error: (error) => {
+              // Ignore error if userId has changed during loading
+              if (this.userId !== loadingUserId) {
+                this.debug.warn(`⚠️ Ignoring price fetch error - userId changed from ${loadingUserId} to ${this.userId}`);
+                return;
+              }
               this.debug.error('❌ Error fetching prices:', error);
               // Continue with positions without prices, but still calculate totalLucro
               const positionsWithoutPrices = positions.map(position => ({
@@ -170,18 +281,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
             }
           });
         } else {
-          // No positions, but ensure totalLucro is set
-          const positionsWithTotalLucro = positions.map(position => ({
-            ...position,
-            totalLucro: position.lucroRealizado || 0
-          }));
-          this.positions = this.sortPositions(positionsWithTotalLucro);
+          // No positions - ensure array is empty
+          this.positions = [];
         }
-      },
-      error: (error) => {
-        this.debug.error('❌ Error loading positions:', error);
-      }
-    });
   }
 
   onOperationsAdded(operations: Operation[]): void {

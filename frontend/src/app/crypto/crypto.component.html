@@ -1,7 +1,6 @@
 <div class="crypto-container">
   <div class="crypto-header">
     <h2>Criptomoedas</h2>
-    <button class="btn-primary" (click)="onCreateCurrency()">Nova Criptomoeda</button>
   </div>
 
   <!-- Positions Summary -->
@@ -130,101 +129,6 @@
     </div>
   }
 
-  <!-- Currencies Section -->
-  <div class="currencies-section">
-    <div class="section-header">
-      <h3>Criptomoedas Disponíveis</h3>
-    </div>
-    
-    @if (isLoading) {
-      <div class="loading">Carregando...</div>
-    } @else if (errorMessage) {
-      <div class="error">
-        <p>{{ errorMessage }}</p>
-        <button class="btn-secondary" (click)="loadCurrencies()">Tentar Novamente</button>
-      </div>
-    } @else if (currencies.length === 0) {
-      <p class="empty-message">Nenhuma criptomoeda cadastrada. Clique em "Nova Criptomoeda" para adicionar.</p>
-    } @else {
-      <table class="currencies-table">
-        <thead>
-          <tr>
-            <th>Símbolo</th>
-            <th>Nome</th>
-            <th>Tipo de Investimento</th>
-            <th>Sub-Tipo</th>
-            <th>Status</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (currency of currencies; track currency.id) {
-            <tr>
-              <td><strong>{{ currency.symbol }}</strong></td>
-              <td>{{ currency.name }}</td>
-              <td>{{ currency.investment_type?.name || '-' }}</td>
-              <td>{{ currency.investment_subtype?.name || '-' }}</td>
-              <td>{{ currency.is_active ? 'Ativo' : 'Inativo' }}</td>
-              <td>
-                <button class="btn-small" (click)="onEditCurrency(currency)">Editar</button>
-                <button class="btn-small btn-danger" (click)="onDeleteCurrency(currency)">Deletar</button>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    }
-  </div>
-
-  <!-- Create/Edit Currency Modal -->
-  @if (showCreateCurrencyModal) {
-    <div class="modal-overlay" (click)="onCloseCurrencyModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h3>{{ editingCurrency ? 'Editar' : 'Criar' }} Criptomoeda</h3>
-          <button class="btn-close" (click)="onCloseCurrencyModal()">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>Símbolo *</label>
-            <input type="text" [(ngModel)]="currencyForm.symbol" placeholder="Ex: BTC" />
-          </div>
-          <div class="form-group">
-            <label>Nome *</label>
-            <input type="text" [(ngModel)]="currencyForm.name" placeholder="Ex: Bitcoin" />
-          </div>
-          <div class="form-group">
-            <label>Tipo de Investimento</label>
-            <select [(ngModel)]="currencyForm.investment_type_id" (change)="currencyForm.investment_subtype_id = undefined">
-              <option [ngValue]="undefined">-- Selecionar --</option>
-              @for (type of investmentTypes; track type.id) {
-                <option [ngValue]="type.id">{{ type.name }}</option>
-              }
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Sub-Tipo de Investimento</label>
-            <select [(ngModel)]="currencyForm.investment_subtype_id" [disabled]="!currencyForm.investment_type_id">
-              <option [ngValue]="undefined">-- Selecionar --</option>
-              @for (subType of getSubTypesForType(currencyForm.investment_type_id); track subType.id) {
-                <option [ngValue]="subType.id">{{ subType.name }}</option>
-              }
-            </select>
-          </div>
-          <div class="form-group">
-            <label>
-              <input type="checkbox" [(ngModel)]="currencyForm.is_active" />
-              Ativo
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" (click)="onCloseCurrencyModal()">Cancelar</button>
-          <button class="btn-primary" (click)="onSaveCurrency()">Salvar</button>
-        </div>
-      </div>
-    </div>
-  }
 
   <!-- Operation Dialog -->
   @if (showOperationDialog) {

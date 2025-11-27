@@ -358,8 +358,9 @@ class PortfolioService:
             operations = note.get('operations', [])
             
             for operation in operations:
-                # Ensure operation has user_id (from note if not in operation)
-                if 'clientId' not in operation and user_id:
+                # Always use the note's user_id as the source of truth
+                # This ensures operations are grouped correctly even if they have incorrect clientId
+                if user_id:
                     operation['clientId'] = user_id
                 # Ensure operation has note_date for sorting
                 if 'data' not in operation and note_date:
@@ -373,7 +374,7 @@ class PortfolioService:
             op.get('ordem', 0)
         ))
         
-        # Group operations by user_id
+        # Group operations by user_id (now always from note's user_id)
         operations_by_user = {}
         for operation in all_operations:
             user_id = operation.get('clientId') or operation.get('user_id')

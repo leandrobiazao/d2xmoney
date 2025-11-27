@@ -1,0 +1,118 @@
+<div class="cryptocurrencies-container">
+  <div class="header-actions">
+    <div class="header-title-section">
+      <h3>Criptomoedas</h3>
+      <p>Gerencie o catálogo de criptomoedas e seus tipos de investimento</p>
+    </div>
+    <button class="btn btn-primary" (click)="onCreateCurrency()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+        <path d="M8 3V13M3 8H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Nova Criptomoeda
+    </button>
+  </div>
+
+  @if (isLoading) {
+    <div class="loading">Carregando criptomoedas...</div>
+  } @else if (errorMessage) {
+    <div class="error">
+      <p>{{ errorMessage }}</p>
+      <button class="retry-btn" (click)="loadCurrencies()">Tentar Novamente</button>
+    </div>
+  } @else if (currencies.length === 0) {
+    <div class="empty-state">
+      <p>Nenhuma criptomoeda cadastrada.</p>
+    </div>
+  } @else {
+    <div class="currencies-table-container">
+      <table class="currencies-table">
+        <thead>
+          <tr>
+            <th>Símbolo</th>
+            <th>Nome</th>
+            <th>Tipo de Investimento</th>
+            <th>Sub-Tipo</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (currency of currencies; track currency.id) {
+            <tr>
+              <td class="symbol-cell"><strong>{{ currency.symbol }}</strong></td>
+              <td>{{ currency.name }}</td>
+              <td class="investment-type-cell">{{ currency.investment_type?.name || '-' }}</td>
+              <td class="investment-subtype-cell">{{ currency.investment_subtype?.name || '-' }}</td>
+              <td>{{ currency.is_active ? 'Ativo' : 'Inativo' }}</td>
+              <td>
+                <div class="type-actions">
+                  <button class="btn-icon" (click)="onEditCurrency(currency)" title="Editar">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="btn-icon btn-danger" (click)="onDeleteCurrency(currency)" title="Excluir">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 4h12M6 4V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7.333v4M10 7.333v4M3.333 4l.667 9.333a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1L12.667 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Create/Edit Currency Modal -->
+  @if (showCreateCurrencyModal) {
+    <div class="modal-overlay" (click)="onCloseCurrencyModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>{{ editingCurrency ? 'Editar' : 'Criar' }} Criptomoeda</h3>
+          <button class="btn-close" (click)="onCloseCurrencyModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Símbolo *</label>
+            <input type="text" [(ngModel)]="currencyForm.symbol" placeholder="Ex: BTC" />
+          </div>
+          <div class="form-group">
+            <label>Nome *</label>
+            <input type="text" [(ngModel)]="currencyForm.name" placeholder="Ex: Bitcoin" />
+          </div>
+          <div class="form-group">
+            <label>Tipo de Investimento</label>
+            <select [(ngModel)]="currencyForm.investment_type_id" (change)="currencyForm.investment_subtype_id = undefined">
+              <option [ngValue]="undefined">-- Selecionar --</option>
+              @for (type of investmentTypes; track type.id) {
+                <option [ngValue]="type.id">{{ type.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sub-Tipo de Investimento</label>
+            <select [(ngModel)]="currencyForm.investment_subtype_id" [disabled]="!currencyForm.investment_type_id">
+              <option [ngValue]="undefined">-- Selecionar --</option>
+              @for (subType of getSubTypesForType(currencyForm.investment_type_id); track subType.id) {
+                <option [ngValue]="subType.id">{{ subType.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" [(ngModel)]="currencyForm.is_active" />
+              Ativo
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="onCloseCurrencyModal()">Cancelar</button>
+          <button class="btn-primary" (click)="onSaveCurrency()">Salvar</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+

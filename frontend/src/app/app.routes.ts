@@ -7,6 +7,7 @@ import { StocksComponent } from './configuration/stocks/stocks';
 import { FIICatalogComponent } from './configuration/fii-catalog.component';
 import { InvestmentTypesComponent } from './configuration/investment-types/investment-types';
 import { InvestmentSubtypesComponent } from './configuration/investment-subtypes/investment-subtypes';
+import { CryptocurrenciesComponent } from './configuration/cryptocurrencies/cryptocurrencies.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/home', pathMatch: 'full' },
@@ -21,7 +22,8 @@ export const routes: Routes = [
       { path: 'types', component: InvestmentTypesComponent },
       { path: 'subtypes', component: InvestmentSubtypesComponent },
       { path: 'stocks', component: StocksComponent },
-      { path: 'fii-catalog', component: FIICatalogComponent }
+      { path: 'fii-catalog', component: FIICatalogComponent },
+      { path: 'cryptocurrencies', component: CryptocurrenciesComponent }
     ]
   },
   { path: 'allocation-strategies', component: AllocationStrategyComponent }

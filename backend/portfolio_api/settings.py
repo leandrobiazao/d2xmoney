@@ -143,7 +143,6 @@ REST_FRAMEWORK = {
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:4200',
     'http://localhost:4400',
 ]
 
@@ -151,7 +150,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 # CSRF settings - required for Django CSRF protection
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:4200',
     'http://localhost:4400',
 ]
 

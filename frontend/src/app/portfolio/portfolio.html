@@ -15,9 +15,6 @@
     <button class="tab-button" [class.active]="activeTab === 'historico'" (click)="activeTab = 'historico'">
       Histórico de Notas
     </button>
-    <button class="tab-button" [class.active]="activeTab === 'import'" (click)="activeTab = 'import'">
-      Importar Portfólio
-    </button>
     <button class="tab-button" [class.active]="activeTab === 'allocation-strategy'"
       (click)="activeTab = 'allocation-strategy'">
       Estratégia de Alocação
@@ -210,11 +207,6 @@
   <!-- Histórico Tab Content -->
   @if (activeTab === 'historico') {
   <app-history-list [userId]="userId" />
-  }
-
-  <!-- Import Tab Content -->
-  @if (activeTab === 'import') {
-  <app-portfolio-import [userId]="userId" />
   }
 
   <!-- Estratégia de Alocação Tab Content -->

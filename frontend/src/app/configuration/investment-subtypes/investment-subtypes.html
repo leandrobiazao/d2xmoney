@@ -23,31 +23,52 @@
       <p>Nenhum sub-tipo cadastrado para este tipo de investimento.</p>
     </div>
   } @else {
-    <div class="subtypes-list">
-      @for (subType of subTypes; track subType.id) {
-        <div class="subtype-item">
-          <div class="subtype-info">
-            <h4>{{ subType.name }}</h4>
-            <p class="code">Código: {{ subType.code }}</p>
-            <p class="order">Ordem: {{ subType.display_order }}</p>
-            <span class="badge" [class.active]="subType.is_active" [class.predefined]="subType.is_predefined">
-              {{ subType.is_predefined ? 'Predefinido' : 'Personalizado' }}
-            </span>
-          </div>
-          <div class="subtype-actions">
-            <button class="btn-icon" (click)="onEdit(subType)" title="Editar">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <button class="btn-icon btn-danger" (click)="onDelete(subType)" title="Excluir">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M2 4h12M6 4V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7.333v4M10 7.333v4M3.333 4l.667 9.333a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1L12.667 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      }
+    <div class="subtypes-table-container">
+      <table class="subtypes-table">
+        <thead>
+          <tr>
+            <th>Ordem</th>
+            <th>Nome</th>
+            <th>Código</th>
+            <th>Tipo</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (subType of subTypes; track subType.id) {
+            <tr>
+              <td>{{ subType.display_order }}</td>
+              <td class="name-cell"><strong>{{ subType.name }}</strong></td>
+              <td>{{ subType.code }}</td>
+              <td>
+                <span class="badge" [class.predefined]="subType.is_predefined">
+                  {{ subType.is_predefined ? 'Predefinido' : 'Personalizado' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge" [class.active]="subType.is_active">
+                  {{ subType.is_active ? 'Ativo' : 'Inativo' }}
+                </span>
+              </td>
+              <td>
+                <div class="subtype-actions">
+                  <button class="btn-icon" (click)="onEdit(subType)" title="Editar">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button class="btn-icon btn-danger" (click)="onDelete(subType)" title="Excluir">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 4h12M6 4V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M6 7.333v4M10 7.333v4M3.333 4l.667 9.333a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1L12.667 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
   }
 </div>

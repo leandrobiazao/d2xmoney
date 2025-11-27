@@ -264,15 +264,16 @@ class PortfolioExcelImportService:
     @staticmethod
     def extract_tesouro_from_row(row: List, user_id: str, sub_type_name: Optional[str] = None) -> Optional[Dict]:
         """Extract Tesouro Direto data from a row.
-        Actual Excel format: [Título, Vencimento, Preço, Total, Disponível, Garantia, Posição]
+        Actual Excel format based on portfolio export:
+        [Título, Posição, % Alocação, Total aplicado, Qtd., Disponível, Vencimento]
         Column mapping:
-        - Row[0]: Título name (e.g., "LTN", "LFT", "NTNB PRINC")
-        - Row[1]: Vencimento (maturity_date) - "01/01/2027"
-        - Row[2]: Preço (price) - "867,57"
-        - Row[3]: Total (total quantity) - "R$ 10,00" (this is the quantity in currency format)
-        - Row[4]: Disponível (available_quantity) - "R$ 1,63" (this is also in currency format)
-        - Row[5]: Garantia (guarantee_quantity) - "R$ 0,00"
-        - Row[6]: Posição (position_value) - "R$ 8.675,70"
+        - Row[0]: Título name (e.g., "LFT mar/2029", "LTN jan/2027", "NTNB PRINC mai/2029")
+        - Row[1]: Posição (position_value) - "R$ 29.013,40"
+        - Row[2]: % Alocação (allocation percentage)
+        - Row[3]: Total aplicado (applied_value) - "R$ 25.125,32"
+        - Row[4]: Qtd. (quantity) - "1,63"
+        - Row[5]: Disponível (available_quantity) - "1,63"
+        - Row[6]: Vencimento (maturity_date) - "01/03/2029"
         """
         if not row or len(row) < 2:
             return None
@@ -284,95 +285,108 @@ class PortfolioExcelImportService:
             return None
         
         try:
-            # Parse columns according to actual Excel format
-            vencimento = PortfolioExcelImportService.parse_date(row[1]) if len(row) > 1 else None
-            price = PortfolioExcelImportService.parse_currency(row[2]) if len(row) > 2 else Decimal('0.00')
+            # Parse columns according to actual Excel format:
+            # [Título, Posição, % Alocação, Total aplicado, Qtd., Disponível, Vencimento]
             
-            # Row[3] is Total - quantity (may be stored as number or currency-formatted string)
-            if len(row) > 3 and row[3] is not None:
-                if isinstance(row[3], (int, float)):
-                    quantity = Decimal(str(row[3]))
-                else:
-                    total_str = str(row[3]).strip().replace('R$', '').strip()
-                    quantity = PortfolioExcelImportService.parse_quantity(total_str)
+            # Row[1]: Posição (position_value) - current position value
+            position_value = PortfolioExcelImportService.parse_currency(row[1]) if len(row) > 1 and row[1] is not None else Decimal('0.00')
+            
+            # Row[3]: Total aplicado (applied_value) - original investment amount
+            applied_value = PortfolioExcelImportService.parse_currency(row[3]) if len(row) > 3 and row[3] is not None else Decimal('0.00')
+            
+            # Row[4]: Qtd. (quantity) - number of bonds
+            if len(row) > 4 and row[4] is not None:
+                quantity = PortfolioExcelImportService.parse_quantity(str(row[4]))
             else:
                 quantity = Decimal('0.00')
             
-            # Row[4] is Disponível - available quantity
-            if len(row) > 4 and row[4] is not None:
-                if isinstance(row[4], (int, float)):
-                    available_quantity = Decimal(str(row[4]))
-                else:
-                    disponivel_str = str(row[4]).strip().replace('R$', '').strip()
-                    available_quantity = PortfolioExcelImportService.parse_quantity(disponivel_str)
-            else:
-                available_quantity = quantity
-            
-            # Row[5] is Garantia - guarantee quantity
+            # Row[5]: Disponível (available_quantity)
             if len(row) > 5 and row[5] is not None:
-                if isinstance(row[5], (int, float)):
-                    guarantee_quantity = Decimal(str(row[5]))
-                else:
-                    garantia_str = str(row[5]).strip().replace('R$', '').strip()
-                    guarantee_quantity = PortfolioExcelImportService.parse_quantity(garantia_str)
+                available_quantity = PortfolioExcelImportService.parse_quantity(str(row[5]))
             else:
-                guarantee_quantity = Decimal('0.00')
+                available_quantity = quantity  # Default to quantity if not specified
             
-            # Row[6] is Posição (position value)
-            position_value = PortfolioExcelImportService.parse_currency(row[6]) if len(row) > 6 else Decimal('0.00')
+            # Row[6]: Vencimento (maturity_date)
+            vencimento = PortfolioExcelImportService.parse_date(row[6]) if len(row) > 6 and row[6] is not None else None
+            
+            # Price is not directly in the Excel for this format
+            # We can calculate it from applied_value / quantity if both are available
+            if quantity > 0 and applied_value > 0:
+                price = applied_value / quantity
+            else:
+                price = Decimal('0.00')
+            
+            # Garantia (guarantee_quantity) is not in this format, default to 0
+            guarantee_quantity = Decimal('0.00')
             
             if not vencimento:
                 return None
+            
+            # Convert vencimento to date object
+            from datetime import date as date_class
+            vencimento_date = vencimento.date() if isinstance(vencimento, datetime) else vencimento
             
             # Determine sub-type if not provided
             if not sub_type_name:
                 sub_type_name = PortfolioExcelImportService.get_tesouro_subtype_from_bond(titulo_name)
             
-            # Build full asset name with maturity date
-            # Format: "LTN jan/2027" or "LFT mar/2029"
-            from datetime import date as date_class
-            vencimento_date = vencimento.date() if isinstance(vencimento, datetime) else vencimento
-            month_map_reverse = {
-                1: 'jan', 2: 'fev', 3: 'mar', 4: 'abr', 5: 'mai', 6: 'jun',
-                7: 'jul', 8: 'ago', 9: 'set', 10: 'out', 11: 'nov', 12: 'dez'
-            }
+            # Build full asset name - título name from Excel already includes maturity date
+            # Format from Excel: "LFT mar/2029", "LTN jan/2027", "NTNB PRINC mai/2029"
+            # So we can use it directly
+            full_titulo_name = titulo_name.strip()
+            
+            # Generate asset code from título name and maturity date
+            # Extract just the bond type (LFT, LTN, NTNB PRINC, etc.) without the month/year suffix
+            # The título format is like "LFT mar/2029" or "NTNB PRINC mai/2029"
+            # Split and take only the parts before the date (month/year format)
+            parts = titulo_name.strip().split()
+            bond_type_parts = []
+            for part in parts:
+                # Stop at parts that look like dates (month/year format like "mar/2029" or "mai/2029")
+                if '/' in part and len(part.split('/')) == 2:
+                    # Check if it's a month/year format (has lowercase letters + numbers)
+                    month_part, year_part = part.split('/')
+                    if month_part.isalpha() and year_part.isdigit():
+                        break
+                bond_type_parts.append(part)
+            
+            # Join bond type parts (e.g., "NTNB PRINC" or "LFT")
+            bond_type = ' '.join(bond_type_parts).strip() if bond_type_parts else titulo_name.split()[0] if titulo_name.split() else 'TESOURO'
+            
+            # Generate asset code using bond type and maturity date
             if isinstance(vencimento_date, (datetime, date_class)):
                 if isinstance(vencimento_date, datetime):
-                    month = vencimento_date.month
-                    year = vencimento_date.year
-                else:
-                    month = vencimento_date.month
-                    year = vencimento_date.year
-                month_str = month_map_reverse.get(month, '')
-                full_titulo_name = f"{titulo_name} {month_str}/{year}"
-            else:
-                full_titulo_name = titulo_name
-            
-            # Generate asset code from título name and maturity
-            from datetime import date as date_class
-            if isinstance(vencimento_date, (datetime, date_class)):
-                if isinstance(vencimento_date, datetime):
-                    date_str = vencimento_date.strftime('%Y%m%d')
+                    date_str = vencimento_date.date().strftime('%Y%m%d')
                 else:
                     date_str = vencimento_date.strftime('%Y%m%d')
-                asset_code = f"TESOURO_{titulo_name.replace(' ', '_').upper()}_{date_str}"
+                asset_code = f"TESOURO_{bond_type.replace(' ', '_').upper()}_{date_str}"
             else:
-                asset_code = f"TESOURO_{titulo_name.replace(' ', '_').upper()}_{str(vencimento_date).replace('-', '')}"
-            
-            # Calculate applied_value from price * quantity
-            # For Tesouro Direto, applied_value is typically price * quantity
-            applied_value = price * quantity if price and quantity else position_value  # Fallback to position_value if calculation fails
+                asset_code = f"TESOURO_{bond_type.replace(' ', '_').upper()}_{str(vencimento_date).replace('-', '')}"
             
             # Calculate yields
             gross_yield = position_value - applied_value if position_value and applied_value else Decimal('0.00')
             net_yield = gross_yield  # For Tesouro Direto, net is typically same as gross (taxes applied at sale)
             net_value = position_value  # Net value is same as position value for Tesouro Direto
             
+            # For Tesouro positions, use a fixed application_date based on maturity year
+            # to ensure consistency and prevent duplicates when re-importing
+            # The bond itself is unique by título + maturity, not by when it was imported
+            if isinstance(vencimento_date, datetime):
+                maturity_year = vencimento_date.year
+            elif isinstance(vencimento_date, date_class):
+                maturity_year = vencimento_date.year
+            else:
+                maturity_year = timezone.now().year
+            
+            # Use January 1st of the maturity year as a fixed application_date
+            # This ensures the same bond always has the same application_date
+            application_date = datetime(maturity_year, 1, 1).date()
+            
             return {
                 'user_id': user_id,
                 'asset_name': full_titulo_name,
                 'asset_code': asset_code,
-                'application_date': timezone.now().date(),  # Default to today if not available
+                'application_date': application_date,
                 'maturity_date': vencimento_date,
                 'price': price,
                 'quantity': quantity,
@@ -541,6 +555,9 @@ class PortfolioExcelImportService:
             current_tesouro_subsection = None
             current_tesouro_subtype = None
             
+            # Column mapping for Tesouro Direto (will be detected from header)
+            tesouro_column_map = {}
+            
             # Create or get Tesouro Direto sub-types under RENDA_FIXA
             # These are sub-types of TESOURO_DIRETO, but stored as separate sub-types under RENDA_FIXA
             # For now, we'll use the main TESOURO_DIRETO sub-type for all Tesouro positions
@@ -642,16 +659,49 @@ class PortfolioExcelImportService:
                             if not investment_sub_type and sub_type_name:
                                 investment_sub_type = subtype_map.get(sub_type_name)
                             
-                            position, created = FixedIncomePosition.objects.update_or_create(
+                            # For Tesouro positions, check if position exists by user_id and asset_code first
+                            # to avoid duplicates when application_date differs
+                            existing_positions = FixedIncomePosition.objects.filter(
                                 user_id=tesouro_data['user_id'],
-                                asset_code=tesouro_data['asset_code'],
-                                application_date=tesouro_data['application_date'],
-                                defaults={
-                                    **tesouro_data,
-                                    'investment_type': renda_fixa_type,  # RENDA_FIXA, not Tesouro Direto
-                                    'investment_sub_type': investment_sub_type or tesouro_subtype,  # TESOURO_DIRETO sub-type
-                                }
-                            )
+                                asset_code=tesouro_data['asset_code']
+                            ).order_by('-created_at')
+                            
+                            if existing_positions.exists():
+                                # If duplicates exist, keep the most recent one and delete others
+                                position_list = list(existing_positions)
+                                existing_position = position_list[0]
+                                
+                                # Delete any duplicates (keep only the first/most recent)
+                                duplicates_count = len(position_list) - 1
+                                if duplicates_count > 0:
+                                    # Delete all except the first one
+                                    for dup_position in position_list[1:]:
+                                        dup_position.delete()
+                                    results['debug_info'].append(f"Row {row_idx}: Removed {duplicates_count} duplicate(s) for {tesouro_data['asset_code']}")
+                                
+                                # Update existing position with new data, but keep its original application_date
+                                for key, value in tesouro_data.items():
+                                    if key != 'application_date':  # Don't overwrite application_date
+                                        setattr(existing_position, key, value)
+                                existing_position.investment_type = renda_fixa_type
+                                existing_position.investment_sub_type = investment_sub_type or tesouro_subtype
+                                existing_position.source = 'Excel Import'
+                                existing_position.import_date = timezone.now()
+                                existing_position.save()
+                                position = existing_position
+                                created = False
+                            else:
+                                # Create new position with the fixed application_date
+                                position, created = FixedIncomePosition.objects.update_or_create(
+                                    user_id=tesouro_data['user_id'],
+                                    asset_code=tesouro_data['asset_code'],
+                                    application_date=tesouro_data['application_date'],
+                                    defaults={
+                                        **tesouro_data,
+                                        'investment_type': renda_fixa_type,  # RENDA_FIXA, not Tesouro Direto
+                                        'investment_sub_type': investment_sub_type or tesouro_subtype,  # TESOURO_DIRETO sub-type
+                                    }
+                                )
                             
                             # Create or update TesouroDiretoPosition
                             tesouro_pos, _ = TesouroDiretoPosition.objects.update_or_create(

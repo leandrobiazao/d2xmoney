@@ -180,6 +180,7 @@ doc/spec/*.png
 *~
 .cache/
 backend/media/portafolio_wallet/*.xlsx
-backend/media/brokerage_notes/Sophia/*.pdf
-backend/media/brokerage_notes/Aurelio/*.pdf
+backend/media/brokerage_notes/*/*.pdf
 .cursor/*
+backend/media/portafolio_wallet/*/*.xlsx
+.cursorrules
