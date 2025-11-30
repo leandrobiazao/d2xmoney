@@ -4,7 +4,7 @@ Django REST Framework views for ticker mappings.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .services import TickerMappingService
+from .services import TickerMappingService, TickerDiscoveryService
 
 
 class TickerMappingListView(APIView):
@@ -135,4 +135,55 @@ class TickerMappingDetailView(APIView):
             return Response(
                 {'error': 'Mapeamento não encontrado'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class TickerDiscoveryView(APIView):
+    """Discover ticker for a company name."""
+    
+    def post(self, request):
+        """Discover ticker for a company name."""
+        company_name = request.data.get('company_name')
+        
+        if not company_name:
+            return Response(
+                {'error': 'Company name is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # First check if mapping already exists
+            existing_ticker = TickerMappingService.get_ticker(company_name)
+            if existing_ticker:
+                return Response({
+                    'ticker': existing_ticker,
+                    'found': True,
+                    'source': 'database'
+                }, status=status.HTTP_200_OK)
+            
+            # Try to discover
+            ticker, found = TickerDiscoveryService.discover_ticker(company_name)
+            
+            if found and ticker:
+                # Save the discovery
+                TickerMappingService.set_ticker(company_name, ticker)
+                
+                return Response({
+                    'ticker': ticker,
+                    'found': True,
+                    'source': 'discovery'
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    'ticker': None,
+                    'found': False
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            import traceback
+            print(f"ERROR: Exception in discovery handler: {str(e)}")
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'error': f'Error discovering ticker: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

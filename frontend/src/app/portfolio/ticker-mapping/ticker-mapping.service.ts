@@ -1,11 +1,17 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { Observable, of, firstValueFrom } from 'rxjs';
+import { catchError, tap, map } from 'rxjs/operators';
 import { DebugService } from '../../shared/services/debug.service';
 
 export interface TickerMapping {
   [nome: string]: string;
+}
+
+export interface DiscoveryResponse {
+  ticker: string | null;
+  found: boolean;
+  source?: string;
 }
 
 @Injectable({
@@ -30,7 +36,6 @@ export class TickerMappingService {
     this.http.get<TickerMapping>(url).pipe(
       tap(mappings => {
         this.debug.log('📥 Backend returned:', Object.keys(mappings).length, 'mappings');
-        this.debug.log('📥 Backend mappings:', mappings);
         
         // Normalize backend mappings keys to match frontend normalization
         const normalizedBackendMappings: TickerMapping = {};
@@ -46,15 +51,13 @@ export class TickerMappingService {
         this.debug.log('✅ Ticker mappings loaded from database:', Object.keys(this.mappings).length, 'mappings');
         
         if (Object.keys(this.mappings).length === 0) {
-          this.debug.warn('⚠️ Database is empty. Run: python manage.py sync_ticker_mappings');
+          this.debug.warn('⚠️ Database is empty. Run: python manage.py seed_mappings');
         }
       }),
       catchError(error => {
         this.debug.error('❌ Error loading mappings from backend:', error);
-        this.debug.error('❌ Error details:', error.status, error.message);
         this.mappings = {};
         this.mappingsLoaded = true;
-        this.debug.warn('⚠️ Mappings not loaded. Ensure backend is running and database is synced.');
         return of({});
       })
     ).subscribe();
@@ -63,6 +66,30 @@ export class TickerMappingService {
   getTicker(nome: string): string | null {
     const nomeNormalizado = this.normalizeNome(nome);
     return this.mappings[nomeNormalizado] || null;
+  }
+
+  async discoverTicker(companyName: string): Promise<string | null> {
+    const url = `${this.API_URL}/discover/`;
+    this.debug.log(`🔍 Discovering ticker for: "${companyName}"`);
+    
+    try {
+      const response = await firstValueFrom(
+        this.http.post<DiscoveryResponse>(url, { company_name: companyName })
+      );
+      
+      if (response.found && response.ticker) {
+        this.debug.log(`✅ Ticker discovered: ${response.ticker} (source: ${response.source})`);
+        // Update local cache
+        this.mappings[this.normalizeNome(companyName)] = response.ticker;
+        return response.ticker;
+      } else {
+        this.debug.warn(`⚠️ Ticker discovery failed for: "${companyName}"`);
+        return null;
+      }
+    } catch (error) {
+      this.debug.error(`❌ Error discovering ticker for "${companyName}":`, error);
+      return null;
+    }
   }
 
   setTicker(nome: string, ticker: string): void {
@@ -80,15 +107,9 @@ export class TickerMappingService {
     }).pipe(
       tap(response => {
         this.debug.log('✅ Ticker mapping saved to backend:', response);
-        if (response && (response as any).file_path) {
-          this.debug.log('📁 File saved at:', (response as any).file_path);
-        }
       }),
       catchError(error => {
         this.debug.error('❌ Error saving ticker mapping to backend:', error);
-        this.debug.error('Error status:', error.status);
-        this.debug.error('Error message:', error.message);
-        this.debug.error('Error details:', error.error);
         return of(null);
       })
     ).subscribe();

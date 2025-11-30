@@ -229,35 +229,70 @@ export class PdfParserService {
           // Save mapping using complete field
           this.tickerMappingService.setTicker(nomeAcaoCompleto, titulo);
         } else {
-          // 3. If not found, ask user via callback
-          this.debug.warn(`⚠️ Ticker not found for "${nomeAcaoCompleto}". ${onTickerRequired ? 'Requesting user input...' : 'No callback provided, skipping operation.'}`);
-          
-          if (onTickerRequired) {
-            const operationData = {
-              tipoOperacao,
-              tipoMercado,
-              quantidade,
-              preco,
-              valorOperacao,
-              dc,
-              linha: line
-            };
+          // 3. Try to DISCOVER ticker via API
+          this.debug.log(`🔍 Attempting to discover ticker for: "${nomeAcaoCompleto}"`);
+          try {
+            const discoveredTicker = await this.tickerMappingService.discoverTicker(nomeAcaoCompleto);
             
-            this.debug.log(`📞 Calling onTickerRequired for: "${nomeAcaoCompleto}"`);
-            const ticker = await onTickerRequired(nomeAcaoCompleto, operationData);
-            
-            if (ticker) {
-              this.debug.log(`✅ User provided ticker: ${ticker} for "${nomeAcaoCompleto}"`);
-              // Save mapping using complete field
-              this.tickerMappingService.setTicker(nomeAcaoCompleto, ticker);
-              titulo = ticker;
+            if (discoveredTicker) {
+              titulo = discoveredTicker;
+              this.debug.log(`✅ Discovered ticker via API: ${titulo}`);
             } else {
-              this.debug.warn(`⚠️ User cancelled ticker input for "${nomeAcaoCompleto}", skipping operation`);
-              return null; // User cancelled - will be added to skippedOperations list
+              // 4. If not found/discovered, ask user via callback
+              this.debug.warn(`⚠️ Ticker not found for "${nomeAcaoCompleto}". ${onTickerRequired ? 'Requesting user input...' : 'No callback provided, skipping operation.'}`);
+              
+              if (onTickerRequired) {
+                const operationData = {
+                  tipoOperacao,
+                  tipoMercado,
+                  quantidade,
+                  preco,
+                  valorOperacao,
+                  dc,
+                  linha: line
+                };
+                
+                this.debug.log(`📞 Calling onTickerRequired for: "${nomeAcaoCompleto}"`);
+                const ticker = await onTickerRequired(nomeAcaoCompleto, operationData);
+                
+                if (ticker) {
+                  this.debug.log(`✅ User provided ticker: ${ticker} for "${nomeAcaoCompleto}"`);
+                  // Save mapping using complete field
+                  this.tickerMappingService.setTicker(nomeAcaoCompleto, ticker);
+                  titulo = ticker;
+                } else {
+                  this.debug.warn(`⚠️ User cancelled ticker input for "${nomeAcaoCompleto}", skipping operation`);
+                  return null; // User cancelled - will be added to skippedOperations list
+                }
+              } else {
+                this.debug.error(`❌ No onTickerRequired callback provided, cannot process "${nomeAcaoCompleto}"`);
+                return null;
+              }
             }
-          } else {
-            this.debug.error(`❌ No onTickerRequired callback provided, cannot process "${nomeAcaoCompleto}"`);
-            return null;
+          } catch (err) {
+            this.debug.error(`❌ Error during ticker discovery:`, err);
+            // Fallback to manual input on error
+            if (onTickerRequired) {
+               // ... same manual input logic ...
+               const operationData = {
+                  tipoOperacao,
+                  tipoMercado,
+                  quantidade,
+                  preco,
+                  valorOperacao,
+                  dc,
+                  linha: line
+                };
+                const ticker = await onTickerRequired(nomeAcaoCompleto, operationData);
+                if (ticker) {
+                  this.tickerMappingService.setTicker(nomeAcaoCompleto, ticker);
+                  titulo = ticker;
+                } else {
+                   return null;
+                }
+            } else {
+              return null;
+            }
           }
         }
       }
@@ -329,5 +364,3 @@ export class PdfParserService {
     return `op-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 }
-
-
