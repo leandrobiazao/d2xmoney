@@ -2,9 +2,17 @@ import { Component, EventEmitter, Input, Output, OnInit, OnDestroy } from '@angu
 import { CommonModule } from '@angular/common';
 import { PdfParserService } from '../pdf-parser.service';
 import { Operation } from '../operation.model';
+import { FinancialSummary } from '../financial-summary.model';
 import { TickerDialogComponent } from '../ticker-dialog/ticker-dialog';
 import { TickerMappingService } from '../../portfolio/ticker-mapping/ticker-mapping.service';
 import { DebugService } from '../../shared/services/debug.service';
+
+export interface OperationsAddedEvent {
+  operations: Operation[];
+  expectedOperationsCount?: number | null;
+  financialSummary?: FinancialSummary;
+  fileName?: string; // Original file name
+}
 
 @Component({
   selector: 'app-upload-pdf',
@@ -15,7 +23,7 @@ import { DebugService } from '../../shared/services/debug.service';
 })
 export class UploadPdfComponent implements OnInit, OnDestroy {
   @Input() clientId!: string;
-  @Output() operationsAdded = new EventEmitter<Operation[]>();
+  @Output() operationsAdded = new EventEmitter<OperationsAddedEvent>();
 
   isProcessing = false;
   errorMessage: string | null = null;
@@ -85,17 +93,28 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
 
     try {
       const onTickerRequired = async (nome: string, operationData: any): Promise<string | null> => {
+        this.debug.log(`🔔 onTickerRequired called for: "${nome}"`);
+        this.debug.log(`🔔 Setting up dialog state...`);
+        
         return new Promise((resolve) => {
           this.currentNome = nome;
           this.currentOperationData = operationData;
           this.pendingTickerResolve = resolve;
           this.showTickerDialog = true;
+          
+          this.debug.log(`🔔 Dialog state set: showTickerDialog=${this.showTickerDialog}, currentNome="${this.currentNome}"`);
+          this.debug.log(`🔔 Waiting for user input...`);
+          
+          // Add a small delay to ensure Angular detects the change
+          setTimeout(() => {
+            this.debug.log(`🔔 Dialog should be visible now. showTickerDialog=${this.showTickerDialog}`);
+          }, 100);
         });
       };
       
-      let operations: Operation[] = [];
+      let parseResult: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary } = { operations: [] };
       try {
-        operations = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
+        parseResult = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
       } catch (parseError) {
         // If parsing fails, the error message is already set by the parser
         const errorMsg = parseError instanceof Error ? parseError.message : 'Erro desconhecido ao processar PDF';
@@ -105,19 +124,24 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         return;
       }
 
-      if (operations.length === 0) {
+      if (parseResult.operations.length === 0) {
         this.errorMessage = 'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3.';
         this.isProcessing = false;
         return;
       }
 
-      const operationsWithClientId = operations.map(op => ({
+      const operationsWithClientId = parseResult.operations.map(op => ({
         ...op,
         clientId: this.clientId
       }));
 
-      // Emit operations - success/error will be handled by parent component
-      this.operationsAdded.emit(operationsWithClientId);
+      // Emit operations and financial summary - success/error will be handled by parent component
+      this.operationsAdded.emit({
+        operations: operationsWithClientId,
+        expectedOperationsCount: parseResult.expectedOperationsCount,
+        financialSummary: parseResult.financialSummary,
+        fileName: this.selectedFile.name // Pass the real file name
+      });
 
       this.selectedFile = null;
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;

@@ -75,6 +75,12 @@
   margin-bottom: 2rem;
 }
 
+.history-section {
+  padding: 2rem;
+  background: #ffffff;
+  min-height: calc(100vh - 80px);
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;

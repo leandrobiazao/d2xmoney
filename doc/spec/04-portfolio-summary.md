@@ -233,10 +233,14 @@ python manage.py refresh_portfolio
   - Quantidade
   - Preço Médio
   - Valor Total Investido
-  - **Lucro Realizado** (with color coding: green for profit, red for loss)
+  - Preço Atual
+  - Valor Atual
+  - **Lucro** (total lucro: realized + unrealized, with color coding: green for profit, red for loss)
 - Shows all tickers including zero-quantity positions
 - Currency formatting (BRL, R$)
 - Loading and error states
+- **Upload button moved to "Histórico de Notas" tab**: The "Carregar Nota de Corretagem" button is now located in the Histórico de Notas tab, not in the Ações tab
+- **Operations section removed**: The portfolio tabs now only display current positions information; operations are viewed through the Operations Modal in the History component
 
 ## Integration Flow
 

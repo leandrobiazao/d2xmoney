@@ -284,22 +284,58 @@ Create processing status component in frontend/src/app/brokerage-note/processing
 }
 ```
 
+## Financial Summary Extraction
+
+The PDF parser extracts financial summary data from brokerage notes, specifically from **the last page only**. Financial summaries are always located on the last page of B3 brokerage notes.
+
+### Extraction Process
+
+1. **Last Page Extraction**: The parser extracts text separately from the last page of the PDF
+2. **Sections Parsed**:
+   - **Resumo dos Negócios** (Business Summary): Debentures, Vendas à vista, Compras à vista, Valor das operações
+   - **Resumo Financeiro** (Financial Summary): Clearing, Valor líquido das operações, Taxa de liquidação, Taxa de registro, Total CBLC, Bolsa, Emolumentos, Taxa de transferência de ativos, Total Bovespa
+   - **Custos Operacionais** (Operational Costs): Taxa operacional, Execução, Taxa de custódia, Impostos, I.R.R.F. s/ operações, I.R.R.F. s/ base, Outros, Total de custos, Líquido, Líquido para (date)
+
+3. **Excluded Fields**: The following fields are NOT extracted:
+   - Opções compras
+   - Opções vendas
+   - Operações a termo
+   - Valor operações títulos públicos
+   - Taxa termo/opções
+   - Taxa A.N.A.
+
+4. **Number Format**: Parses Brazilian number format (comma as decimal separator, dot as thousands separator)
+5. **Credit/Debit Indicators**: Handles 'C' (Credit) and 'D' (Debit) indicators in financial values
+6. **Date Extraction**: Extracts date from "Líquido para DD/MM/YYYY" field
+
+### Financial Summary Model
+
+All financial summary fields are optional and nullable to support existing notes without financial data.
+
+**Fields Extracted:**
+- Resumo dos Negócios: `debentures`, `vendas_a_vista`, `compras_a_vista`, `valor_das_operacoes`
+- Resumo Financeiro: `clearing`, `valor_liquido_operacoes`, `taxa_liquidacao`, `taxa_registro`, `total_cblc`, `bolsa`, `emolumentos`, `taxa_transferencia_ativos`, `total_bovespa`
+- Custos Operacionais: `taxa_operacional`, `execucao`, `taxa_custodia`, `impostos`, `irrf_operacoes`, `irrf_base`, `outros_custos`, `total_custos_despesas`, `liquido`, `liquido_data`
+
 ## Data Flow
 
 1. User uploads PDF file via UploadPdfComponent
-2. PdfParserService extracts text from PDF
-3. Parser searches for operation lines matching B3 format
-4. For each operation line:
+2. PdfParserService extracts text from **all pages** for operations parsing
+3. PdfParserService extracts text from **last page only** for financial summary parsing
+4. Parser searches for operation lines matching B3 format (from all pages)
+5. Parser extracts financial summary sections (from last page only)
+6. For each operation line:
    - Extract nomeAcaoCompleto as a single field (e.g., "3TENTOS ON NM")
    - Preserve the complete field including classification code
-5. For each operation, TickerMappingService tries to find ticker using nomeAcaoCompleto (complete field)
-6. If ticker not found, TickerDialogComponent prompts user for input
+7. For each operation, TickerMappingService tries to find ticker using nomeAcaoCompleto (complete field)
+8. If ticker not found, TickerDialogComponent prompts user for input
    - Dialog shows the complete field (e.g., "3TENTOS ON NM")
    - User provides ticker for the complete field
-7. Ticker mapping is saved using the complete field (company name + classification code)
-8. Operations are created with all required fields
-9. Operations are emitted via operationsAdded event
-10. Parent component receives operations and saves them
+9. Ticker mapping is saved using the complete field (company name + classification code)
+10. Operations are created with all required fields
+11. Financial summary is extracted from last page text
+12. Operations and financial summary are emitted via operationsAdded event
+13. Parent component receives operations and financial summary and saves them
 
 ## Integration
 

@@ -5,11 +5,12 @@ import { BrokerageNote, HistoryFilters } from '../note.model';
 import { UserService } from '../../users/user.service';
 import { User } from '../../users/user.model';
 import { DebugService } from '../../shared/services/debug.service';
+import { OperationsModalComponent } from '../operations-modal/operations-modal';
 
 @Component({
   selector: 'app-history-list',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, OperationsModalComponent],
   templateUrl: './history-list.html',
   styleUrl: './history-list.css'
 })
@@ -24,6 +25,10 @@ export class HistoryListComponent implements OnInit, OnChanges {
   isLoadingUsers: boolean = false;
   error: string | null = null;
   filters: HistoryFilters = {};
+  
+  // Modal state
+  showOperationsModal: boolean = false;
+  selectedNoteId: string | null = null;
 
   constructor(
     private historyService: BrokerageHistoryService,
@@ -138,7 +143,13 @@ export class HistoryListComponent implements OnInit, OnChanges {
 
   viewNote(noteId: string) {
     this.debug.log('View note:', noteId);
-    // Note: Detail view would be shown here if routing was enabled
+    this.selectedNoteId = noteId;
+    this.showOperationsModal = true;
+  }
+
+  onModalClose(): void {
+    this.showOperationsModal = false;
+    this.selectedNoteId = null;
   }
 
   getStatusBadgeClass(status: string): string {

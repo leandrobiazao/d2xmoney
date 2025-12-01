@@ -22,6 +22,35 @@ class BrokerageNote(models.Model):
         ('failed', 'Failed')
     ])
     error_message = models.TextField(null=True, blank=True)
+    
+    # Resumo dos Negócios (Business Summary)
+    debentures = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    vendas_a_vista = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    compras_a_vista = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    valor_das_operacoes = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Resumo Financeiro (Financial Summary)
+    clearing = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    valor_liquido_operacoes = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    taxa_liquidacao = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    taxa_registro = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_cblc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    bolsa = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    emolumentos = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    taxa_transferencia_ativos = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_bovespa = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Custos Operacionais (Operational Costs)
+    taxa_operacional = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    execucao = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    taxa_custodia = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    impostos = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    irrf_operacoes = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    irrf_base = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    outros_custos = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_custos_despesas = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    liquido = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    liquido_data = models.CharField(max_length=20, null=True, blank=True)  # Date for "Líquido para"
 
     class Meta:
         db_table = 'brokerage_notes'

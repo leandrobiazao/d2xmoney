@@ -47,6 +47,10 @@ Define note data structure:
 - operations: Operation[] (full operation objects)
 - status: 'success' | 'partial' | 'failed'
 - error_message?: string (if failed)
+- **Financial Summary Fields** (all optional):
+  - Resumo dos Negócios: debentures, vendas_a_vista, compras_a_vista, valor_das_operacoes
+  - Resumo Financeiro: clearing, valor_liquido_operacoes, taxa_liquidacao, taxa_registro, total_cblc, bolsa, emolumentos, taxa_transferencia_ativos, total_bovespa
+  - Custos Operacionais: taxa_operacional, execucao, taxa_custodia, impostos, irrf_operacoes, irrf_base, outros_custos, total_custos_despesas, liquido, liquido_data
 ```
 
 ### Prompt BH-3: Create Brokerage Note Serializer
@@ -67,6 +71,19 @@ Create Django REST Framework serializer in backend/brokerage_notes/serializers.p
   - status (CharField, choices: ['success', 'partial', 'failed'])
   - error_message (CharField, allow_blank=True, allow_null=True)
 ```
+
+### History List Component
+
+**Location**: `frontend/src/app/brokerage-history/history-list/`
+
+**Features:**
+- Displays list of all processed brokerage notes
+- User filtering (sidebar or prop-based)
+- Table view with columns: Data, Número da Nota, Arquivo, Operações, Status, Processado em, Ações
+- **Operations Modal**: Clicking "Ver detalhes" (eye button) opens the Operations Modal showing operations grouped by Investment Type
+- Delete functionality with confirmation
+- Status badges (Success, Partial, Failed)
+- Responsive design
 
 ### Prompt BH-4: Create Brokerage Note API Views
 ```

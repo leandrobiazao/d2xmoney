@@ -92,15 +92,16 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
         // Extract unique months from snapshots
         response.snapshots.forEach(snapshot => {
           const date = new Date(snapshot.timestamp);
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
+          // Use UTC to avoid timezone shifting (e.g. 2025-12-01T00:00:00Z -> Nov 30 in Brazil)
+          const year = date.getUTCFullYear();
+          const month = String(date.getUTCMonth() + 1).padStart(2, '0');
           const monthKey = `${year}-${month}`;
           
           if (!monthSet.has(monthKey)) {
             monthSet.add(monthKey);
             // Format as "Novembro/2025" instead of "novembro de 2025"
-            const monthName = date.toLocaleDateString('pt-BR', { month: 'long' });
-            const year = date.getFullYear();
+            // Force UTC timezone for formatting
+            const monthName = date.toLocaleDateString('pt-BR', { month: 'long', timeZone: 'UTC' });
             const monthLabel = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)}/${year}`;
             monthMap.set(monthKey, monthLabel);
           }
@@ -154,8 +155,8 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
           // Find snapshot for the selected month
           const targetSnapshot = response.snapshots.find(snapshot => {
             const date = new Date(snapshot.timestamp);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getUTCFullYear();
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
             const snapshotMonthKey = `${year}-${month}`;
             return snapshotMonthKey === monthKey;
           });
@@ -431,7 +432,8 @@ export class ClubeDoValorComponent implements OnInit, AfterViewInit {
     if (!timestamp) return '';
     try {
       const date = new Date(timestamp);
-      return date.toLocaleDateString('pt-BR');
+      // Use UTC to ensure consistent date display matching the month selection
+      return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
     } catch {
       return timestamp;
     }

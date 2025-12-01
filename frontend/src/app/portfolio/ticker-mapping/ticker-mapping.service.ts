@@ -96,7 +96,9 @@ export class TickerMappingService {
     const nomeNormalizado = this.normalizeNome(nome);
     const tickerUpper = ticker.toUpperCase();
     
+    // Save to local cache first
     this.mappings[nomeNormalizado] = tickerUpper;
+    this.debug.log(`💾 Saved to local cache: "${nomeNormalizado}" -> ${tickerUpper}`);
     
     const url = this.API_URL.endsWith('/') ? this.API_URL : `${this.API_URL}/`;
     this.debug.log('📤 Sending ticker mapping to backend:', { nome: nomeNormalizado, ticker: tickerUpper, url });
@@ -106,10 +108,20 @@ export class TickerMappingService {
       ticker: tickerUpper
     }).pipe(
       tap(response => {
-        this.debug.log('✅ Ticker mapping saved to backend:', response);
+        this.debug.log('✅ Ticker mapping saved to backend successfully:', response);
+        // Verify it's still in local cache
+        const cached = this.mappings[nomeNormalizado];
+        if (cached === tickerUpper) {
+          this.debug.log(`✅ Verified: Mapping still in local cache after backend save`);
+        } else {
+          this.debug.warn(`⚠️ Warning: Mapping not in local cache after backend save. Expected: ${tickerUpper}, Got: ${cached}`);
+        }
       }),
       catchError(error => {
         this.debug.error('❌ Error saving ticker mapping to backend:', error);
+        this.debug.error('❌ Error details:', JSON.stringify(error, null, 2));
+        // Keep the local cache even if backend save fails
+        this.debug.log(`⚠️ Keeping mapping in local cache despite backend error`);
         return of(null);
       })
     ).subscribe();

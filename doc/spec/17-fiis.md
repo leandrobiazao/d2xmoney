@@ -412,6 +412,13 @@ interface FIIPosition {
 - FII positions are distinguished by their Stock classification
 - Portfolio valuation includes FII holdings
 
+### Brokerage Notes App
+- FII operations are processed and stored in brokerage notes
+- **FIIs operations are displayed in the Operations Modal** in a separate section labeled "Fundos Imobiliários"
+- When viewing operations in the Operations Modal, FIIs operations are grouped together with other investment types
+- FII operations are tracked in portfolio positions and displayed in the "Fundos Imobiliários" tab
+- Operations Modal shows "Renda Variável em Reais", "Renda Variável em Dólares", and "Fundos Imobiliários" investment types
+
 ### Ticker Mappings App
 - TickerMapping entries created for each FII
 - Maps company name variations to ticker
@@ -441,9 +448,11 @@ interface FIIPosition {
 
 1. Upload brokerage notes containing FII operations
 2. System recognizes FII tickers via TickerMapping
-3. Portfolio positions include FII holdings
-4. Navigate to Portfolio → "Fundos Imobiliários" tab
-5. View FII-specific metrics (DY, P/VP, etc.) alongside holdings
+3. FII operations are processed and stored in brokerage notes
+4. Portfolio positions include FII holdings
+5. Navigate to Portfolio → "Fundos Imobiliários" tab
+6. View FII-specific metrics (DY, P/VP, etc.) alongside holdings
+7. **Note**: When viewing operations in the History component's Operations Modal, FIIs operations are displayed in a separate section labeled "Fundos Imobiliários", grouped together with other investment types. FII operations can also be viewed through portfolio positions in the "Fundos Imobiliários" tab.
 
 ### Updating FII Data
 

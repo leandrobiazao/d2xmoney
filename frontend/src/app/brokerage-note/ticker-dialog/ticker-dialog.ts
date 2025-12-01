@@ -45,8 +45,8 @@ export class TickerDialogComponent implements OnInit {
         return;
       }
       
-      // Save mapping using complete field (nome includes classification code)
-      this.tickerMappingService.setTicker(this.nome, tickerUpper);
+      // NOTE: We don't save the mapping here anymore - it's saved in pdf-parser.service.ts
+      // after receiving the ticker from the dialog. This ensures all variations are saved correctly.
       
       // Clear the ticker field after confirmation
       this.ticker = '';

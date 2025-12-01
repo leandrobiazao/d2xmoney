@@ -232,7 +232,30 @@ applyUserFilter() {
 
 ## Key Features Implemented
 
-### 1. User Filtering Sidebar
+### 1. Operations Modal Component
+
+**New Feature**: Operations Modal displaying operations grouped by Investment Type
+
+**Location**: `frontend/src/app/brokerage-history/operations-modal/`
+
+**Functionality:**
+- Opens when clicking "Ver detalhes" (eye) button in history table
+- Displays note metadata (file name, date, number, operations count)
+- Groups operations by Investment Type from configuration table:
+  - "Ativos em Reais"
+  - "Ativos em Dólar"
+  - "Não Classificado" (for unmapped tickers)
+- **FIIs operations are filtered out** and not displayed in the modal
+- Operations table with columns: Data, Título, Tipo, Quantidade, Preço, Valor
+- Color-coded operation types (Compra/Venda badges)
+- Modal overlay with backdrop click to close
+- Responsive design following design system guidelines
+- Integration with StocksService for ticker-to-investment-type mapping
+- Uses ConfigurationService for investment type definitions
+
+**Note:** Brokerage notes never contain "Renda Fixa" operations. FIIs operations are processed, stored, and displayed in the operations modal in a separate "Fundos Imobiliários" section.
+
+### 2. User Filtering Sidebar
 
 **All Users Option:**
 - Shows total count of all notes across users
@@ -251,7 +274,7 @@ applyUserFilter() {
 - Empty state when no users exist
 - Proper error handling
 
-### 2. Enhanced Table
+### 3. Enhanced Table
 
 **Features:**
 - Sticky header for long lists
@@ -263,25 +286,25 @@ applyUserFilter() {
 - Centered operation count
 
 **Action Buttons:**
-- View button with eye icon (blue theme)
+- **View button (eye icon)**: Opens Operations Modal showing operations grouped by Investment Type
 - Delete button with X icon (red on hover)
 - Tooltips for accessibility
 
-### 3. Content Header
+### 4. Content Header
 
 **Features:**
 - Page title with selected user subtitle
 - Dynamic subtitle based on selection
 - Responsive layout (stacked on mobile)
 
-### 4. Empty States
+### 5. Empty States
 
 **Context-Aware Messages:**
 - "Nenhuma nota foi processada ainda" (no user selected)
 - "Este usuário ainda não possui notas processadas" (user selected)
 - Icon and formatting matching design system
 
-### 5. Responsive Design
+### 6. Responsive Design
 
 **Mobile (<768px):**
 - Single column layout

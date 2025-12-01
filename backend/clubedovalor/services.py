@@ -49,7 +49,7 @@ class ClubeDoValorService:
     
     @staticmethod
     def parse_brazilian_date(date_str: str) -> str:
-        """Parse Brazilian date format (DD/MM/YYYY) to ISO 8601 format."""
+        """Parse Brazilian date format (DD/MM/YYYY) to ISO 8601 format. Returns current time on failure."""
         try:
             parts = date_str.strip().split('/')
             if len(parts) == 3:
@@ -59,6 +59,90 @@ class ClubeDoValorService:
         except (ValueError, IndexError) as e:
             print(f"Error parsing date '{date_str}': {e}")
         return datetime.now().isoformat() + 'Z'
+
+    @staticmethod
+    def _find_date_in_rows(rows: List[List[str]]) -> str:
+        """
+        Helper to find the snapshot date in CSV rows.
+        Strategies:
+        1. Look for 'Data Screening' cell, take value from cell below it.
+        2. Look for 'Atualização' cell, extract date from it.
+        3. Fallback: Check specific cells (row 1 col 0, row 2 col 0) for date-like strings.
+        """
+        print(f"DEBUG: _find_date_in_rows checking {min(5, len(rows))} rows")
+        if len(rows) > 0:
+            print(f"DEBUG: Row 0: {rows[0][:5]}")
+        if len(rows) > 1:
+            print(f"DEBUG: Row 1: {rows[1][:5]}")
+            
+        # Strategy 1 & 2: Search for keywords
+        for i in range(min(5, len(rows))):
+            for j in range(min(5, len(rows[i]))):
+                cell = rows[i][j].strip()
+                cell_lower = cell.lower()
+                
+                # Strategy 1: 'Data Screening' header -> Value is below
+                if 'data screening' in cell_lower:
+                    print(f"DEBUG: Found 'data screening' at [{i}][{j}]")
+                    if i + 1 < len(rows) and len(rows[i+1]) > j:
+                        candidate = rows[i+1][j].strip()
+                        print(f"DEBUG: Candidate below: '{candidate}'")
+                        if '/' in candidate:
+                            parsed = ClubeDoValorService.parse_brazilian_date(candidate)
+                            # Only accept if it didn't fail (parse_brazilian_date returns now on fail, check input format)
+                            # Check if parsed date is reasonably close to candidate (not just 'now')
+                            # But parse_brazilian_date returns ISO string, hard to compare easily without parsing back
+                            # For now, just return it
+                            print(f"DEBUG: Parsed date: {parsed}")
+                            return parsed
+                            
+                # Strategy 2: 'Última atualização: DD/MM/YYYY' format
+                if 'atualização' in cell_lower or 'atualizacao' in cell_lower:
+                    print(f"DEBUG: Found 'atualização' at [{i}][{j}]: '{cell}'")
+                    # Try to extract date part
+                    if ':' in cell:
+                        date_part = cell.split(':')[-1].strip()
+                        if '/' in date_part:
+                            parsed = ClubeDoValorService.parse_brazilian_date(date_part)
+                            print(f"DEBUG: Parsed date from string: {parsed}")
+                            return parsed
+                    # Maybe it's just the date in the string?
+                    if '/' in cell:
+                        # Simple regex-like check or just try parsing
+                        try:
+                            # Try finding substring matching DD/MM/YYYY
+                            import re
+                            match = re.search(r'\d{2}/\d{2}/\d{4}', cell)
+                            if match:
+                                parsed = ClubeDoValorService.parse_brazilian_date(match.group(0))
+                                print(f"DEBUG: Parsed date from regex: {parsed}")
+                                return parsed
+                        except:
+                            pass
+
+        # Strategy 3: Fallback to hardcoded positions if they look like dates
+        print("DEBUG: Fallback strategies...")
+        # Check row 1, col 0 (often the date in some layouts)
+        if len(rows) > 1 and len(rows[1]) > 0:
+            candidate = rows[1][0].strip()
+            if '/' in candidate:
+                 parsed = ClubeDoValorService.parse_brazilian_date(candidate)
+                 print(f"DEBUG: Parsed date from fallback row 1 col 0: {parsed}")
+                 return parsed
+        
+        # Check row 2, col 0 (if row 1 was header)
+        if len(rows) > 2 and len(rows[2]) > 0:
+            candidate = rows[2][0].strip()
+            if '/' in candidate:
+                 parsed = ClubeDoValorService.parse_brazilian_date(candidate)
+                 print(f"DEBUG: Parsed date from fallback row 2 col 0: {parsed}")
+                 return parsed
+
+        # Default to now
+        now_ts = datetime.now().isoformat() + 'Z'
+        print(f"DEBUG: Date not found, defaulting to NOW: {now_ts}")
+        return now_ts
+
     
     @staticmethod
     def parse_brazilian_currency(value_str: str) -> float:
@@ -171,15 +255,37 @@ class ClubeDoValorService:
         if len(rows) < 5:
             raise ValueError("Not enough rows in table")
         
-        # Extract "Data Screening" date from row 2, column 1 (index 1, cell 0)
+        # Extract "Data Screening" date using html parser features
         timestamp = datetime.now().isoformat() + 'Z'
-        if len(rows) > 1:
+        
+        # Look for 'Data Screening' or date-like strings in the first few rows
+        date_found = False
+        for i in range(min(5, len(rows))):
+            cells = rows[i].find_all(['td', 'th'])
+            for j, cell in enumerate(cells):
+                text = cell.get_text(strip=True).lower()
+                if 'data screening' in text:
+                    # Check if date is in this cell or next row
+                    # Usually in HTML tables, headers and values might be in different rows
+                    if i + 1 < len(rows):
+                        next_row_cells = rows[i+1].find_all(['td', 'th'])
+                        if j < len(next_row_cells):
+                            date_candidate = next_row_cells[j].get_text(strip=True)
+                            if '/' in date_candidate:
+                                timestamp = ClubeDoValorService.parse_brazilian_date(date_candidate)
+                                date_found = True
+                                break
+                if date_found: break
+            if date_found: break
+            
+        # Fallback to fixed position if simple search fails
+        if not date_found and len(rows) > 1:
             row2 = rows[1]
             cells = row2.find_all(['td', 'th'])
             if len(cells) > 0:
                 # Use get_text with proper encoding handling
                 date_cell = cells[0].get_text(strip=True)
-                if date_cell:
+                if date_cell and '/' in date_cell:
                     timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
         
         # Parse stock data starting from row 5 (index 4)
@@ -255,11 +361,7 @@ class ClubeDoValorService:
         if len(rows) < 5:
             raise ValueError("Not enough rows in CSV")
         
-        timestamp = datetime.now().isoformat() + 'Z'
-        if len(rows) > 1 and len(rows[1]) > 0:
-            date_cell = rows[1][0].strip()
-            if date_cell:
-                timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
+        timestamp = ClubeDoValorService._find_date_in_rows(rows)
         
         stocks = []
         for i in range(4, len(rows)):
@@ -414,12 +516,7 @@ class ClubeDoValorService:
         if len(rows) < 5:
             raise ValueError("Not enough rows in CSV")
         
-        timestamp = datetime.now().isoformat() + 'Z'
-        # MOM format has date in row 1 (index 1), column 0
-        if len(rows) > 1 and len(rows[1]) > 0:
-            date_cell = rows[1][0].strip()
-            if date_cell:
-                timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
+        timestamp = ClubeDoValorService._find_date_in_rows(rows)
         
         stocks = []
         # MOM structure:
@@ -724,11 +821,7 @@ class ClubeDoValorService:
         if len(rows) < 5:
             raise ValueError("Not enough rows in CSV")
         
-        timestamp = datetime.now().isoformat() + 'Z'
-        if len(rows) > 1 and len(rows[1]) > 0:
-            date_cell = rows[1][0].strip()
-            if date_cell:
-                timestamp = ClubeDoValorService.parse_brazilian_date(date_cell)
+        timestamp = ClubeDoValorService._find_date_in_rows(rows)
         
         stocks = []
         for i in range(4, len(rows)):

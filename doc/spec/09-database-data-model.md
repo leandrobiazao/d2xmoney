@@ -64,6 +64,10 @@ The database models are organized into the following functional areas:
 
 **Table**: `brokerage_notes`
 
+**Purpose**: Stores processed brokerage note information including financial summary data extracted from PDFs.
+
+**Table**: `brokerage_notes`
+
 **Purpose**: Stores brokerage note metadata and operations as JSON. Tracks processing status and errors.
 
 **Fields**:
@@ -81,6 +85,30 @@ The database models are organized into the following functional areas:
 | `operations` | JSONField | default=list | Operations stored as JSON array |
 | `status` | CharField | max_length=20, default='success', choices | Processing status |
 | `error_message` | TextField | Null, Blank | Error details if processing failed |
+| **Financial Summary Fields** (all Null, Blank) | | | Extracted from last page of PDF |
+| `debentures` | DecimalField | max_digits=12, decimal_places=2 | Resumo dos Negócios: Debentures |
+| `vendas_a_vista` | DecimalField | max_digits=12, decimal_places=2 | Resumo dos Negócios: Vendas à vista |
+| `compras_a_vista` | DecimalField | max_digits=12, decimal_places=2 | Resumo dos Negócios: Compras à vista |
+| `valor_das_operacoes` | DecimalField | max_digits=12, decimal_places=2 | Resumo dos Negócios: Valor das operações |
+| `clearing` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Clearing |
+| `valor_liquido_operacoes` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Valor líquido das operações |
+| `taxa_liquidacao` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Taxa de liquidação |
+| `taxa_registro` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Taxa de registro |
+| `total_cblc` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Total CBLC |
+| `bolsa` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Bolsa |
+| `emolumentos` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Emolumentos |
+| `taxa_transferencia_ativos` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Taxa de transferência de ativos |
+| `total_bovespa` | DecimalField | max_digits=12, decimal_places=2 | Resumo Financeiro: Total Bovespa |
+| `taxa_operacional` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Taxa operacional |
+| `execucao` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Execução |
+| `taxa_custodia` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Taxa de custódia |
+| `impostos` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Impostos |
+| `irrf_operacoes` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: I.R.R.F. s/ operações |
+| `irrf_base` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: I.R.R.F. s/ base |
+| `outros_custos` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Outros |
+| `total_custos_despesas` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Total de custos e despesas |
+| `liquido` | DecimalField | max_digits=12, decimal_places=2 | Custos Operacionais: Líquido |
+| `liquido_data` | CharField | max_length=20 | Custos Operacionais: Date for "Líquido para" |
 
 **Status Choices**:
 - `success`: All operations processed successfully

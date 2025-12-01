@@ -1,0 +1,98 @@
+@if (noteId) {
+<div class="modal-overlay" (click)="onBackdropClick($event)">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <!-- Modal Header -->
+    <div class="modal-header">
+      <h2>Operações da Nota</h2>
+      <button class="close-button" (click)="onClose()" title="Fechar">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Modal Body -->
+    <div class="modal-body">
+      @if (isLoading) {
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Carregando operações...</p>
+        </div>
+      } @else if (error) {
+        <div class="error-state">
+          <p>{{ error }}</p>
+        </div>
+      } @else if (note) {
+        <!-- Note Metadata -->
+        <div class="note-metadata">
+          <div class="metadata-item">
+            <span class="label">Arquivo:</span>
+            <span class="value">{{ note.file_name }}</span>
+          </div>
+          <div class="metadata-item">
+            <span class="label">Data:</span>
+            <span class="value">{{ note.note_date }}</span>
+          </div>
+          <div class="metadata-item">
+            <span class="label">Número:</span>
+            <span class="value">{{ note.note_number }}</span>
+          </div>
+          <div class="metadata-item">
+            <span class="label">Operações:</span>
+            <span class="value">{{ note.operations_count }}</span>
+          </div>
+        </div>
+
+        <!-- Grouped Operations -->
+        @if (groupedOperations.length === 0) {
+          <div class="empty-state">
+            <p>Nenhuma operação encontrada nesta nota.</p>
+          </div>
+        } @else {
+          @for (group of groupedOperations; track group.investmentType?.id || 'unclassified') {
+            <div class="operations-group">
+              <div class="group-header">
+                <h3>{{ getInvestmentTypeName(group) }}</h3>
+                <span class="operation-count">{{ group.operations.length }} operação(ões)</span>
+              </div>
+
+              <div class="table-container">
+                <table class="operations-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Título</th>
+                      <th>Tipo</th>
+                      <th>Quantidade</th>
+                      <th>Preço</th>
+                      <th>Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (operation of group.operations; track operation.id) {
+                      <tr [class.venda]="operation.tipoOperacao === 'V'">
+                        <td>{{ operation.data }}</td>
+                        <td>{{ operation.titulo }}</td>
+                        <td>
+                          <span [class.compra]="operation.tipoOperacao === 'C'"
+                            [class.venda-badge]="operation.tipoOperacao === 'V'">
+                            {{ operation.tipoOperacao === 'C' ? 'Compra' : 'Venda' }}
+                          </span>
+                        </td>
+                        <td>{{ operation.quantidade > 0 ? '+' : '' }}{{ operation.quantidade }}</td>
+                        <td>{{ formatCurrency(operation.preco) }}</td>
+                        <td>{{ formatCurrency(operation.valorOperacao) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        }
+      }
+    </div>
+  </div>
+</div>
+}
+

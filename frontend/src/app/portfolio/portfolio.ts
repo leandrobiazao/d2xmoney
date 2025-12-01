@@ -1,14 +1,15 @@
-import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { PortfolioService } from './portfolio.service';
 import { Operation } from '../brokerage-note/operation.model';
+import { FinancialSummary } from '../brokerage-note/financial-summary.model';
 import { Position } from './position.model';
-import { UploadPdfComponent } from '../brokerage-note/upload-pdf/upload-pdf';
+import { UploadPdfComponent, OperationsAddedEvent } from '../brokerage-note/upload-pdf/upload-pdf';
 import { BrokerageHistoryService } from '../brokerage-history/history.service';
 import { BrokerageNote } from '../brokerage-history/note.model';
 import { DebugService } from '../shared/services/debug.service';
-import { parseDate, formatCurrency, compareDate } from '../shared/utils/common-utils';
+import { formatCurrency } from '../shared/utils/common-utils';
 import { FixedIncomeListComponent } from '../fixed-income/fixed-income-list.component';
 import { HistoryListComponent } from '../brokerage-history/history-list/history-list';
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
@@ -28,29 +29,17 @@ import { Stock } from '../configuration/stocks/stocks.models';
 export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   @Input() userId!: string;
   @Input() userName!: string;
+  @ViewChild('historyList') historyListComponent!: HistoryListComponent;
 
   operations: Operation[] = [];
   positions: Position[] = [];
-  filteredOperations: Operation[] = [];
   
   // Cache for FII tickers to avoid repeated API calls
   private fiiTickers: Set<string> = new Set();
 
-  // Filters
-  filterTitulo: string = '';
-  filterTipoOperacao: string = '';
-  filterTipoMercado: string = '';
-  filterDataInicio: string = '';
-  filterDataFim: string = '';
-
   // View settings
   showPositions = true;
-  showOperations = true;
   activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' = 'acoes';
-
-  // Sorting
-  sortField: string = '';
-  sortDirection: 'asc' | 'desc' = 'asc';
 
   // Store bound event handler for cleanup
   private noteDeletedHandler = (event: Event) => this.onNoteDeleted(event);
@@ -101,8 +90,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       if (!changes['userId'].firstChange) {
         this.operations = [];
         this.positions = [];
-        this.filteredOperations = [];
-        this.resetFilters();
       }
       
       // Load data for the new user
@@ -112,7 +99,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         // If userId is removed, clear all data
         this.operations = [];
         this.positions = [];
-        this.filteredOperations = [];
       }
     }
   }
@@ -131,7 +117,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     // Clear existing data immediately when loading for a new user
     this.operations = [];
     this.positions = [];
-    this.filteredOperations = [];
 
     this.portfolioService.getOperationsAsync(loadingUserId).subscribe({
       next: (operations) => {
@@ -142,7 +127,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         }
         this.debug.log(`✅ Loaded ${operations.length} operations`);
         this.operations = operations;
-        this.applyFilters();
       },
       error: (error) => {
         // Ignore error if userId has changed during loading
@@ -153,7 +137,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         this.debug.error('❌ Error loading operations:', error);
         // Ensure operations are cleared on error
         this.operations = [];
-        this.filteredOperations = [];
       }
     });
 
@@ -286,32 +269,122 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         }
   }
 
-  onOperationsAdded(operations: Operation[]): void {
+  onOperationsAdded(event: OperationsAddedEvent): void {
+    const { operations, expectedOperationsCount, financialSummary, fileName } = event;
+    
     if (!this.userId || operations.length === 0) {
+      return;
+    }
+    
+    // Validate operations count if expected count is available
+    if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
+      const errorMsg = `Validação falhou: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${operations.length} foram processadas. Operações não serão salvas.`;
+      this.debug.error(`❌ ${errorMsg}`);
+      // Show error message to user (you may want to add a toast/notification service here)
+      alert(errorMsg);
       return;
     }
 
     const firstOperation = operations[0];
     const noteDate = firstOperation.data;
-    const noteNumber = firstOperation.nota || '';
+    // Use the note number from operation, but if it's 'N/A' or empty, try to extract from file name
+    let noteNumber = firstOperation.nota || '';
+    // If empty or 'N/A', try to extract from file name
+    if (!noteNumber || noteNumber === 'N/A' || noteNumber.trim() === '') {
+      noteNumber = '';
+      // Try to extract note number from file name if available
+      if (fileName) {
+        const noteNumberMatch = fileName.match(/(\d{9,})/);
+        if (noteNumberMatch) {
+          noteNumber = noteNumberMatch[1];
+        }
+      }
+      // If still empty, use 'N/A' for display purposes (backend will accept it)
+      if (!noteNumber) {
+        noteNumber = 'N/A';
+      }
+    }
+
+    // Use the original file name if available, otherwise generate one
+    let generatedFileName = fileName || `nota_${noteDate.replace(/\//g, '_')}${noteNumber ? '_' + noteNumber : ''}.pdf`;
 
     const note: BrokerageNote = {
       id: '',
       user_id: this.userId,
-      file_name: `nota_${noteDate.replace(/\//g, '_')}_${noteNumber}.pdf`,
+      file_name: generatedFileName,
       original_file_path: `frontend_upload_${Date.now()}.pdf`,
       processed_at: new Date().toISOString(),
       note_date: noteDate,
       note_number: noteNumber,
       operations_count: operations.length,
       operations: operations,
-      status: 'success'
+      status: 'success',
+      // Financial summary fields
+      debentures: financialSummary?.debentures,
+      vendas_a_vista: financialSummary?.vendas_a_vista,
+      compras_a_vista: financialSummary?.compras_a_vista,
+      valor_das_operacoes: financialSummary?.valor_das_operacoes,
+      clearing: financialSummary?.clearing,
+      valor_liquido_operacoes: financialSummary?.valor_liquido_operacoes,
+      taxa_liquidacao: financialSummary?.taxa_liquidacao,
+      taxa_registro: financialSummary?.taxa_registro,
+      total_cblc: financialSummary?.total_cblc,
+      bolsa: financialSummary?.bolsa,
+      emolumentos: financialSummary?.emolumentos,
+      taxa_transferencia_ativos: financialSummary?.taxa_transferencia_ativos,
+      total_bovespa: financialSummary?.total_bovespa,
+      taxa_operacional: financialSummary?.taxa_operacional,
+      execucao: financialSummary?.execucao,
+      taxa_custodia: financialSummary?.taxa_custodia,
+      impostos: financialSummary?.impostos,
+      irrf_operacoes: financialSummary?.irrf_operacoes,
+      irrf_base: financialSummary?.irrf_base,
+      outros_custos: financialSummary?.outros_custos,
+      total_custos_despesas: financialSummary?.total_custos_despesas,
+      liquido: financialSummary?.liquido,
+      liquido_data: financialSummary?.liquido_data,
     };
 
     this.historyService.addNote(note).subscribe({
       next: (savedNote) => {
         this.debug.log('✅ Brokerage note saved successfully:', savedNote);
+        
+        // Validate operations count after saving (double-check)
+        if (expectedOperationsCount !== null && savedNote.operations_count !== expectedOperationsCount) {
+          const errorMsg = `Validação falhou após salvar: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${savedNote.operations_count} foram salvas. A nota será removida.`;
+          this.debug.error(`❌ ${errorMsg}`);
+          
+          // Rollback: Delete the note that was just saved
+          if (savedNote.id) {
+            this.historyService.deleteNote(savedNote.id).subscribe({
+              next: () => {
+                this.debug.log('✅ Note deleted due to validation failure');
+                alert(errorMsg);
+              },
+              error: (deleteError) => {
+                this.debug.error('❌ Error deleting note during rollback:', deleteError);
+                alert(`${errorMsg}\n\nErro ao remover a nota. Por favor, remova manualmente a nota ${savedNote.note_number} de ${savedNote.note_date}.`);
+              }
+            });
+          } else {
+            alert(errorMsg);
+          }
+          
+          // Don't reload data or history if validation failed
+          return;
+        }
+        
         this.loadData();
+        // Reload history list to show the new note
+        // Use setTimeout to ensure ViewChild is available (if tab is active)
+        setTimeout(() => {
+          if (this.historyListComponent) {
+            this.debug.log('🔄 Reloading history list after note addition');
+            this.historyListComponent.loadHistory();
+          } else {
+            this.debug.warn('⚠️ HistoryListComponent not available - list will refresh on next tab switch');
+          }
+        }, 100);
       },
       error: (error) => {
         this.debug.error('❌ Error saving brokerage note:', error);
@@ -333,114 +406,6 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     });
   }
 
-  selectSortField(field: string): void {
-    if (this.sortField === field) {
-      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-    } else {
-      this.sortField = field;
-      this.sortDirection = 'asc';
-    }
-    this.applyFilters();
-  }
-
-  getSortIcon(field: string): string {
-    if (this.sortField !== field) {
-      return '⇅';
-    }
-    return this.sortDirection === 'asc' ? '↑' : '↓';
-  }
-
-  applyFilters(): void {
-    let filtered = this.operations.filter(op => {
-      const matchesTitulo = !this.filterTitulo ||
-        op.titulo.toUpperCase().includes(this.filterTitulo.toUpperCase());
-
-      const matchesTipoOperacao = !this.filterTipoOperacao ||
-        op.tipoOperacao === this.filterTipoOperacao;
-
-      const matchesTipoMercado = !this.filterTipoMercado ||
-        op.tipoMercado.toUpperCase().includes(this.filterTipoMercado.toUpperCase());
-
-      const matchesDataInicio = !this.filterDataInicio ||
-        compareDate(op.data, this.filterDataInicio) >= 0;
-
-      const matchesDataFim = !this.filterDataFim ||
-        compareDate(op.data, this.filterDataFim) <= 0;
-
-      return matchesTitulo && matchesTipoOperacao && matchesTipoMercado &&
-        matchesDataInicio && matchesDataFim;
-    });
-
-    // Apply sorting
-    if (this.sortField) {
-      filtered.sort((a, b) => {
-        let aValue: any;
-        let bValue: any;
-
-        switch (this.sortField) {
-          case 'data':
-            aValue = parseDate(a.data).getTime();
-            bValue = parseDate(b.data).getTime();
-            break;
-          case 'tipo':
-            aValue = a.tipoOperacao;
-            bValue = b.tipoOperacao;
-            break;
-          case 'titulo':
-            aValue = a.titulo.toLowerCase();
-            bValue = b.titulo.toLowerCase();
-            break;
-          case 'mercado':
-            aValue = a.tipoMercado.toLowerCase();
-            bValue = b.tipoMercado.toLowerCase();
-            break;
-          case 'quantidade':
-            aValue = a.quantidade;
-            bValue = b.quantidade;
-            break;
-          case 'preco':
-            aValue = a.preco;
-            bValue = b.preco;
-            break;
-          case 'valorOperacao':
-            aValue = a.valorOperacao;
-            bValue = b.valorOperacao;
-            break;
-          case 'corretora':
-            aValue = a.corretora.toLowerCase();
-            bValue = b.corretora.toLowerCase();
-            break;
-          case 'nota':
-            aValue = a.nota || '';
-            bValue = b.nota || '';
-            break;
-          default:
-            return 0;
-        }
-
-        if (aValue < bValue) {
-          return this.sortDirection === 'asc' ? -1 : 1;
-        }
-        if (aValue > bValue) {
-          return this.sortDirection === 'asc' ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-
-    this.filteredOperations = filtered;
-  }
-
-  resetFilters(): void {
-    this.filterTitulo = '';
-    this.filterTipoOperacao = '';
-    this.filterTipoMercado = '';
-    this.filterDataInicio = '';
-    this.filterDataFim = '';
-    this.sortField = '';
-    this.sortDirection = 'asc';
-    this.applyFilters();
-  }
 
   formatCurrency(value: number): string {
     return formatCurrency(value);

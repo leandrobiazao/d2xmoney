@@ -6,9 +6,8 @@ import { PortfolioService } from '../portfolio/portfolio.service';
 import { FIIService } from './fiis.service';
 import { FIIPosition, FIIProfile } from './fiis.models';
 import { Position } from '../portfolio/position.model';
-import { Operation } from '../brokerage-note/operation.model';
 import { Stock } from '../configuration/stocks/stocks.models';
-import { parseDate, formatCurrency, compareDate } from '../shared/utils/common-utils';
+import { formatCurrency } from '../shared/utils/common-utils';
 
 @Component({
     selector: 'app-fiis-list',
@@ -21,27 +20,13 @@ export class FIIListComponent implements OnInit, OnChanges {
     @Input() userId: string | null = null;
 
     fiiPositions: Position[] = [];
-    operations: Operation[] = [];
-    filteredOperations: Operation[] = [];
     isLoading = false;
     
     // Cache for FII tickers
     private fiiTickers: Set<string> = new Set();
 
-    // Filters
-    filterTitulo: string = '';
-    filterTipoOperacao: string = '';
-    filterTipoMercado: string = '';
-    filterDataInicio: string = '';
-    filterDataFim: string = '';
-
     // View settings
     showPositions = true;
-    showOperations = true;
-
-    // Sorting
-    sortField: string = '';
-    sortDirection: 'asc' | 'desc' = 'asc';
 
     constructor(
         private portfolioService: PortfolioService,
@@ -58,14 +43,9 @@ export class FIIListComponent implements OnInit, OnChanges {
     ngOnChanges(changes: SimpleChanges) {
         if (changes['userId'] && !changes['userId'].firstChange) {
             if (this.userId) {
-                this.operations = [];
-                this.filteredOperations = [];
                 this.fiiPositions = [];
-                this.resetFilters();
                 this.loadData();
             } else {
-                this.operations = [];
-                this.filteredOperations = [];
                 this.fiiPositions = [];
             }
         }
@@ -76,28 +56,6 @@ export class FIIListComponent implements OnInit, OnChanges {
 
         this.isLoading = true;
         const loadingUserId = this.userId;
-
-        // Load operations first
-        this.portfolioService.getOperationsAsync(loadingUserId).subscribe({
-            next: (operations) => {
-                if (this.userId !== loadingUserId) return;
-                
-                // Load FII tickers to filter operations
-                this.loadFIITickers().then(() => {
-                    if (this.userId !== loadingUserId) return;
-                    
-                    // Filter operations for FIIs only
-                    this.operations = operations.filter(op => this.fiiTickers.has(op.titulo));
-                    this.applyFilters();
-                });
-            },
-            error: (err: any) => {
-                if (this.userId !== loadingUserId) return;
-                console.error('Error loading operations', err);
-                this.operations = [];
-                this.filteredOperations = [];
-            }
-        });
 
         // Load positions
         this.portfolioService.getPositionsAsync(loadingUserId).subscribe({
@@ -169,17 +127,25 @@ export class FIIListComponent implements OnInit, OnChanges {
                     if (this.userId !== loadingUserId) return;
                     
                     const positionsWithPrices = positions.map(position => {
-                        const currentPrice = priceMap.get(position.titulo);
+                        const fetchedPrice = priceMap.get(position.titulo);
+                        // Use average price if current price is not available (delisted or not found)
+                        const currentPrice = fetchedPrice !== undefined ? fetchedPrice : position.precoMedioPonderado;
                         let unrealizedPnL: number | undefined;
                         let valorAtual: number | undefined;
                         let totalLucro: number | undefined;
 
-                        if (currentPrice !== undefined && position.quantidadeTotal > 0) {
-                            unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
-                            valorAtual = position.quantidadeTotal * currentPrice;
-                            totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
-                        } else if (position.quantidadeTotal > 0) {
-                            totalLucro = position.lucroRealizado || 0;
+                        if (position.quantidadeTotal > 0) {
+                            if (fetchedPrice !== undefined) {
+                                // Real current price available - calculate P&L
+                                unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
+                                valorAtual = position.quantidadeTotal * currentPrice;
+                                totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
+                            } else {
+                                // No current price - use average price, P&L is zero
+                                valorAtual = position.quantidadeTotal * currentPrice;
+                                unrealizedPnL = 0; // No unrealized P&L when using average price
+                                totalLucro = position.lucroRealizado || 0;
+                            }
                         } else {
                             totalLucro = position.lucroRealizado || 0;
                         }
@@ -199,10 +165,26 @@ export class FIIListComponent implements OnInit, OnChanges {
                 error: (error) => {
                     if (this.userId !== loadingUserId) return;
                     console.error('Error fetching prices:', error);
-                    const positionsWithoutPrices = positions.map(position => ({
-                        ...position,
-                        totalLucro: position.lucroRealizado || 0
-                    }));
+                    // When price fetch fails, use average price as current price
+                    const positionsWithoutPrices = positions.map(position => {
+                        const currentPrice = position.precoMedioPonderado;
+                        let valorAtual: number | undefined;
+                        let totalLucro: number | undefined;
+
+                        if (position.quantidadeTotal > 0) {
+                            valorAtual = position.quantidadeTotal * currentPrice;
+                            totalLucro = position.lucroRealizado || 0; // No unrealized P&L when using average price
+                        } else {
+                            totalLucro = position.lucroRealizado || 0;
+                        }
+
+                        return {
+                            ...position,
+                            currentPrice,
+                            valorAtual,
+                            totalLucro
+                        };
+                    });
                     this.fiiPositions = this.sortPositions(positionsWithoutPrices);
                     this.isLoading = false;
                 }
@@ -226,115 +208,6 @@ export class FIIListComponent implements OnInit, OnChanges {
             }
             return (b.lucroRealizado || 0) - (a.lucroRealizado || 0);
         });
-    }
-
-    selectSortField(field: string): void {
-        if (this.sortField === field) {
-            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            this.sortField = field;
-            this.sortDirection = 'asc';
-        }
-        this.applyFilters();
-    }
-
-    getSortIcon(field: string): string {
-        if (this.sortField !== field) {
-            return '⇅';
-        }
-        return this.sortDirection === 'asc' ? '↑' : '↓';
-    }
-
-    applyFilters(): void {
-        let filtered = this.operations.filter(op => {
-            const matchesTitulo = !this.filterTitulo ||
-                op.titulo.toUpperCase().includes(this.filterTitulo.toUpperCase());
-
-            const matchesTipoOperacao = !this.filterTipoOperacao ||
-                op.tipoOperacao === this.filterTipoOperacao;
-
-            const matchesTipoMercado = !this.filterTipoMercado ||
-                op.tipoMercado.toUpperCase().includes(this.filterTipoMercado.toUpperCase());
-
-            const matchesDataInicio = !this.filterDataInicio ||
-                compareDate(op.data, this.filterDataInicio) >= 0;
-
-            const matchesDataFim = !this.filterDataFim ||
-                compareDate(op.data, this.filterDataFim) <= 0;
-
-            return matchesTitulo && matchesTipoOperacao && matchesTipoMercado &&
-                matchesDataInicio && matchesDataFim;
-        });
-
-        // Apply sorting
-        if (this.sortField) {
-            filtered.sort((a, b) => {
-                let aValue: any;
-                let bValue: any;
-
-                switch (this.sortField) {
-                    case 'data':
-                        aValue = parseDate(a.data).getTime();
-                        bValue = parseDate(b.data).getTime();
-                        break;
-                    case 'tipo':
-                        aValue = a.tipoOperacao;
-                        bValue = b.tipoOperacao;
-                        break;
-                    case 'titulo':
-                        aValue = a.titulo.toLowerCase();
-                        bValue = b.titulo.toLowerCase();
-                        break;
-                    case 'mercado':
-                        aValue = a.tipoMercado.toLowerCase();
-                        bValue = b.tipoMercado.toLowerCase();
-                        break;
-                    case 'quantidade':
-                        aValue = a.quantidade;
-                        bValue = b.quantidade;
-                        break;
-                    case 'preco':
-                        aValue = a.preco;
-                        bValue = b.preco;
-                        break;
-                    case 'valorOperacao':
-                        aValue = a.valorOperacao;
-                        bValue = b.valorOperacao;
-                        break;
-                    case 'corretora':
-                        aValue = a.corretora.toLowerCase();
-                        bValue = b.corretora.toLowerCase();
-                        break;
-                    case 'nota':
-                        aValue = a.nota.toLowerCase();
-                        bValue = b.nota.toLowerCase();
-                        break;
-                    default:
-                        return 0;
-                }
-
-                if (aValue < bValue) {
-                    return this.sortDirection === 'asc' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return this.sortDirection === 'asc' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-
-        this.filteredOperations = filtered;
-    }
-
-    resetFilters(): void {
-        this.filterTitulo = '';
-        this.filterTipoOperacao = '';
-        this.filterTipoMercado = '';
-        this.filterDataInicio = '';
-        this.filterDataFim = '';
-        this.sortField = '';
-        this.sortDirection = 'asc';
-        this.applyFilters();
     }
 
     formatCurrency(value: number): string {

@@ -174,3 +174,8 @@
   </main>
 </div>
 
+<!-- Operations Modal -->
+@if (showOperationsModal && selectedNoteId) {
+  <app-operations-modal [noteId]="selectedNoteId" (close)="onModalClose()"></app-operations-modal>
+}
+

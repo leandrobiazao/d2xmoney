@@ -229,6 +229,32 @@ class BrokerageNoteHistoryService:
                             'operations': note_data.get('operations', []),
                             'status': note_data.get('status', 'success'),
                             'error_message': note_data.get('error_message'),
+                            # Resumo dos Negócios
+                            'debentures': note_data.get('debentures'),
+                            'vendas_a_vista': note_data.get('vendas_a_vista'),
+                            'compras_a_vista': note_data.get('compras_a_vista'),
+                            'valor_das_operacoes': note_data.get('valor_das_operacoes'),
+                            # Resumo Financeiro
+                            'clearing': note_data.get('clearing'),
+                            'valor_liquido_operacoes': note_data.get('valor_liquido_operacoes'),
+                            'taxa_liquidacao': note_data.get('taxa_liquidacao'),
+                            'taxa_registro': note_data.get('taxa_registro'),
+                            'total_cblc': note_data.get('total_cblc'),
+                            'bolsa': note_data.get('bolsa'),
+                            'emolumentos': note_data.get('emolumentos'),
+                            'taxa_transferencia_ativos': note_data.get('taxa_transferencia_ativos'),
+                            'total_bovespa': note_data.get('total_bovespa'),
+                            # Custos Operacionais
+                            'taxa_operacional': note_data.get('taxa_operacional'),
+                            'execucao': note_data.get('execucao'),
+                            'taxa_custodia': note_data.get('taxa_custodia'),
+                            'impostos': note_data.get('impostos'),
+                            'irrf_operacoes': note_data.get('irrf_operacoes'),
+                            'irrf_base': note_data.get('irrf_base'),
+                            'outros_custos': note_data.get('outros_custos'),
+                            'total_custos_despesas': note_data.get('total_custos_despesas'),
+                            'liquido': note_data.get('liquido'),
+                            'liquido_data': note_data.get('liquido_data'),
                         }
                     )
                     

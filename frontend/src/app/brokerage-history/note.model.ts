@@ -1,6 +1,7 @@
 import { Operation } from '../brokerage-note/operation.model';
+import { FinancialSummary } from '../brokerage-note/financial-summary.model';
 
-export interface BrokerageNote {
+export interface BrokerageNote extends FinancialSummary {
   id: string;
   user_id: string;
   file_name: string;

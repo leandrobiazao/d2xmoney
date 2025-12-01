@@ -13,7 +13,7 @@ class BrokerageNoteSerializer(serializers.Serializer):
     original_file_path = serializers.CharField(allow_blank=True, required=False)
     processed_at = serializers.DateTimeField(read_only=True)
     note_date = serializers.CharField(required=True)
-    note_number = serializers.CharField(required=True)
+    note_number = serializers.CharField(required=True, allow_blank=True)
     operations_count = serializers.IntegerField(read_only=True)
     operations = serializers.ListField(required=True)
     status = serializers.ChoiceField(
@@ -22,11 +22,44 @@ class BrokerageNoteSerializer(serializers.Serializer):
     )
     error_message = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     
+    # Resumo dos Negócios (Business Summary)
+    debentures = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    vendas_a_vista = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    compras_a_vista = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    valor_das_operacoes = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    
+    # Resumo Financeiro (Financial Summary)
+    clearing = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    valor_liquido_operacoes = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    taxa_liquidacao = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    taxa_registro = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    total_cblc = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    bolsa = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    emolumentos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    taxa_transferencia_ativos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    total_bovespa = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    
+    # Custos Operacionais (Operational Costs)
+    taxa_operacional = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    execucao = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    taxa_custodia = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    impostos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    irrf_operacoes = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    irrf_base = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    outros_custos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    total_custos_despesas = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    liquido = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
+    liquido_data = serializers.CharField(max_length=20, allow_blank=True, allow_null=True, required=False)
+    
     def validate_note_number(self, value):
-        """Validate that note_number is provided and not empty."""
-        if not value or not value.strip():
-            raise serializers.ValidationError("Número da nota é obrigatório.")
-        return value.strip()
+        """Validate note_number - allow empty string but normalize it."""
+        if value is None:
+            return ''
+        value = value.strip()
+        # If empty, use 'N/A' as default for display purposes
+        if not value:
+            return 'N/A'
+        return value
     
     def validate_note_date(self, value):
         """Validate note_date format (DD/MM/YYYY)."""
