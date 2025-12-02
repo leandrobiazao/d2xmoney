@@ -18,6 +18,7 @@ import { FIIListComponent } from '../fiis/fiis-list.component';
 import { StocksService } from '../configuration/stocks/stocks.service';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Stock } from '../configuration/stocks/stocks.models';
+import { InvestmentType } from '../configuration/configuration.service';
 
 @Component({
   selector: 'app-portfolio',
@@ -36,6 +37,13 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   
   // Cache for FII tickers to avoid repeated API calls
   private fiiTickers: Set<string> = new Set();
+  
+  // Grouped positions by investment type
+  groupedPositions: Map<string, Position[]> = new Map();
+  investmentTypeNames: Map<string, string> = new Map();
+  
+  // Ticker to investment type mapping
+  private tickerToInvestmentType: Map<string, InvestmentType> = new Map();
 
   // View settings
   showPositions = true;
@@ -208,65 +216,169 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     // Fetch current prices for all positions
     const tickers = positions.map(p => p.titulo);
     if (tickers.length > 0) {
-          this.portfolioService.fetchCurrentPrices(tickers).subscribe({
-            next: (priceMap) => {
-              // Ignore response if userId has changed during loading
-              if (this.userId !== loadingUserId) {
-                this.debug.warn(`⚠️ Ignoring price fetch response - userId changed from ${loadingUserId} to ${this.userId}`);
-                return;
-              }
-              // Update positions with current prices and calculate unrealized P&L, valor atual, and total lucro
-              const positionsWithPrices = positions.map(position => {
-                const currentPrice = priceMap.get(position.titulo);
-                let unrealizedPnL: number | undefined;
-                let valorAtual: number | undefined;
-                let totalLucro: number | undefined;
+      // First, load stocks to get investment type mappings
+      this.loadStocksForInvestmentTypes(tickers, positions, loadingUserId);
+    } else {
+      // No positions - ensure array is empty
+      this.positions = [];
+      this.groupedPositions.clear();
+    }
+  }
 
-                if (currentPrice !== undefined && position.quantidadeTotal > 0) {
-                  // Calculate unrealized P&L: (Current Price - Average Cost) × Quantity
-                  unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
-                  // Calculate Valor Atual: Quantidade × Preço Atual
-                  valorAtual = position.quantidadeTotal * currentPrice;
-                  // Calculate Total Lucro: Lucro Realizado + Lucro Não Realizado
-                  totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
-                } else if (position.quantidadeTotal > 0) {
-                  // If no price, total lucro is just realized profit
-                  totalLucro = position.lucroRealizado || 0;
-                } else {
-                  // No quantity, total lucro is just realized profit
-                  totalLucro = position.lucroRealizado || 0;
-                }
-
-                return {
-                  ...position,
-                  currentPrice,
-                  unrealizedPnL,
-                  valorAtual,
-                  totalLucro
-                };
-              });
-
-              this.positions = this.sortPositions(positionsWithPrices);
-            },
-            error: (error) => {
-              // Ignore error if userId has changed during loading
-              if (this.userId !== loadingUserId) {
-                this.debug.warn(`⚠️ Ignoring price fetch error - userId changed from ${loadingUserId} to ${this.userId}`);
-                return;
-              }
-              this.debug.error('❌ Error fetching prices:', error);
-              // Continue with positions without prices, but still calculate totalLucro
-              const positionsWithoutPrices = positions.map(position => ({
-                ...position,
-                totalLucro: position.lucroRealizado || 0
-              }));
-              this.positions = this.sortPositions(positionsWithoutPrices);
+  private loadStocksForInvestmentTypes(tickers: string[], positions: Position[], loadingUserId: string): void {
+    // Fetch all stocks including FIIs to get investment type information
+    let params = new HttpParams();
+    params = params.set('exclude_fiis', 'false');
+    params = params.set('active_only', 'false');
+    
+    this.http.get<Stock[]>(`/api/stocks/stocks/`, { params }).subscribe({
+      next: (stocks) => {
+        // Build ticker to investment type mapping
+        this.tickerToInvestmentType.clear();
+        stocks.forEach(stock => {
+          if (stock.investment_type) {
+            this.tickerToInvestmentType.set(stock.ticker, stock.investment_type);
+          }
+        });
+        
+        this.debug.log(`[Investment Types] Loaded ${this.tickerToInvestmentType.size} investment type mappings`);
+        
+        // Now fetch prices and process positions
+        this.portfolioService.fetchCurrentPrices(tickers).subscribe({
+          next: (priceMap) => {
+            // Ignore response if userId has changed during loading
+            if (this.userId !== loadingUserId) {
+              this.debug.warn(`⚠️ Ignoring price fetch response - userId changed from ${loadingUserId} to ${this.userId}`);
+              return;
             }
-          });
-        } else {
-          // No positions - ensure array is empty
-          this.positions = [];
-        }
+            // Update positions with current prices and calculate unrealized P&L, valor atual, and total lucro
+            const positionsWithPrices = positions.map(position => {
+              const currentPrice = priceMap.get(position.titulo);
+              let unrealizedPnL: number | undefined;
+              let valorAtual: number | undefined;
+              let totalLucro: number | undefined;
+
+              if (currentPrice !== undefined && position.quantidadeTotal > 0) {
+                // Calculate unrealized P&L: (Current Price - Average Cost) × Quantity
+                unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
+                // Calculate Valor Atual: Quantidade × Preço Atual
+                valorAtual = position.quantidadeTotal * currentPrice;
+                // Calculate Total Lucro: Lucro Realizado + Lucro Não Realizado
+                totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
+              } else if (position.quantidadeTotal > 0) {
+                // If no price, total lucro is just realized profit
+                totalLucro = position.lucroRealizado || 0;
+              } else {
+                // No quantity, total lucro is just realized profit
+                totalLucro = position.lucroRealizado || 0;
+              }
+
+              return {
+                ...position,
+                currentPrice,
+                unrealizedPnL,
+                valorAtual,
+                totalLucro
+              };
+            });
+
+            this.positions = this.sortPositions(positionsWithPrices);
+            this.groupPositionsByInvestmentType(this.positions);
+          },
+          error: (error) => {
+            // Ignore error if userId has changed during loading
+            if (this.userId !== loadingUserId) {
+              this.debug.warn(`⚠️ Ignoring price fetch error - userId changed from ${loadingUserId} to ${this.userId}`);
+              return;
+            }
+            this.debug.error('❌ Error fetching prices:', error);
+            // Continue with positions without prices, but still calculate totalLucro
+            const positionsWithoutPrices = positions.map(position => ({
+              ...position,
+              totalLucro: position.lucroRealizado || 0
+            }));
+            this.positions = this.sortPositions(positionsWithoutPrices);
+            this.groupPositionsByInvestmentType(this.positions);
+          }
+        });
+      },
+      error: (error) => {
+        this.debug.error('❌ Error loading stocks for investment types:', error);
+        // If we can't load stocks, still process positions without grouping
+        this.portfolioService.fetchCurrentPrices(tickers).subscribe({
+          next: (priceMap) => {
+            if (this.userId !== loadingUserId) {
+              return;
+            }
+            const positionsWithPrices = positions.map(position => {
+              const currentPrice = priceMap.get(position.titulo);
+              let unrealizedPnL: number | undefined;
+              let valorAtual: number | undefined;
+              let totalLucro: number | undefined;
+
+              if (currentPrice !== undefined && position.quantidadeTotal > 0) {
+                unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
+                valorAtual = position.quantidadeTotal * currentPrice;
+                totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
+              } else if (position.quantidadeTotal > 0) {
+                totalLucro = position.lucroRealizado || 0;
+              } else {
+                totalLucro = position.lucroRealizado || 0;
+              }
+
+              return {
+                ...position,
+                currentPrice,
+                unrealizedPnL,
+                valorAtual,
+                totalLucro
+              };
+            });
+
+            this.positions = this.sortPositions(positionsWithPrices);
+            this.groupPositionsByInvestmentType(this.positions);
+          },
+          error: (priceError) => {
+            if (this.userId !== loadingUserId) {
+              return;
+            }
+            const positionsWithoutPrices = positions.map(position => ({
+              ...position,
+              totalLucro: position.lucroRealizado || 0
+            }));
+            this.positions = this.sortPositions(positionsWithoutPrices);
+            this.groupPositionsByInvestmentType(this.positions);
+          }
+        });
+      }
+    });
+  }
+
+  private groupPositionsByInvestmentType(positions: Position[]): void {
+    this.groupedPositions.clear();
+    this.investmentTypeNames.clear();
+    
+    positions.forEach(position => {
+      const investmentType = this.tickerToInvestmentType.get(position.titulo);
+      
+      // Use investment type name or fallback to "Não Classificado"
+      const typeKey = investmentType ? investmentType.id.toString() : 'unclassified';
+      const typeName = investmentType ? investmentType.name : 'Não Classificado';
+      
+      if (!this.groupedPositions.has(typeKey)) {
+        this.groupedPositions.set(typeKey, []);
+        this.investmentTypeNames.set(typeKey, typeName);
+      }
+      
+      this.groupedPositions.get(typeKey)!.push(position);
+    });
+    
+    // Sort positions within each group
+    this.groupedPositions.forEach((positions, key) => {
+      this.groupedPositions.set(key, this.sortPositions(positions));
+    });
+    
+    this.debug.log(`[Investment Types] Grouped ${positions.length} positions into ${this.groupedPositions.size} investment types`);
   }
 
   onOperationsAdded(event: OperationsAddedEvent): void {
@@ -445,5 +557,38 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       // If still equal, sort by Lucro Realizado (descending)
       return (b.lucroRealizado || 0) - (a.lucroRealizado || 0);
     });
+  }
+
+  getGroupedPositionsArray(): Array<{ key: string; name: string; positions: Position[] }> {
+    const result: Array<{ key: string; name: string; positions: Position[] }> = [];
+    
+    this.groupedPositions.forEach((positions, key) => {
+      const name = this.investmentTypeNames.get(key) || 'Não Classificado';
+      result.push({ key, name, positions });
+    });
+    
+    // Sort by investment type name (except "Não Classificado" which goes last)
+    result.sort((a, b) => {
+      if (a.name === 'Não Classificado') return 1;
+      if (b.name === 'Não Classificado') return -1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    return result;
+  }
+
+  getTotalInvestidoForGroup(positions: Position[]): number {
+    return positions.reduce((sum, pos) => sum + pos.valorTotalInvestido, 0);
+  }
+
+  getTotalValorAtualForGroup(positions: Position[]): number {
+    return positions.reduce((sum, pos) => sum + (pos.valorAtual || 0), 0);
+  }
+
+  getPercentageForGroup(positions: Position[]): number {
+    const totalValorAtual = this.getTotalValorAtual();
+    const groupValorAtual = this.getTotalValorAtualForGroup(positions);
+    if (totalValorAtual === 0) return 0;
+    return (groupValorAtual / totalValorAtual) * 100;
   }
 }

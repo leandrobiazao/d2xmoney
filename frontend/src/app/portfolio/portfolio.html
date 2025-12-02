@@ -50,34 +50,53 @@
       </div>
     </div>
 
-    <table class="positions-table">
-      <thead>
-        <tr>
-          <th>Título</th>
-          <th>Quantidade</th>
-          <th>Preço Médio</th>
-          <th>Valor Total Investido</th>
-          <th>Preço Atual</th>
-          <th>Valor Atual</th>
-          <th>Lucro</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (position of positions; track position.titulo) {
-        <tr>
-          <td>{{ position.titulo }}</td>
-          <td>{{ position.quantidadeTotal }}</td>
-          <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
-          <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
-          <td>{{ position.currentPrice !== undefined ? formatCurrency(position.currentPrice) : 'N/A' }}</td>
-          <td>{{ position.valorAtual !== undefined ? formatCurrency(position.valorAtual) : 'N/A' }}</td>
-          <td [class.positive]="(position.totalLucro || 0) > 0" [class.negative]="(position.totalLucro || 0) < 0">
-            {{ formatCurrency(position.totalLucro || 0) }}
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
+    @for (group of getGroupedPositionsArray(); track group.key) {
+      <div class="investment-type-group">
+        <div class="investment-type-header">
+          <h4>{{ group.name }}</h4>
+          <div class="summary-cards">
+            <div class="summary-card">
+              <span class="label">Investido:</span>
+              <span class="value">{{ formatCurrency(getTotalInvestidoForGroup(group.positions)) }}</span>
+              <span class="label">Valor Atual:</span>
+              <span class="value">{{ formatCurrency(getTotalValorAtualForGroup(group.positions)) }}</span>
+              <span class="label">Participação:</span>
+              <span class="value">{{ getPercentageForGroup(group.positions).toFixed(2) }}%</span>
+            </div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="positions-table">
+            <thead>
+              <tr>
+                <th>Título</th>
+                <th>Quantidade</th>
+                <th>Preço Médio</th>
+                <th>Valor Total Investido</th>
+                <th>Preço Atual</th>
+                <th>Valor Atual</th>
+                <th>Lucro</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (position of group.positions; track position.titulo) {
+              <tr>
+                <td>{{ position.titulo }}</td>
+                <td>{{ position.quantidadeTotal }}</td>
+                <td>{{ formatCurrency(position.precoMedioPonderado) }}</td>
+                <td>{{ formatCurrency(position.valorTotalInvestido) }}</td>
+                <td>{{ position.currentPrice !== undefined ? formatCurrency(position.currentPrice) : 'N/A' }}</td>
+                <td>{{ position.valorAtual !== undefined ? formatCurrency(position.valorAtual) : 'N/A' }}</td>
+                <td [class.positive]="(position.totalLucro || 0) > 0" [class.negative]="(position.totalLucro || 0) < 0">
+                  {{ formatCurrency(position.totalLucro || 0) }}
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
     }
   </section>
   }

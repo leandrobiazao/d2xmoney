@@ -110,6 +110,21 @@ export class HistoryListComponent implements OnInit, OnChanges {
     } else {
       this.filteredNotes = this.notes;
     }
+    
+    // Sort by date: most recent at the top (descending order)
+    this.filteredNotes.sort((a, b) => {
+      // Convert DD/MM/YYYY to Date for comparison
+      const parseDate = (dateStr: string): Date => {
+        const [day, month, year] = dateStr.split('/').map(Number);
+        return new Date(year, month - 1, day);
+      };
+      
+      const dateA = parseDate(a.note_date);
+      const dateB = parseDate(b.note_date);
+      
+      // Descending order: most recent first
+      return dateB.getTime() - dateA.getTime();
+    });
   }
 
   getUserById(userId: string): User | undefined {
