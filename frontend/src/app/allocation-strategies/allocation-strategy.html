@@ -551,6 +551,18 @@
                     </div>
                   }
                   
+                  <!-- Sales Limit Info Cards - Location 1 -->
+                  <div class="summary-grid">
+                    <div class="summary-item">
+                      <div class="summary-label">Vendas Já Realizadas no Mês</div>
+                      <div class="summary-value">R$ {{ currentRecommendation.previous_sales_this_month | number:'1.2-2' }}</div>
+                    </div>
+                    <div class="summary-item">
+                      <div class="summary-label">Limite Disponível para Vendas</div>
+                      <div class="summary-value">R$ {{ getAvailableSalesLimitBeforeRecommendation() | number:'1.2-2' }}</div>
+                    </div>
+                  </div>
+                  
                   <!-- Stocks to Sell -->
                   @if (getAcoesReaisSellActions().length > 0) {
                     <div class="action-group">
@@ -564,6 +576,7 @@
                             <th>Valor Atual</th>
                             <th>Quantidade</th>
                             <th>Motivo</th>
+                            <th>Ação</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -593,12 +606,31 @@
                                   }
                                 </span>
                               </td>
+                              <td>
+                                @if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Vender {{ action.quantity_to_sell }}</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
                             </tr>
                           }
                         </tbody>
                       </table>
                     </div>
                   }
+
+                  <!-- Sales Limit Info Cards - Location 2 -->
+                  <div class="summary-grid">
+                    <div class="summary-item">
+                      <div class="summary-label">Total Vendas - Liquidadas</div>
+                      <div class="summary-value">R$ {{ currentRecommendation.total_complete_sales_value | number:'1.2-2' }}</div>
+                    </div>
+                    <div class="summary-item">
+                      <div class="summary-label">Limite para Vendas Parciais</div>
+                      <div class="summary-value">R$ {{ (19000 - currentRecommendation.previous_sales_this_month - currentRecommendation.total_complete_sales_value) | number:'1.2-2' }}</div>
+                    </div>
+                  </div>
 
                   <!-- Stocks to Buy -->
                   @if (getAcoesReaisBuyActions().length > 0) {
@@ -612,6 +644,7 @@
                             <th>Nome</th>
                             <th>Valor Alvo</th>
                             <th>Quantidade</th>
+                            <th>Ação</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -622,6 +655,13 @@
                               <td>{{ action.stock?.name }}</td>
                               <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
                               <td>{{ action.quantity_to_buy }}</td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
                             </tr>
                           }
                         </tbody>
@@ -661,10 +701,6 @@
                                   <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
                                 } @else if (action.quantity_to_sell) {
                                   <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
-                                } @else if (action.difference > 0) {
-                                  <span class="badge badge-buy">Aumentar</span>
-                                } @else if (action.difference < 0) {
-                                  <span class="badge badge-sell">Reduzir</span>
                                 } @else {
                                   <span class="badge badge-maintain">Manter</span>
                                 }
@@ -675,6 +711,22 @@
                       </table>
                     </div>
                   }
+
+                  <!-- Sales Limit Info Cards - Location 3 -->
+                  <div class="summary-grid">
+                    <div class="summary-item">
+                      <div class="summary-label">Vendas Parciais</div>
+                      <div class="summary-value">R$ {{ currentRecommendation.total_partial_sales_value | number:'1.2-2' }}</div>
+                    </div>
+                    <div class="summary-item">
+                      <div class="summary-label">Limite de Vendas Restante</div>
+                      <div class="summary-value">R$ {{ currentRecommendation.sales_limit_remaining | number:'1.2-2' }}</div>
+                    </div>
+                    <div class="summary-item">
+                      <div class="summary-label">Total Ativos em Reais Após Rebalanceamento</div>
+                      <div class="summary-value">R$ {{ getTotalAcoesReaisValueAfterRebalancing() | number:'1.2-2' }}</div>
+                    </div>
+                  </div>
                 </section>
               }
 

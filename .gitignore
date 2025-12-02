@@ -185,3 +185,5 @@ backend/media/brokerage_notes/*/*.pdf
 backend/media/portafolio_wallet/*/*.xlsx
 .cursorrules
 .vscode/settings.json
+backend/media/order_requests/*.xlsx
+backend/media/order_requests/*/*.xlsx

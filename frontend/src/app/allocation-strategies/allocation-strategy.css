@@ -796,6 +796,16 @@
   border-bottom: 1px solid #dee2e6;
 }
 
+/* Prevent line breaks in currency values (Valor Atual, Valor Alvo columns) */
+.actions-table td:nth-child(4) {
+  white-space: nowrap;
+}
+
+/* Prevent line breaks in action badges (Ação column - last column) */
+.actions-table td:last-child {
+  white-space: nowrap;
+}
+
 .actions-table tbody tr:hover {
   background: #f8f9fa;
 }

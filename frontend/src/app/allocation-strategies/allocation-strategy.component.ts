@@ -14,6 +14,7 @@ import { UserItemComponent } from '../users/user-item/user-item';
 import { ConfigurationService, InvestmentType, InvestmentSubType } from '../configuration/configuration.service';
 import { RebalancingService, RebalancingRecommendation, RebalancingAction } from '../rebalancing/rebalancing.service';
 import { HttpClient } from '@angular/common/http';
+import * as XLSX from 'xlsx';
 
 interface DraftSubTypeAllocation extends Omit<SubTypeAllocation, 'id'> {
   id?: number;
@@ -520,7 +521,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     });
   }
 
-  applyRecommendation(recommendationId: number): void {
+  async applyRecommendation(recommendationId: number): Promise<void> {
+    // Generate Excel file with buy and sell orders before applying
+    await this.generateOrderRequestExcel();
+    
     this.rebalancingService.applyRecommendation(recommendationId).subscribe({
       next: () => {
         if (this.selectedUser) {
@@ -532,6 +536,171 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
         this.errorMessage = 'Erro ao aplicar recomendação';
       }
     });
+  }
+
+  async generateOrderRequestExcel(): Promise<void> {
+    if (!this.currentRecommendation || !this.selectedUser) {
+      console.error('Cannot generate Excel: missing recommendation or user');
+      return;
+    }
+
+    try {
+      // Get current date for filename
+      const now = new Date();
+      const monthNames = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+                         'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+      const month = monthNames[now.getMonth()];
+      const year = now.getFullYear();
+      
+      // Get user identifier and account number
+      const userIdentifier = this.selectedUser.name || 'USER';
+      const accountNumber = this.selectedUser.account_number || '';
+      
+      // Prepare single array for all orders (matching Sophia's format)
+      const allOrders: any[] = [];
+
+      // Process sell actions (complete sales) - Ações em Reais
+      const sellActions = this.getAcoesReaisSellActions();
+      sellActions.forEach((action) => {
+        if (action.stock && action.quantity_to_sell) {
+          allOrders.push({
+            'TICKER': action.stock.ticker,
+            'C/V': 'V',
+            'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+            'VOLUME R$': '', // Empty as per example
+            'CONTA': accountNumber,
+            'PREÇO': 'MERCADO'
+          });
+        }
+      });
+
+      // Process buy actions - Ações em Reais
+      const buyActions = this.getAcoesReaisBuyActions();
+      buyActions.forEach((action) => {
+        if (action.stock && action.quantity_to_buy) {
+          allOrders.push({
+            'TICKER': action.stock.ticker,
+            'C/V': 'C',
+            'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+            'VOLUME R$': '', // Empty as per example
+            'CONTA': accountNumber,
+            'PREÇO': 'MERCADO'
+          });
+        }
+      });
+
+      // Process rebalance actions (partial sales and buys) - Ações em Reais
+      const rebalanceActions = this.getAcoesReaisRebalanceActions();
+      rebalanceActions.forEach((action) => {
+        if (action.stock) {
+          if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'V',
+              'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+              'VOLUME R$': '', // Empty as per example
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+          if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'C',
+              'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+              'VOLUME R$': '', // Empty as per example
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+        }
+      });
+
+      // Process dollar assets actions (including BERK34)
+      const dolaresActions = this.getAcoesDolaresActions();
+      dolaresActions.forEach((action) => {
+        if (action.stock) {
+          // Process sell actions
+          if (action.action_type === 'sell' && action.quantity_to_sell) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'V',
+              'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+              'VOLUME R$': '', // Empty as per example
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+          // Process buy actions
+          if (action.action_type === 'buy' && action.quantity_to_buy) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'C',
+              'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+              'VOLUME R$': '', // Empty as per example
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+          // Process rebalance actions
+          if (action.action_type === 'rebalance') {
+            if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+              allOrders.push({
+                'TICKER': action.stock.ticker,
+                'C/V': 'V',
+                'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+                'VOLUME R$': '', // Empty as per example
+                'CONTA': accountNumber,
+                'PREÇO': 'MERCADO'
+              });
+            }
+            if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+              allOrders.push({
+                'TICKER': action.stock.ticker,
+                'C/V': 'C',
+                'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+                'VOLUME R$': '', // Empty as per example
+                'CONTA': accountNumber,
+                'PREÇO': 'MERCADO'
+              });
+            }
+          }
+        }
+      });
+
+      // Create workbook with single sheet
+      const workbook = XLSX.utils.book_new();
+
+      // Add single sheet with all orders
+      if (allOrders.length > 0) {
+        const ws = XLSX.utils.json_to_sheet(allOrders);
+        XLSX.utils.book_append_sheet(workbook, ws, 'COMPRA - VENDA (SIMPLES)');
+      }
+
+      // Generate filename: USERNAME ACCOUNTNUMBER - MONTH - YEAR.xlsx
+      const filename = accountNumber 
+        ? `${userIdentifier} ${accountNumber} - ${month} - ${year}.xlsx`
+        : `${userIdentifier} - ${month} - ${year}.xlsx`;
+
+      // Convert workbook to binary string
+      const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+      // Use download approach (triggers browser's native save dialog)
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log(`Excel file downloaded: ${filename}`);
+    } catch (error) {
+      console.error('Error generating Excel file:', error);
+      this.errorMessage = 'Erro ao gerar arquivo Excel';
+    }
   }
 
   dismissRecommendation(recommendationId: number): void {
@@ -603,6 +772,67 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     const actions = this.getAcoesReaisActions().filter(a => a.action_type === 'rebalance');
     // Sort by ranking (display_order) - lower is better
     return actions.sort((a, b) => (a.display_order || 999) - (b.display_order || 999));
+  }
+
+  getTotalAcoesReaisValueAfterRebalancing(): number {
+    try {
+      if (!this.currentRecommendation) {
+        return 0;
+      }
+      
+      if (!this.currentRecommendation.actions || this.currentRecommendation.actions.length === 0) {
+        return 0;
+      }
+      
+      // Calculate total value after rebalancing:
+      // 1. Sum target_value from rebalance actions (stocks that remain after rebalancing)
+      // 2. Add target_value from buy actions (new stocks to buy)
+      // Note: Sell actions are excluded from the portfolio, so we don't count them
+      
+      const rebalanceActions = this.getAcoesReaisRebalanceActions();
+      const buyActions = this.getAcoesReaisBuyActions();
+      
+      const rebalanceTotal = rebalanceActions.reduce((sum, action) => {
+        const targetValue = action.target_value ? Number(action.target_value) : 0;
+        if (isNaN(targetValue)) {
+          console.warn('Invalid target_value for action:', action);
+          return sum;
+        }
+        return sum + targetValue;
+      }, 0);
+      
+      const buyTotal = buyActions.reduce((sum, action) => {
+        const targetValue = action.target_value ? Number(action.target_value) : 0;
+        if (isNaN(targetValue)) {
+          console.warn('Invalid target_value for action:', action);
+          return sum;
+        }
+        return sum + targetValue;
+      }, 0);
+      
+      const total = rebalanceTotal + buyTotal;
+      
+      // Ensure we return a valid number
+      return isNaN(total) ? 0 : total;
+    } catch (error) {
+      console.error('Error calculating total value after rebalancing:', error);
+      return 0;
+    }
+  }
+
+  getAvailableSalesLimitBeforeRecommendation(): number {
+    // Calculate the available sales limit BEFORE applying the current recommendation
+    // This is: Monthly limit (19,000) - Previous sales this month
+    if (!this.currentRecommendation) {
+      return 19000;
+    }
+    
+    const monthlyLimit = 19000;
+    const previousSales = this.currentRecommendation.previous_sales_this_month || 0;
+    const availableLimit = monthlyLimit - previousSales;
+    
+    // Ensure we return a valid number (not negative)
+    return Math.max(0, availableLimit);
   }
 
   getAcoesDolaresActions(): RebalancingAction[] {

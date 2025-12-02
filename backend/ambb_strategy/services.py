@@ -246,11 +246,15 @@ class AMBBStrategyService:
         sales_limit_reached = False
         remaining_limit_after_complete_sales = remaining_limit_for_complete_sales
         
+        # NEW LOGIC: Track if we stopped selling due to limit
+        # This ensures strict priority even when moving from complete sales to partial sales
+        stopped_due_to_limit = False
+        
         for sell_item in stocks_to_sell_list:
             # Check if we can sell this stock completely
             # IMPORTANT: Check if the stock's value fits in the REMAINING limit, not total
             # We compare against remaining_limit_after_complete_sales which is updated as we go
-            if sell_item['current_value'] <= remaining_limit_after_complete_sales:
+            if not stopped_due_to_limit and sell_item['current_value'] <= remaining_limit_after_complete_sales:
                 # Can sell this stock completely - it fits in the remaining limit
                 final_stocks_to_sell.append(sell_item)
                 total_sales_value += sell_item['current_value']
@@ -258,9 +262,14 @@ class AMBBStrategyService:
             else:
                 # Can't sell this one completely - will try to sell partially later
                 sales_limit_reached = True
-                # Continue processing - don't break, as we want to try selling others completely
-                # The remaining limit will be used for partial sales later
-                # IMPORTANT: Don't add to final_stocks_to_sell, but it will be processed for partial sale later
+                stopped_due_to_limit = True
+                # Stop processing complete sales to respect priority
+                # If we skip this high-priority stock to sell a lower-priority one completely,
+                # we are violating the ranking priority.
+                # The remaining limit will be used for partial sales later in strict priority order
+                # break is not needed here if we use the stopped_due_to_limit flag, 
+                # but we can break to save iterations since we won't add any more to complete sales
+                break
         
         # Determine final stock selection (max 20)
         # Stocks to keep (these are the ones we want to keep)
@@ -430,64 +439,64 @@ class AMBBStrategyService:
                     # Calculate quantity adjustment
                     quantity_diff = 0
                     
-                    if difference < Decimal('0'):  # Need to sell (but we already couldn't sell completely)
-                        # These are bad stocks (ranking > 30) that couldn't be sold completely
-                        # Try to sell PARTIALLY using remaining sales limit
-                        # Use remaining_limit_after_complete_sales (which tracks the limit after complete sales)
-                        if remaining_limit_after_complete_sales > 0:
-                            # Calculate how much we can sell with remaining limit
-                            # IMPORTANT: Only sell PARTIALLY if the remaining limit is LESS than current_value
-                            # If remaining limit >= current_value, it should have been sold completely already
-                            if remaining_limit_after_complete_sales < current_value:
-                                # True partial sale: sell only what fits in the remaining limit
-                                max_sale_value = remaining_limit_after_complete_sales
-                                quantity_to_sell = int(max_sale_value / current_price)
-                                if quantity_to_sell > 0:
-                                    partial_sale_value = quantity_to_sell * current_price
-                                    quantity_diff = -quantity_to_sell
-                                    remaining_limit_after_complete_sales -= partial_sale_value
-                                    # Note: total_partial_sales_value is calculated at the end from stocks_to_balance
-                                else:
-                                    # Can't sell even 1 share with remaining limit - mark for future sale
-                                    # Set quantity_diff to a small negative value to indicate need to sell
-                                    quantity_diff = 0  # No partial sale possible now
-                            else:
-                                # This shouldn't happen - if limit >= current_value, should have been sold completely
-                                # But if it did, don't sell partially (keep quantity_diff = 0)
-                                quantity_diff = 0
-                        else:
-                            # No remaining limit - can't sell now, but should still show as needing to sell
-                            # For stocks with ranking > 30 and negative difference, we want to sell but can't due to limit
-                            # Calculate how much we WOULD sell if we had limit (for display purposes)
-                            # This helps the user understand these stocks need to be sold
-                            if current_price > 0:
-                                # Calculate quantity based on the difference (how much over target)
-                                quantity_to_sell_if_possible = int(abs(difference) / current_price)
-                                # Set a small negative value to indicate need to sell, even if we can't now
-                                # This will show as "Vender X" in the UI, indicating the stock should be sold
-                                quantity_diff = -quantity_to_sell_if_possible if quantity_to_sell_if_possible > 0 else 0
-                            else:
-                                quantity_diff = 0
-                        # Difference remains as target - current (negative, showing need to sell)
-                        # The negative difference and quantity_diff will show the need to sell
-                    elif difference > Decimal('0.01'):  # Need to buy
-                        # NEVER recommend buying more of stocks with ranking > 30
-                        # If ranking > 30, we should not buy more, only sell if needed
-                        if ranking <= AMBBStrategyService.RANK_THRESHOLD:
-                            quantity_diff = int(difference / current_price)
-                        else:
-                            # Ranking > 30: don't recommend buying more
-                            quantity_diff = 0
-                            # Keep the original difference (positive) to show it's still below target
-                            # Don't zero it out - the difference should reflect the actual gap
-                            # difference remains as is (positive, showing need to buy, but we won't recommend it)
+                    # CRITICAL FIX: Stocks in stocks_to_sell_list are bad stocks (ranking > 30 or not in ranking)
+                    # They should be sold regardless of whether they're over or under target
+                    # The priority is to sell worse-ranked stocks first, which is already handled by stocks_to_sell_list order
+                    # We should sell as much as possible with the remaining limit, regardless of the difference
                     
-                    # Get ranking from AMBB 2.0 if available, otherwise use a high number
-                    ranking = 999
-                    for ambb_stock in ambb_reais_stocks:
-                        if ambb_stock.get('codigo') == ticker:
-                            ranking = ambb_stock.get('ranking', 999)
-                            break
+                    # Try to sell PARTIALLY using remaining sales limit
+                    # Use remaining_limit_after_complete_sales (which tracks the limit after complete sales)
+                    # STOPS processing partial sales if we hit the limit
+                    # We respect strict priority even for partial sales
+                    # Once we find a stock we can't sell completely, we sell it partially and STOP
+                    # We don't continue to lower priority stocks even if they fit the remaining limit
+                    
+                    if remaining_limit_after_complete_sales > 0:
+                        # Calculate how much we can sell with remaining limit
+                        # IMPORTANT: Only sell PARTIALLY if the remaining limit is LESS than current_value
+                        # If remaining limit >= current_value, it should have been sold completely already
+                        if remaining_limit_after_complete_sales < current_value:
+                            # True partial sale: sell only what fits in the remaining limit
+                            max_sale_value = remaining_limit_after_complete_sales
+                            quantity_to_sell = int(max_sale_value / current_price)
+                            if quantity_to_sell > 0:
+                                partial_sale_value = quantity_to_sell * current_price
+                                quantity_diff = -quantity_to_sell
+                                remaining_limit_after_complete_sales -= partial_sale_value
+                                # Note: total_partial_sales_value is calculated at the end from stocks_to_balance
+                            else:
+                                # Can't sell even 1 share with remaining limit - mark for future sale
+                                quantity_diff = 0  # No partial sale possible now
+                            
+                            # CRITICAL: Since we used the remaining limit for this high-priority stock,
+                            # we must STOP processing further sales to respect priority.
+                            # Even if there's a tiny bit of limit left (e.g. due to share price rounding),
+                            # we stop here.
+                            remaining_limit_after_complete_sales = Decimal('0')
+                        else:
+                            # This shouldn't happen - if limit >= current_value, should have been sold completely
+                            # But if it did, don't sell partially (keep quantity_diff = 0)
+                            quantity_diff = 0
+                    else:
+                        # No remaining limit - can't sell now
+                        # These are bad stocks that should be sold, but we've exhausted the limit
+                        # Don't set quantity_diff (keep it 0) to indicate no action possible now
+                        quantity_diff = 0
+                    
+                    # For stocks in stocks_to_sell_list, we always want to sell (not buy)
+                    # The difference might be positive (under target) or negative (over target)
+                    # But since it's a bad stock (ranking > 30), we should sell it, not buy more
+                    # The quantity_diff is already set above based on the remaining limit
+                    
+                    # Get ranking from sell_item (already has the correct ranking from stocks_to_sell_list)
+                    # Fallback to AMBB 2.0 if not available
+                    ranking = sell_item.get('ranking', 999)
+                    if ranking == 999:
+                        # Try to get from AMBB 2.0 as fallback
+                        for ambb_stock in ambb_reais_stocks:
+                            if ambb_stock.get('codigo') == ticker:
+                                ranking = ambb_stock.get('ranking', 999)
+                                break
                     
                     # CRITICAL: Always recalculate difference as target - current to ensure correct sign
                     final_difference = target_value_per_stock - current_value
@@ -635,6 +644,40 @@ class AMBBStrategyService:
         
         total_all_sales = total_sales_value + total_partial_sales
         
+        # Verification of final recommendations
+        verification_buy_value = Decimal('0')
+        verification_sell_value = Decimal('0')
+        
+        # Calculate sell value from complete sales
+        for sell in formatted_sells:
+             # formatted_sells has 'current_value' which is likely cost basis in this system context,
+             # but we want to check against "actual price" (market value).
+             # Let's try to find the stock's current price from portfolio_stocks if possible
+             ticker = sell['ticker']
+             if ticker in portfolio_stocks:
+                 stock_data = portfolio_stocks[ticker]
+                 current_price = Decimal(str(stock_data['current_price']))
+                 quantity = Decimal(str(sell['quantity']))
+                 verification_sell_value += quantity * current_price
+             else:
+                 # Fallback if not found (should not happen)
+                 verification_sell_value += Decimal(str(sell['current_value']))
+
+        # Calculate buy/sell values from balance actions
+        for balance in stocks_to_balance:
+            qty = balance.get('quantity_to_adjust', 0)
+            price = Decimal(str(balance['current_price']))
+            if qty < 0:
+                verification_sell_value += abs(qty) * price
+            elif qty > 0:
+                verification_buy_value += qty * price
+                
+        # Calculate buy value from new stocks
+        for buy in formatted_buys:
+            qty = buy['target_quantity']
+            price = Decimal(str(buy['current_price']))
+            verification_buy_value += qty * price
+            
         return {
             'stocks_to_sell': formatted_sells,
             'stocks_to_buy': formatted_buys,
@@ -646,7 +689,12 @@ class AMBBStrategyService:
             'target_stocks_count': final_stock_count,
             'current_portfolio_count': len(portfolio_stocks),
             'target_value_per_stock': float(target_value_per_stock),
-            'debug_info': debug_info
+            'debug_info': debug_info,
+            'verification': {
+                'total_buy_value': float(verification_buy_value),
+                'total_sell_value': float(verification_sell_value),
+                'net_change': float(verification_buy_value - verification_sell_value)
+            }
         }
 
 
