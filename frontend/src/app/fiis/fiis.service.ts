@@ -18,4 +18,8 @@ export class FIIService {
     getFIIProfile(ticker: string): Observable<FIIProfile> {
         return this.http.get<FIIProfile>(`${this.apiUrl}/profiles/${ticker}/`);
     }
+
+    createFII(fiiData: Partial<FIIProfile> & { ticker: string; name: string }): Observable<FIIProfile> {
+        return this.http.post<FIIProfile>(`${this.apiUrl}/profiles/`, fiiData);
+    }
 }

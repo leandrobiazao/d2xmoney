@@ -159,7 +159,8 @@ export class TickerMappingService {
   }
 
   private normalizeNome(nome: string): string {
-    return nome.replace(/\s+/g, ' ').trim().toUpperCase();
+    // Remove @ and # characters, then normalize spaces and uppercase
+    return nome.replace(/[@#]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
   }
 
   getAllMappings(): TickerMapping {

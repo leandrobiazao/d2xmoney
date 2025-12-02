@@ -74,8 +74,10 @@ class BrokerageNoteHistoryService:
                 note_number=note_number,
                 note_date=note_date
             )
+            print(f"DEBUG: Duplicate note found: id={note.id}, user_id={user_id}, note_number={note_number}, note_date={note_date}")
             return BrokerageNoteHistoryService._note_to_dict(note)
         except BrokerageNote.DoesNotExist:
+            print(f"DEBUG: No duplicate note found for user_id={user_id}, note_number={note_number}, note_date={note_date}")
             return None
     
     @staticmethod
@@ -117,24 +119,58 @@ class BrokerageNoteHistoryService:
     @staticmethod
     def delete_note(note_id: str) -> None:
         """Delete note from history."""
-        from django.db import connection
         import uuid
         
-        # Convert note_id to string and handle UUID format (with or without hyphens)
-        note_id_str = str(note_id).replace('-', '')  # Remove hyphens to match database format
-        
-        # Use raw SQL to delete directly, avoiding any field access issues
-        # Django's SQLite backend uses %s placeholders
-        with connection.cursor() as cursor:
-            # Check if note exists first (try both with and without hyphens)
-            cursor.execute("SELECT id FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
-            if not cursor.fetchone():
-                raise ValueError(f"Note with id {note_id} not found")
-            
-            # First delete operations (cascade) - try both formats
-            cursor.execute("DELETE FROM operations WHERE note_id = %s OR note_id = %s", [note_id_str, str(note_id)])
-            # Then delete the note - try both formats
-            cursor.execute("DELETE FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
+        # Use atomic transaction to ensure deletion is committed
+        with transaction.atomic():
+            try:
+                # Try to convert to UUID if it's a string
+                try:
+                    note_uuid = uuid.UUID(str(note_id))
+                except (ValueError, AttributeError):
+                    # If it's not a valid UUID, try to find by string representation
+                    note_uuid = note_id
+                
+                # Use Django ORM to delete - this ensures proper transaction handling
+                # and respects the database constraints
+                try:
+                    note = BrokerageNote.objects.get(id=note_uuid)
+                except BrokerageNote.DoesNotExist:
+                    # Try as string if UUID lookup failed
+                    try:
+                        note = BrokerageNote.objects.get(id=str(note_id))
+                    except BrokerageNote.DoesNotExist:
+                        raise ValueError(f"Note with id {note_id} not found")
+                
+                # Log before deletion for debugging
+                print(f"DEBUG: Deleting note {note_id} (user_id={note.user_id}, note_number={note.note_number}, note_date={note.note_date})")
+                
+                # Delete the note - this will cascade delete operations due to CASCADE on_delete
+                note.delete()
+                
+                print(f"DEBUG: Note {note_id} deleted successfully")
+                
+            except Exception as e:
+                print(f"DEBUG: Error deleting note with Django ORM: {e}")
+                # If Django ORM fails, fall back to raw SQL (for edge cases)
+                from django.db import connection
+                note_id_str = str(note_id).replace('-', '')
+                
+                with connection.cursor() as cursor:
+                    # Check if note exists first (try both with and without hyphens)
+                    cursor.execute("SELECT id, user_id, note_number, note_date FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
+                    row = cursor.fetchone()
+                    if not row:
+                        raise ValueError(f"Note with id {note_id} not found")
+                    
+                    print(f"DEBUG: Deleting note {note_id} using raw SQL (user_id={row[1]}, note_number={row[2]}, note_date={row[3]})")
+                    
+                    # First delete operations (cascade) - try both formats
+                    cursor.execute("DELETE FROM operations WHERE note_id = %s OR note_id = %s", [note_id_str, str(note_id)])
+                    # Then delete the note - try both formats
+                    cursor.execute("DELETE FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
+                    
+                    print(f"DEBUG: Note {note_id} deleted successfully using raw SQL")
     
     @staticmethod
     def generate_note_id() -> str:

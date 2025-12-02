@@ -20,7 +20,7 @@ export class PdfParserService {
     }
   }
 
-  async parsePdf(file: File, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ operations: Operation[]; expectedOperationsCount: number | null; financialSummary?: FinancialSummary }> {
+  async parsePdf(file: File, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string }> {
     try {
       const arrayBuffer = await file.arrayBuffer();
       
@@ -58,6 +58,9 @@ export class PdfParserService {
 
       // Extract last page text separately for financial summary
       const lastPageText = await this.extractLastPageText(pdf);
+      
+      // Extract account number from PDF text (usually in header/first page)
+      const accountNumber = this.extractAccountNumber(fullText);
 
       // Parsear operações do texto completo de todas as páginas
       const parseResult = await this.parseOperationsFromText(fullText, onTickerRequired);
@@ -67,16 +70,64 @@ export class PdfParserService {
       // Extract financial summary from last page only
       const financialSummary = this.extractFinancialSummary(lastPageText);
       
-      return {
-        operations,
-        expectedOperationsCount,
-        financialSummary: financialSummary || undefined
+      const result: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string } = {
+        operations
       };
+      
+      if (expectedOperationsCount !== null && expectedOperationsCount !== undefined) {
+        result.expectedOperationsCount = expectedOperationsCount;
+      }
+      
+      if (financialSummary) {
+        result.financialSummary = financialSummary;
+      }
+      
+      if (accountNumber) {
+        result.accountNumber = accountNumber;
+      }
+      
+      return result;
     } catch (error) {
       this.debug.error('Error parsing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida da B3.`);
     }
+  }
+  
+  private extractAccountNumber(text: string): string | null {
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // Try multiple patterns to find account number
+    // Pattern 1: "C/C" or "C/C:" followed by account number (usually 7 digits for XP)
+    let match = normalizedText.match(/C\/C\s*:?\s*(\d{6,})/i);
+    if (match && match[1]) {
+      this.debug.log(`📋 Extracted account number (C/C pattern): ${match[1]}`);
+      return match[1];
+    }
+    
+    // Pattern 2: "Conta" or "Conta:" followed by account number
+    match = normalizedText.match(/Conta\s*:?\s*(\d{6,})/i);
+    if (match && match[1]) {
+      this.debug.log(`📋 Extracted account number (Conta pattern): ${match[1]}`);
+      return match[1];
+    }
+    
+    // Pattern 3: "Número da Conta" or "Nº Conta" followed by account number
+    match = normalizedText.match(/N(?:úmero|º)?\s*(?:da\s*)?Conta\s*:?\s*(\d{6,})/i);
+    if (match && match[1]) {
+      this.debug.log(`📋 Extracted account number (Número da Conta pattern): ${match[1]}`);
+      return match[1];
+    }
+    
+    // Pattern 4: XP Investimentos followed by account number (common format)
+    match = normalizedText.match(/XP\s+(?:Investimentos|INVESTIMENTOS)?[:\s]+.*?(\d{6,})/i);
+    if (match && match[1]) {
+      this.debug.log(`📋 Extracted account number (XP pattern): ${match[1]}`);
+      return match[1];
+    }
+    
+    this.debug.warn('⚠️ Could not extract account number from PDF');
+    return null;
   }
 
   private async extractLastPageText(pdf: PDFDocumentProxy): Promise<string> {
@@ -333,10 +384,17 @@ export class PdfParserService {
     
     // Count lines that match the B3 operation pattern (1-BOVESPA)
     const bovespaLinePattern = /1-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}/i;
-    const matchingLines = allLines.filter(line => bovespaLinePattern.test(line.trim()));
+    const matchingLines = allLines
+      .map((line, idx) => ({ line: line.trim(), index: idx + 1 }))
+      .filter(item => bovespaLinePattern.test(item.line));
+    
     if (matchingLines.length > 0) {
       expectedOperationsCount = matchingLines.length;
       this.debug.log(`📊 Found ${expectedOperationsCount} operation line(s) in PDF (by pattern matching)`);
+      // Log first few matching lines for debugging
+      matchingLines.slice(0, 5).forEach(item => {
+        this.debug.log(`📋 Sample matching line ${item.index}: "${item.line.substring(0, 100)}..."`);
+      });
     } else {
       this.debug.warn('⚠️ Could not determine expected operations count from PDF');
     }
@@ -384,8 +442,16 @@ export class PdfParserService {
     // The complete field "3TENTOS ON NM" should be treated as a single unified field
     const lines = allLines;
     
+    // Track lines that matched counting pattern but not parsing pattern
+    const unmatchedLines: Array<{ line: string; index: number }> = [];
+    
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i].trim();
+      
+      // Only process lines that match the counting pattern
+      if (!bovespaLinePattern.test(line)) {
+        continue;
+      }
       
       // Pattern to match B3 format with complete field (company name + classification code)
       // Pattern: 1-BOVESPA   C/V   TIPO_MERCADO   NOME_ACAO   CLASSIFICACAO   @   QTD   PRECO   VALOR   D/C
@@ -403,6 +469,7 @@ export class PdfParserService {
       if (bovespaMatch && bovespaMatch.length >= 8) {
         nomeAcaoCompleto = bovespaMatch[3].trim();
         // Clean up trailing special chars often found before quantity
+        // Note: We keep @ and # in the field for now, they'll be removed during ticker lookup
         nomeAcaoCompleto = nomeAcaoCompleto.replace(/\s+[#@]\s*$/, '').trim();
         
         this.debug.log(`📄 Line ${i + 1} matched (flexible pattern). Captured: "${nomeAcaoCompleto}"`);
@@ -428,6 +495,11 @@ export class PdfParserService {
             bovespaMatch[7], // valor
             bovespaMatch[8]  // D/C
           ];
+        } else {
+          // Line matched counting pattern but not parsing pattern - log it
+          unmatchedLines.push({ line, index: i + 1 });
+          this.debug.warn(`⚠️ Line ${i + 1} matched counting pattern but NOT parsing pattern: "${line.substring(0, 150)}"`);
+          continue; // Skip this line
         }
       }
       
@@ -471,7 +543,35 @@ export class PdfParserService {
             const skipMsg = `Linha ${i + 1}: "${nomeAcaoCompleto}" - Operação ignorada (ticker não encontrado ou usuário cancelou)`;
             skippedOperations.push(skipMsg);
             this.debug.warn(`⚠️ Operation skipped for "${nomeAcaoCompleto}" on line ${i + 1} - operation returned null`);
-            this.debug.warn(`⚠️ Skip reason: parseBovespaLine returned null - this should NOT happen if onTickerRequired is working`);
+            this.debug.warn(`⚠️ Skip reason: parseBovespaLine returned null`);
+            this.debug.warn(`⚠️ Full line content: "${line.substring(0, 200)}"`);
+            
+            // Check all possible variations
+            const normalizedField = nomeAcaoCompleto.toUpperCase().trim();
+            this.debug.warn(`⚠️ Normalized field for lookup: "${normalizedField}"`);
+            
+            // Try to find similar mappings
+            const allMappingsForDebug = this.tickerMappingService.getAllMappings();
+            const similarMappings = Object.entries(allMappingsForDebug)
+              .filter(([nome]) => {
+                const normalizedNome = nome.toUpperCase();
+                // Check if field contains part of nome or vice versa
+                const fieldWords = normalizedField.split(/\s+/).filter(w => w.length > 2);
+                const nomeWords = normalizedNome.split(/\s+/).filter(w => w.length > 2);
+                return fieldWords.some(fw => nomeWords.some(nw => fw === nw || fw.includes(nw) || nw.includes(fw))) ||
+                       normalizedNome.substring(0, 10) === normalizedField.substring(0, 10) ||
+                       normalizedNome.includes(normalizedField.substring(0, 5)) ||
+                       normalizedField.includes(normalizedNome.substring(0, 5));
+              })
+              .map(([nome, ticker]) => `  "${nome}" -> ${ticker}`);
+            
+            if (similarMappings.length > 0) {
+              this.debug.warn(`⚠️ Similar mappings found in database:`, similarMappings);
+              this.debug.warn(`⚠️ The extracted field "${nomeAcaoCompleto}" might not match exactly. Check for typos or formatting differences.`);
+            } else {
+              this.debug.warn(`⚠️ No related mappings found for "${nomeAcaoCompleto}". Consider adding this mapping manually.`);
+              this.debug.warn(`⚠️ To add mapping, use: python manage.py add_ticker "${nomeAcaoCompleto}" "<TICKER>"`);
+            }
             
             // If we have an expected count and we're skipping, this is a problem
             if (expectedOperationsCount !== null) {
@@ -492,6 +592,19 @@ export class PdfParserService {
       }
     }
 
+    // Log unmatched lines (matched counting pattern but not parsing pattern)
+    if (unmatchedLines.length > 0) {
+      this.debug.error(`❌ ${unmatchedLines.length} line(s) matched counting pattern but failed to parse:`);
+      unmatchedLines.forEach(item => {
+        this.debug.error(`❌ Line ${item.index}: "${item.line.substring(0, 150)}"`);
+        // Try to extract what might be the company name from this line
+        const nameMatch = item.line.match(/1-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}([A-Z0-9\.\-\s]+?)(?:\s{2,}|$)/i);
+        if (nameMatch && nameMatch[1]) {
+          this.debug.error(`   → Possible company name field: "${nameMatch[1].trim()}"`);
+        }
+      });
+    }
+    
     if (skippedOperations.length > 0) {
       this.debug.warn(`⚠️ ${skippedOperations.length} operation(s) were skipped:`, skippedOperations);
       // Throw error if all operations were skipped
@@ -510,16 +623,68 @@ export class PdfParserService {
     // Validate operations count if we have an expected count
     if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
       const skippedCount = skippedOperations.length;
+      const unmatchedCount = unmatchedLines.length;
       const totalExpected = expectedOperationsCount;
       const totalParsed = operations.length;
       const discrepancy = totalExpected - totalParsed;
       
-      this.debug.error(`❌ Operations count mismatch! Expected: ${totalExpected}, Parsed: ${totalParsed}, Skipped: ${skippedCount}`);
+      this.debug.error(`❌ Operations count mismatch! Expected: ${totalExpected}, Parsed: ${totalParsed}, Skipped: ${skippedCount}, Unmatched: ${unmatchedCount}`);
+      this.debug.error(`❌ Discrepancy: ${discrepancy} operation(s) missing`);
+      
+      let errorDetails = '';
+      let problemLines: Array<{ lineNumber: number; reason: string; content: string }> = [];
+      
+      if (unmatchedCount > 0) {
+        errorDetails += `${unmatchedCount} linha(s) não puderam ser parseadas (padrão de parsing não encontrado).\n`;
+        unmatchedLines.forEach(item => {
+          const linePreview = item.line.substring(0, 120);
+          errorDetails += `\n• Linha ${item.index}: "${linePreview}..."`;
+          problemLines.push({ 
+            lineNumber: item.index, 
+            reason: 'Padrão de parsing não encontrado',
+            content: linePreview 
+          });
+        });
+        errorDetails += '\n';
+      }
+      
+      if (skippedCount > 0) {
+        errorDetails += `\n${skippedCount} operação(ões) foram ignoradas (ticker não encontrado ou usuário cancelou):\n`;
+        skippedOperations.forEach((skip, idx) => {
+          errorDetails += `\n• ${skip}`;
+          // Extract line number and company name from skip message
+          const lineMatch = skip.match(/Linha (\d+):\s*"([^"]+)"/);
+          if (lineMatch) {
+            const lineNumber = parseInt(lineMatch[1]);
+            const companyName = lineMatch[2];
+            problemLines.push({ 
+              lineNumber: lineNumber, 
+              reason: 'Ticker não encontrado ou usuário cancelou',
+              content: companyName 
+            });
+            // Add suggestion to add mapping
+            errorDetails += `\n  → Para corrigir, adicione o mapeamento: python manage.py add_ticker "${companyName}" "<TICKER>"`;
+          }
+        });
+        errorDetails += '\n';
+      }
+      
+      // Provide actionable guidance
+      errorDetails += '\n--- Ações sugeridas ---\n';
+      if (unmatchedCount > 0) {
+        errorDetails += '• Verifique as linhas acima no PDF original. Elas podem ter um formato diferente do esperado.\n';
+        errorDetails += '• Abra o console do navegador (F12) para ver detalhes completos das linhas problemáticas.\n';
+      }
+      if (skippedCount > 0) {
+        errorDetails += '• Para operações com ticker não encontrado, o sistema deve ter mostrado um diálogo.\n';
+        errorDetails += '• Se o diálogo não apareceu, verifique o console do navegador (F12) para mais detalhes.\n';
+        errorDetails += '• Adicione os mapeamentos de ticker faltantes através da interface ou pelo comando Django.\n';
+      }
       
       throw new Error(
-        `Validação falhou: O PDF contém ${totalExpected} operação(ões), mas apenas ${totalParsed} foram processadas com sucesso. ` +
-        `${skippedCount > 0 ? `${skippedCount} operação(ões) foram ignoradas (ticker não encontrado ou usuário cancelou). ` : ''}` +
-        `Por favor, verifique os tickers e tente novamente. Operações não serão salvas.`
+        `Validação falhou: O PDF contém ${totalExpected} operação(ões), mas apenas ${totalParsed} foram processadas com sucesso.\n\n` +
+        errorDetails +
+        `\nPor favor, verifique o console do navegador (F12) para mais detalhes. Operações não serão salvas.`
       );
     }
     
@@ -560,29 +725,35 @@ export class PdfParserService {
         this.debug.log(`🔍 Available HASH/BARI mappings:`, hashRelatedMappings);
       }
       
+      // Helper function to clean company name (remove @ and # before lookup)
+      const cleanCompanyName = (name: string): string => {
+        return name.replace(/[@#]/g, '').replace(/\s+/g, ' ').trim();
+      };
+      
       // Normalize name for lookup (same logic as TickerMappingService)
-      const normalizedNome = nomeAcaoCompleto.replace(/\s+/g, ' ').trim().toUpperCase();
-      this.debug.log(`🔍 Normalized name for lookup: "${normalizedNome}"`);
+      const normalizedNome = nomeAcaoCompleto.replace(/[@#]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+      this.debug.log(`🔍 Normalized name for lookup: "${normalizedNome}" (original: "${nomeAcaoCompleto}")`);
       
       // IMPORTANT: Always check mapping FIRST
       // This ensures that once a user provides a ticker, it's reused for subsequent occurrences
-      // 1. Try to get ticker from mapping service using complete field
-      let tickerMapeado = this.tickerMappingService.getTicker(nomeAcaoCompleto);
-      this.debug.log(`🔍 Looking up ticker for: "${nomeAcaoCompleto}" -> ${tickerMapeado || 'NOT FOUND'}`);
+      // 1. Try to get ticker from mapping service using complete field (with @ and # removed)
+      let cleanedName = cleanCompanyName(nomeAcaoCompleto);
+      let tickerMapeado = this.tickerMappingService.getTicker(cleanedName);
+      this.debug.log(`🔍 Looking up ticker for: "${cleanedName}" -> ${tickerMapeado || 'NOT FOUND'}`);
       
       // 1b. If not found, try variations of the name (without classification codes, without trailing "CI", etc.)
       if (!tickerMapeado) {
         // Try without classification codes (ON NM, UNT N1, etc.)
-        const nomeSemClassificacao = nomeAcaoCompleto.replace(/\s+(ON|UNT|PN|PNA|PNAB)\s+(NM|N[12]|EJ|ED|EDJ|ATZ)\s*$/i, '').trim();
-        if (nomeSemClassificacao !== nomeAcaoCompleto) {
+        const nomeSemClassificacao = cleanedName.replace(/\s+(ON|UNT|PN|PNA|PNAB)\s+(NM|N[12]|EJ|ED|EDJ|ATZ)\s*$/i, '').trim();
+        if (nomeSemClassificacao !== cleanedName) {
           tickerMapeado = this.tickerMappingService.getTicker(nomeSemClassificacao);
           this.debug.log(`🔍 Trying without classification: "${nomeSemClassificacao}" -> ${tickerMapeado || 'NOT FOUND'}`);
         }
         
         // Try removing trailing "CI" (common in ETF names)
         if (!tickerMapeado) {
-          const nomeSemCI = nomeAcaoCompleto.replace(/\s+CI\s*$/i, '').trim();
-          if (nomeSemCI !== nomeAcaoCompleto) {
+          const nomeSemCI = cleanedName.replace(/\s+CI\s*$/i, '').trim();
+          if (nomeSemCI !== cleanedName) {
             tickerMapeado = this.tickerMappingService.getTicker(nomeSemCI);
             this.debug.log(`🔍 Trying without trailing CI: "${nomeSemCI}" -> ${tickerMapeado || 'NOT FOUND'}`);
           }
@@ -591,7 +762,7 @@ export class PdfParserService {
         // Try both: without classification AND without CI
         if (!tickerMapeado) {
           const nomeSemClassESemCI = nomeSemClassificacao.replace(/\s+CI\s*$/i, '').trim();
-          if (nomeSemClassESemCI !== nomeAcaoCompleto && nomeSemClassESemCI !== nomeSemClassificacao) {
+          if (nomeSemClassESemCI !== cleanedName && nomeSemClassESemCI !== nomeSemClassificacao) {
             tickerMapeado = this.tickerMappingService.getTicker(nomeSemClassESemCI);
             this.debug.log(`🔍 Trying without classification and CI: "${nomeSemClassESemCI}" -> ${tickerMapeado || 'NOT FOUND'}`);
           }

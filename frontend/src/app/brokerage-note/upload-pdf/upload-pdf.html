@@ -18,8 +18,12 @@
 </div>
 
 @if (errorMessage) {
-  <div class="message error" (click)="clearMessages()">
-    <strong>Erro:</strong> {{ errorMessage }}
+  <div class="message error">
+    <div class="error-header">
+      <strong>Erro:</strong>
+      <button type="button" class="btn-close" (click)="clearMessages()" title="Fechar">×</button>
+    </div>
+    <div class="error-content">{{ errorMessage }}</div>
   </div>
 }
 

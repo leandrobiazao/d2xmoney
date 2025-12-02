@@ -19,6 +19,7 @@ import { StocksService } from '../configuration/stocks/stocks.service';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Stock } from '../configuration/stocks/stocks.models';
 import { InvestmentType } from '../configuration/configuration.service';
+import { UserService } from '../users/user.service';
 
 @Component({
   selector: 'app-portfolio',
@@ -57,7 +58,8 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     private historyService: BrokerageHistoryService,
     private stocksService: StocksService,
     private http: HttpClient,
-    private debug: DebugService
+    private debug: DebugService,
+    private userService: UserService
   ) { }
 
   ngOnInit(): void {
@@ -382,21 +384,56 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onOperationsAdded(event: OperationsAddedEvent): void {
-    const { operations, expectedOperationsCount, financialSummary, fileName } = event;
+    const { operations, expectedOperationsCount, financialSummary, fileName, accountNumber } = event;
     
     // Debug: Log financial summary to check if it's being extracted
     this.debug.log('📊 Financial Summary received:', financialSummary);
     this.debug.log('📊 total_custos_despesas:', financialSummary?.total_custos_despesas);
+    this.debug.log('📊 Account Number from PDF:', accountNumber);
     
     if (!this.userId || operations.length === 0) {
       return;
     }
     
+    // Validate account number if available
+    if (accountNumber && accountNumber.trim().length > 0) {
+      this.userService.getUserById(this.userId).subscribe({
+        next: (user) => {
+          this.debug.log(`🔍 Validating account number: PDF has "${accountNumber}", User has "${user.account_number}"`);
+          
+          // Normalize account numbers (remove spaces, hyphens, etc.)
+          const pdfAccountNormalized = accountNumber.trim().replace(/[-\s]/g, '');
+          const userAccountNormalized = user.account_number.trim().replace(/[-\s]/g, '');
+          
+          if (pdfAccountNormalized !== userAccountNormalized) {
+            const errorMsg = `❌ Erro de validação: O número da conta no PDF (${accountNumber}) não corresponde à conta do usuário selecionado (${user.account_number}).\n\nPor favor, verifique se você está fazendo upload da nota correta para o usuário correto.\n\nOperações não serão salvas.`;
+            this.debug.error(errorMsg);
+            alert(errorMsg);
+            return;
+          }
+          
+          // Account number matches, proceed with validation and saving
+          this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+        },
+        error: (error) => {
+          this.debug.error('❌ Error loading user for account validation:', error);
+          // If we can't load user, warn but allow (in case account_number is not critical)
+          this.debug.warn('⚠️ Could not validate account number, proceeding anyway');
+          this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+        }
+      });
+    } else {
+      // No account number extracted - warn but allow (some PDFs might not have it clearly visible)
+      this.debug.warn('⚠️ No account number found in PDF, skipping account validation');
+      this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+    }
+  }
+  
+  private proceedWithNoteSave(operations: Operation[], expectedOperationsCount: number | null, financialSummary: FinancialSummary | undefined, fileName: string | undefined): void {
     // Validate operations count if expected count is available
     if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
       const errorMsg = `Validação falhou: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${operations.length} foram processadas. Operações não serão salvas.`;
       this.debug.error(`❌ ${errorMsg}`);
-      // Show error message to user (you may want to add a toast/notification service here)
       alert(errorMsg);
       return;
     }
@@ -422,7 +459,10 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     }
 
     // Use the original file name if available, otherwise generate one
-    let generatedFileName = fileName || `nota_${noteDate.replace(/\//g, '_')}${noteNumber ? '_' + noteNumber : ''}.pdf`;
+    // Prefer the actual file name from the upload, only generate if fileName is missing/empty
+    let generatedFileName = (fileName && fileName.trim().length > 0) 
+      ? fileName.trim() 
+      : `nota_${noteDate.replace(/\//g, '_')}${noteNumber && noteNumber !== 'N/A' ? '_' + noteNumber : ''}.pdf`;
 
     const note: BrokerageNote = {
       id: '',

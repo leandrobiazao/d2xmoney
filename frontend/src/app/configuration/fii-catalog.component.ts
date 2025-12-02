@@ -24,6 +24,19 @@ export class FIICatalogComponent implements OnInit {
     currentPage = 1;
     pageSize = 50;
 
+    // New FII form
+    showNewFIIForm = false;
+    newFII: Partial<FIIProfile> & { ticker: string; name: string } = {
+        ticker: '',
+        name: '',
+        segment: '',
+        target_audience: '',
+        administrator: ''
+    };
+    isCreating = false;
+    errorMessage: string | null = null;
+    successMessage: string | null = null;
+
     constructor(private fiiService: FIIService) { }
 
     ngOnInit() {
@@ -108,5 +121,60 @@ export class FIICatalogComponent implements OnInit {
         const numValue = typeof value === 'string' ? parseFloat(value) : value;
         if (isNaN(numValue)) return '-';
         return numValue.toFixed(decimals);
+    }
+
+    showNewFIIDialog() {
+        this.showNewFIIForm = true;
+        this.newFII = {
+            ticker: '',
+            name: '',
+            segment: '',
+            target_audience: '',
+            administrator: ''
+        };
+        this.errorMessage = null;
+        this.successMessage = null;
+    }
+
+    cancelNewFII() {
+        this.showNewFIIForm = false;
+        this.errorMessage = null;
+        this.successMessage = null;
+    }
+
+    createNewFII() {
+        if (!this.newFII.ticker || !this.newFII.name) {
+            this.errorMessage = 'Ticker e Nome são obrigatórios';
+            return;
+        }
+
+        this.isCreating = true;
+        this.errorMessage = null;
+        this.successMessage = null;
+
+        this.fiiService.createFII(this.newFII).subscribe({
+            next: (createdFII) => {
+                this.successMessage = `FII ${createdFII.ticker} criado com sucesso!`;
+                this.isCreating = false;
+                this.showNewFIIForm = false;
+                // Reload FIIs list
+                this.loadFIIs();
+                // Reset form
+                this.newFII = {
+                    ticker: '',
+                    name: '',
+                    segment: '',
+                    target_audience: '',
+                    administrator: ''
+                };
+                setTimeout(() => {
+                    this.successMessage = null;
+                }, 3000);
+            },
+            error: (err) => {
+                this.errorMessage = err.error?.error || 'Erro ao criar FII. Tente novamente.';
+                this.isCreating = false;
+            }
+        });
     }
 }

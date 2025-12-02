@@ -1,8 +1,110 @@
 <div class="fii-catalog">
     <div class="catalog-header">
         <h3>Catálogo de Fundos Imobiliários</h3>
-        <p class="catalog-count">{{ filteredFIIs.length }} FIIs disponíveis</p>
+        <div class="header-actions">
+            <p class="catalog-count">{{ filteredFIIs.length }} FIIs disponíveis</p>
+            <button class="btn-add-fii" (click)="showNewFIIDialog()">+ Adicionar Novo FII</button>
+        </div>
     </div>
+
+    @if (showNewFIIForm) {
+    <div class="new-fii-form-container">
+        <div class="new-fii-form">
+            <div class="form-header">
+                <h4>Adicionar Novo Fundo Imobiliário</h4>
+                <button class="btn-close" (click)="cancelNewFII()">×</button>
+            </div>
+            
+            @if (errorMessage) {
+            <div class="message error">{{ errorMessage }}</div>
+            }
+            
+            @if (successMessage) {
+            <div class="message success">{{ successMessage }}</div>
+            }
+            
+            <form (ngSubmit)="createNewFII()">
+                <div class="form-row">
+                    <div class="form-group required">
+                        <label for="ticker">Ticker *</label>
+                        <input 
+                            type="text" 
+                            id="ticker" 
+                            [(ngModel)]="newFII.ticker" 
+                            name="ticker"
+                            placeholder="Ex: HGLG11" 
+                            required
+                            maxlength="10"
+                            [disabled]="isCreating"
+                        />
+                    </div>
+                    
+                    <div class="form-group required">
+                        <label for="name">Nome *</label>
+                        <input 
+                            type="text" 
+                            id="name" 
+                            [(ngModel)]="newFII.name" 
+                            name="name"
+                            placeholder="Nome do Fundo" 
+                            required
+                            [disabled]="isCreating"
+                        />
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="segment">Segmento</label>
+                        <input 
+                            type="text" 
+                            id="segment" 
+                            [(ngModel)]="newFII.segment" 
+                            name="segment"
+                            placeholder="Ex: Tijolo:Shoppings" 
+                            [disabled]="isCreating"
+                        />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="target_audience">Público Alvo</label>
+                        <input 
+                            type="text" 
+                            id="target_audience" 
+                            [(ngModel)]="newFII.target_audience" 
+                            name="target_audience"
+                            placeholder="Ex: Investidor Qualificado" 
+                            [disabled]="isCreating"
+                        />
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="administrator">Administrador</label>
+                        <input 
+                            type="text" 
+                            id="administrator" 
+                            [(ngModel)]="newFII.administrator" 
+                            name="administrator"
+                            placeholder="Nome do Administrador" 
+                            [disabled]="isCreating"
+                        />
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn-cancel" (click)="cancelNewFII()" [disabled]="isCreating">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn-submit" [disabled]="isCreating || !newFII.ticker || !newFII.name">
+                        {{ isCreating ? 'Criando...' : 'Criar FII' }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    }
 
     <div class="filters">
         <div class="filter-group">

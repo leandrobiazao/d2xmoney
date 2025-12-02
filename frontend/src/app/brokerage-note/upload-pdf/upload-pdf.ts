@@ -12,6 +12,7 @@ export interface OperationsAddedEvent {
   expectedOperationsCount?: number | null;
   financialSummary?: FinancialSummary;
   fileName?: string; // Original file name
+  accountNumber?: string; // Account number extracted from PDF
 }
 
 @Component({
@@ -112,7 +113,7 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         });
       };
       
-      let parseResult: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary } = { operations: [] };
+      let parseResult: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string } = { operations: [] };
       try {
         parseResult = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
       } catch (parseError) {
@@ -140,7 +141,8 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         operations: operationsWithClientId,
         expectedOperationsCount: parseResult.expectedOperationsCount,
         financialSummary: parseResult.financialSummary,
-        fileName: this.selectedFile.name // Pass the real file name
+        fileName: this.selectedFile.name, // Pass the real file name
+        accountNumber: parseResult.accountNumber // Pass extracted account number
       });
 
       this.selectedFile = null;

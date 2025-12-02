@@ -64,15 +64,53 @@
 
 .message {
   margin-top: 1rem;
-  padding: 0.75rem;
+  padding: 0;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
+  overflow: hidden;
 }
 
 .message.error {
   background: #fee;
   color: #c33;
   border: 1px solid #fcc;
+}
+
+.error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #fdd;
+  border-bottom: 1px solid #fcc;
+  font-weight: bold;
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  color: #c33;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0 0.5rem;
+  line-height: 1;
+  font-weight: bold;
+  transition: color 0.2s;
+}
+
+.btn-close:hover {
+  color: #a00;
+}
+
+.error-content {
+  padding: 0.75rem;
+  white-space: pre-wrap; /* Preserve line breaks and spaces */
+  word-wrap: break-word; /* Break long words */
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .message.success {

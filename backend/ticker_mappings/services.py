@@ -22,8 +22,10 @@ class TickerMappingService:
     
     @staticmethod
     def normalize_company_name(nome: str) -> str:
-        """Normalize company name: replace multiple spaces with single space, then strip and upper."""
-        return re.sub(r'\s+', ' ', nome.strip()).upper()
+        """Normalize company name: remove @ and #, replace multiple spaces with single space, then strip and upper."""
+        # Remove @ and # characters, normalize spaces, then uppercase
+        cleaned = re.sub(r'[@#]', '', nome)
+        return re.sub(r'\s+', ' ', cleaned.strip()).upper()
     
     @staticmethod
     def load_mappings() -> Dict[str, str]:

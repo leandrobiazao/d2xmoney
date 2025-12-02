@@ -41,8 +41,9 @@ export class HistoryListComponent implements OnInit, OnChanges {
     if (!this.userId) {
       this.loadUsers();
     } else {
-      // When userId is provided, set it as selected
+      // When userId is provided, set it as selected and in filters
       this.selectedUserId = this.userId;
+      this.filters.user_id = this.userId;
     }
     this.loadHistory();
   }
@@ -50,7 +51,14 @@ export class HistoryListComponent implements OnInit, OnChanges {
   ngOnChanges(changes: SimpleChanges) {
     if (changes['userId'] && !changes['userId'].firstChange) {
       this.selectedUserId = this.userId || null;
-      this.applyUserFilter();
+      // Update filters to match selected user
+      if (this.userId) {
+        this.filters.user_id = this.userId;
+      } else {
+        delete this.filters.user_id;
+      }
+      // Reload history with new filters instead of just filtering client-side
+      this.loadHistory();
     }
   }
 
@@ -72,12 +80,26 @@ export class HistoryListComponent implements OnInit, OnChanges {
     this.isLoadingNotes = true;
     this.error = null;
 
-    this.historyService.getHistory(this.filters).subscribe({
+    // Ensure filters include user_id if a user is selected
+    const filtersToUse: HistoryFilters = { ...this.filters };
+    if (this.selectedUserId) {
+      filtersToUse.user_id = this.selectedUserId;
+    } else {
+      delete filtersToUse.user_id;
+    }
+
+    this.debug.log('📋 Loading history with filters:', filtersToUse);
+
+    this.historyService.getHistory(filtersToUse).subscribe({
       next: (notes) => {
-        this.debug.log('✅ History loaded:', notes.length, 'notes');
+        this.debug.log('✅ History loaded:', notes.length, 'notes for user:', this.selectedUserId || 'all users');
         // Ensure all notes have status field (for backward compatibility)
         this.notes = notes.map((note: BrokerageNote) => {
           const statusValue = note.status || 'success';
+          // Verify user_id matches (additional safety check)
+          if (this.selectedUserId && note.user_id !== this.selectedUserId) {
+            this.debug.warn(`⚠️ Warning: Note ${note.id} has user_id ${note.user_id} but filter expects ${this.selectedUserId}`);
+          }
           return {
             ...note,
             status: (statusValue === 'success' || statusValue === 'partial' || statusValue === 'failed') 
@@ -86,7 +108,10 @@ export class HistoryListComponent implements OnInit, OnChanges {
             error_message: note.error_message || undefined
           } as BrokerageNote;
         });
-        this.applyUserFilter();
+        // No need to filter again - backend already filtered
+        this.filteredNotes = this.notes;
+        // Still apply date sorting
+        this.sortFilteredNotes();
         this.isLoadingNotes = false;
       },
       error: (error) => {
@@ -101,12 +126,43 @@ export class HistoryListComponent implements OnInit, OnChanges {
 
   selectUser(userId: string | null) {
     this.selectedUserId = userId;
-    this.applyUserFilter();
+    // Update filters and reload from backend
+    if (userId) {
+      this.filters.user_id = userId;
+    } else {
+      delete this.filters.user_id;
+    }
+    this.loadHistory();
+  }
+
+  private sortFilteredNotes() {
+    // Sort by date: most recent at the top (descending order)
+    this.filteredNotes.sort((a, b) => {
+      // Convert DD/MM/YYYY to Date for comparison
+      const parseDate = (dateStr: string): Date => {
+        const [day, month, year] = dateStr.split('/').map(Number);
+        return new Date(year, month - 1, day);
+      };
+      
+      const dateA = parseDate(a.note_date);
+      const dateB = parseDate(b.note_date);
+      
+      // Descending order: most recent first
+      return dateB.getTime() - dateA.getTime();
+    });
   }
 
   applyUserFilter() {
+    // This method is now deprecated - filtering is done by backend
+    // Keeping for backward compatibility but it should not be needed
     if (this.selectedUserId) {
-      this.filteredNotes = this.notes.filter(note => note.user_id === this.selectedUserId);
+      this.filteredNotes = this.notes.filter(note => {
+        const matches = note.user_id === this.selectedUserId;
+        if (!matches) {
+          this.debug.warn(`⚠️ Note ${note.id} filtered out: user_id ${note.user_id} !== ${this.selectedUserId}`);
+        }
+        return matches;
+      });
     } else {
       this.filteredNotes = this.notes;
     }
