@@ -272,6 +272,10 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   onOperationsAdded(event: OperationsAddedEvent): void {
     const { operations, expectedOperationsCount, financialSummary, fileName } = event;
     
+    // Debug: Log financial summary to check if it's being extracted
+    this.debug.log('📊 Financial Summary received:', financialSummary);
+    this.debug.log('📊 total_custos_despesas:', financialSummary?.total_custos_despesas);
+    
     if (!this.userId || operations.length === 0) {
       return;
     }
@@ -324,12 +328,10 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
       vendas_a_vista: financialSummary?.vendas_a_vista,
       compras_a_vista: financialSummary?.compras_a_vista,
       valor_das_operacoes: financialSummary?.valor_das_operacoes,
-      clearing: financialSummary?.clearing,
       valor_liquido_operacoes: financialSummary?.valor_liquido_operacoes,
       taxa_liquidacao: financialSummary?.taxa_liquidacao,
       taxa_registro: financialSummary?.taxa_registro,
       total_cblc: financialSummary?.total_cblc,
-      bolsa: financialSummary?.bolsa,
       emolumentos: financialSummary?.emolumentos,
       taxa_transferencia_ativos: financialSummary?.taxa_transferencia_ativos,
       total_bovespa: financialSummary?.total_bovespa,

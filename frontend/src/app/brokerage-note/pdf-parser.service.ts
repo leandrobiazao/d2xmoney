@@ -89,16 +89,58 @@ export class PdfParserService {
       const lastPage = await pdf.getPage(totalPages);
       const textContent = await lastPage.getTextContent();
       
-      const lastPageText = textContent.items
-        .map((item: any) => {
-          if (item.hasEOL) {
-            return item.str + '\n';
-          }
-          return item.str;
-        })
-        .join(' ');
+      // Implement robust spatial sorting to handle columnar layouts correctly
+      // Sort by Y (descending) to group lines, then X (ascending) to order within lines
+      const items = textContent.items.map((item: any) => ({
+        str: item.str,
+        x: item.transform[4],
+        y: item.transform[5],
+        w: item.width,
+        h: item.height,
+        hasEOL: item.hasEOL
+      }));
+
+      // Sort primarily by Y (descending), secondarily by X (ascending)
+      // Use a tolerance for Y to group items on the "same line" even if slightly misaligned
+      items.sort((a, b) => {
+        const yDiff = Math.abs(a.y - b.y);
+        if (yDiff < 5) { // Tolerance of 5 units for same line
+          return a.x - b.x;
+        }
+        return b.y - a.y; // Higher Y is higher on page
+      });
+
+      // Group into lines
+      let lastPageText = '';
+      let currentY = -1;
+      let currentLineItems: any[] = [];
+
+      items.forEach(item => {
+        if (currentY === -1 || Math.abs(item.y - currentY) < 5) {
+          // Same line
+          currentLineItems.push(item);
+          if (currentY === -1) currentY = item.y;
+        } else {
+          // New line
+          // Sort current line items by X to ensure correct reading order
+          currentLineItems.sort((a, b) => a.x - b.x);
+          
+          // Join with spaces
+          lastPageText += currentLineItems.map(i => i.str).join(' ') + '\n';
+          
+          // Start new line
+          currentLineItems = [item];
+          currentY = item.y;
+        }
+      });
+
+      // Flush last line
+      if (currentLineItems.length > 0) {
+        currentLineItems.sort((a, b) => a.x - b.x);
+        lastPageText += currentLineItems.map(i => i.str).join(' ') + '\n';
+      }
       
-      this.debug.log(`✅ Extracted text from last page (page ${totalPages})`);
+      this.debug.log(`✅ Extracted text from last page (page ${totalPages}) with spatial sorting`);
       return lastPageText;
     } catch (error) {
       this.debug.error('Error extracting last page text:', error);
@@ -114,6 +156,10 @@ export class PdfParserService {
 
     const summary: FinancialSummary = {};
     const normalizedText = lastPageText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // Debug: Log a sample of the extracted text to see structure
+    const textSample = normalizedText.substring(Math.max(0, normalizedText.length - 2000));
+    this.debug.log('📄 Last 2000 chars of extracted text:', textSample);
 
     try {
       // Helper function to parse Brazilian number format
@@ -133,18 +179,32 @@ export class PdfParserService {
         return isNaN(parsed) ? undefined : parsed;
       };
 
-      // Helper function to extract value after label
-      const extractValue = (label: string, text: string): number | undefined => {
+      // Helper function to extract value associated with a label
+      // Supports both "Label: Value" and "Value Label" formats
+      const extractValue = (label: string, text: string, exactMatch: boolean = false): number | undefined => {
+        // Escape special regex characters in label
+        const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // For exact match, use word boundaries to prevent partial matches
+        const boundary = exactMatch ? '\\b' : '';
+        
         const patterns = [
-          new RegExp(`${label}[:\\s]+([\\d.,\\s]+[CD]?)\\b`, 'i'),
-          new RegExp(`${label}\\s+([\\d.,\\s]+[CD]?)\\b`, 'i'),
-          new RegExp(`${label}\\s*:\\s*([\\d.,\\s]+[CD]?)\\b`, 'i'),
+          // 1. Label: Value (Standard) -> "Label: 123,45 D"
+          new RegExp(`${boundary}${escapedLabel}\\s*[:]\\s*([\\d.,\\s]+)\\s*[CD]?\\b`, 'i'),
+          // 2. Label Value (Standard) -> "Label 123,45 D"
+          new RegExp(`${boundary}${escapedLabel}\\s+([\\d.,\\s]+)\\s*[CD]?\\b`, 'i'),
+          // 3. Value Label (Columnar/XP style) -> "123,45 D Label"
+          // Matches a number (and optional D/C) followed by the label
+          new RegExp(`\\b([\\d.,]+)\\s*[CD]?\\s*${escapedLabel}`, 'i')
         ];
 
         for (const pattern of patterns) {
           const match = text.match(pattern);
           if (match && match[1]) {
-            return parseBrazilianNumber(match[1]);
+            const value = parseBrazilianNumber(match[1]);
+            if (value !== undefined) {
+              return value;
+            }
           }
         }
         return undefined;
@@ -156,27 +216,40 @@ export class PdfParserService {
                               extractValue('Vendas a vista', normalizedText);
       summary.compras_a_vista = extractValue('Compras à vista', normalizedText) || 
                                 extractValue('Compras a vista', normalizedText);
-      summary.valor_das_operacoes = extractValue('Valor das operações', normalizedText);
+      summary.valor_das_operacoes = extractValue('Valor das operações', normalizedText) ||
+                                    extractValue('Valor das oper', normalizedText);
 
       // Resumo Financeiro
-      summary.clearing = extractValue('Clearing', normalizedText);
       summary.valor_liquido_operacoes = extractValue('Valor líquido das operações', normalizedText) ||
-                                        extractValue('Valor liquido das operacoes', normalizedText);
+                                        extractValue('Valor liquido das operacoes', normalizedText) ||
+                                        extractValue('Valor líquido das oper', normalizedText);
       summary.taxa_liquidacao = extractValue('Taxa de liquidação', normalizedText) ||
                                 extractValue('Taxa de liquidacao', normalizedText);
-      summary.taxa_registro = extractValue('Taxa de registro', normalizedText);
+      summary.taxa_registro = extractValue('Taxa de Registro', normalizedText) ||
+                               extractValue('Taxa de registro', normalizedText);
       summary.total_cblc = extractValue('Total CBLC', normalizedText);
-      summary.bolsa = extractValue('Bolsa', normalizedText);
       summary.emolumentos = extractValue('Emolumentos', normalizedText);
-      summary.taxa_transferencia_ativos = extractValue('Taxa de transferência de ativos', normalizedText) ||
-                                          extractValue('Taxa de transferencia de ativos', normalizedText);
-      summary.total_bovespa = extractValue('Total Bovespa', normalizedText);
+      summary.total_bovespa = extractValue('Total Bovespa / Soma', normalizedText) ||
+                              extractValue('Total Bovespa', normalizedText);
+      
+      // Total Custos / Despesas
+      summary.total_custos_despesas = extractValue('Total Custos / Despesas', normalizedText, true) ||
+                                      extractValue('Total Custos/Despesas', normalizedText, true) ||
+                                      extractValue('Total de custos / despesas', normalizedText, true) ||
+                                      extractValue('Total de custos e despesas', normalizedText, true);
+      
+      // Taxa de transferência de ativos
+      summary.taxa_transferencia_ativos = extractValue('Taxa de Transf. de Ativos', normalizedText, true) ||
+                                          extractValue('Taxa de transferência de ativos', normalizedText, true) ||
+                                          extractValue('Taxa de transferencia de ativos', normalizedText, true);
 
       // Custos Operacionais
-      summary.taxa_operacional = extractValue('Taxa operacional', normalizedText);
+      summary.taxa_operacional = extractValue('Taxa Operacional', normalizedText) ||
+                                 extractValue('Taxa operacional', normalizedText);
       summary.execucao = extractValue('Execução', normalizedText) ||
                         extractValue('Execucao', normalizedText);
-      summary.taxa_custodia = extractValue('Taxa de custódia', normalizedText) ||
+      summary.taxa_custodia = extractValue('Taxa de Custódia', normalizedText) ||
+                              extractValue('Taxa de custódia', normalizedText) ||
                               extractValue('Taxa de custodia', normalizedText);
       summary.impostos = extractValue('Impostos', normalizedText);
       summary.irrf_operacoes = extractValue('I.R.R.F. s/ operações', normalizedText) ||
@@ -185,10 +258,38 @@ export class PdfParserService {
       summary.irrf_base = extractValue('I.R.R.F. s/ base', normalizedText) ||
                          extractValue('IRRF s/ base', normalizedText);
       summary.outros_custos = extractValue('Outros', normalizedText);
-      summary.total_custos_despesas = extractValue('Total de custos', normalizedText) ||
-                                      extractValue('Total de custos e despesas', normalizedText);
-      summary.liquido = extractValue('Líquido para', normalizedText) ||
-                       extractValue('Liquido para', normalizedText);
+      
+      // Líquido para - matches "Líquido para DD/MM/YYYY" or "Value Líquido para DD/MM/YYYY"
+      // Need special handling for "Líquido para" because of the date
+      
+      // Try "Value Líquido para" (XP style - Value before label)
+      const liquidoPrecedingMatch = normalizedText.match(/\b([\d.,]+)\s*[CD]?\s*Líquido\s+para/i) ||
+                                    normalizedText.match(/\b([\d.,]+)\s*[CD]?\s*Liquido\s+para/i);
+      
+      if (liquidoPrecedingMatch && liquidoPrecedingMatch[1]) {
+        summary.liquido = parseBrazilianNumber(liquidoPrecedingMatch[1]);
+      } else {
+        // Try "Líquido para DD/MM/YYYY Value" (Standard style - Label Date Value)
+        // Must SKIP the date to avoid matching the day as the value
+        // Look for "Líquido para" followed by a date, then the value
+        const liquidoFollowingMatch = normalizedText.match(/Líquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i) ||
+                                      normalizedText.match(/Liquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i);
+        
+        if (liquidoFollowingMatch && liquidoFollowingMatch[1]) {
+          summary.liquido = parseBrazilianNumber(liquidoFollowingMatch[1]);
+        } else {
+          // Fallback only if specific date pattern didn't match
+          // Be careful not to use generic extractValue here as it might match the date "20"
+          // Check if we have a date right after
+          const hasDateAfter = /Líquido\s+para\s+\d{2}\//i.test(normalizedText) || 
+                               /Liquido\s+para\s+\d{2}\//i.test(normalizedText);
+          
+          if (!hasDateAfter) {
+            summary.liquido = extractValue('Líquido para', normalizedText) ||
+                             extractValue('Liquido para', normalizedText);
+          }
+        }
+      }
 
       // Extract date from "Líquido para DD/MM/YYYY"
       const liquidoDateMatch = normalizedText.match(/Líquido para\s+(\d{2}\/\d{2}\/\d{4})/i) ||

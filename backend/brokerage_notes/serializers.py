@@ -29,12 +29,10 @@ class BrokerageNoteSerializer(serializers.Serializer):
     valor_das_operacoes = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     
     # Resumo Financeiro (Financial Summary)
-    clearing = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     valor_liquido_operacoes = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     taxa_liquidacao = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     taxa_registro = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     total_cblc = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
-    bolsa = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     emolumentos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     taxa_transferencia_ativos = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)
     total_bovespa = serializers.DecimalField(max_digits=12, decimal_places=2, allow_null=True, required=False)

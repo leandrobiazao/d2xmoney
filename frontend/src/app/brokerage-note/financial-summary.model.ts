@@ -6,12 +6,10 @@ export interface FinancialSummary {
   valor_das_operacoes?: number;
   
   // Resumo Financeiro (Financial Summary)
-  clearing?: number;
   valor_liquido_operacoes?: number;
   taxa_liquidacao?: number;
   taxa_registro?: number;
   total_cblc?: number;
-  bolsa?: number;
   emolumentos?: number;
   taxa_transferencia_ativos?: number;
   total_bovespa?: number;

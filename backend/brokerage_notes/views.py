@@ -64,6 +64,12 @@ class BrokerageNoteListView(APIView):
         note_data['processed_at'] = datetime.now().isoformat()
         note_data['operations_count'] = len(note_data.get('operations', []))
         
+        # Debug: Log financial summary fields
+        print(f"DEBUG: Financial summary in request:")
+        print(f"  total_custos_despesas: {note_data.get('total_custos_despesas')}")
+        print(f"  taxa_operacional: {note_data.get('taxa_operacional')}")
+        print(f"  execucao: {note_data.get('execucao')}")
+        
         # Check for duplicate note
         user_id = note_data.get('user_id')
         note_number = note_data.get('note_number')

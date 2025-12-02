@@ -28,6 +28,11 @@
           {{ note.status === 'success' ? 'Sucesso' : note.status === 'partial' ? 'Parcial' : 'Falhou' }}
         </span>
       </div>
+      @if (note.total_custos_despesas !== null && note.total_custos_despesas !== undefined) {
+        <div class="metadata-item">
+          <strong>Custos de Negociação:</strong> {{ formatCurrency(note.total_custos_despesas) }}
+        </div>
+      }
       @if (note.error_message) {
         <div class="metadata-item error-message">
           <strong>Erro:</strong> {{ note.error_message }}

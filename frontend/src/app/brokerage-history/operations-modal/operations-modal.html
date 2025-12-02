@@ -23,23 +23,149 @@
           <p>{{ error }}</p>
         </div>
       } @else if (note) {
-        <!-- Note Metadata -->
-        <div class="note-metadata">
-          <div class="metadata-item">
-            <span class="label">Arquivo:</span>
-            <span class="value">{{ note.file_name }}</span>
+        <!-- Note Metadata Cards -->
+        <div class="metadata-cards">
+          <!-- Basic Info Card -->
+          <div class="metadata-card">
+            <div class="card-header">
+              <h3>Informações da Nota</h3>
+            </div>
+            <div class="card-content">
+              <div class="metadata-item">
+                <span class="label">Arquivo:</span>
+                <span class="value">{{ note.file_name }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Data:</span>
+                <span class="value">{{ note.note_date }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Número:</span>
+                <span class="value">{{ note.note_number }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Operações:</span>
+                <span class="value">{{ note.operations_count }}</span>
+              </div>
+            </div>
           </div>
-          <div class="metadata-item">
-            <span class="label">Data:</span>
-            <span class="value">{{ note.note_date }}</span>
+
+          <!-- Resumo dos Negócios Card -->
+          <div class="metadata-card">
+            <div class="card-header">
+              <h3>Resumo dos Negócios</h3>
+            </div>
+            <div class="card-content">
+              @if (note.debentures !== null && note.debentures !== undefined) {
+                <div class="metadata-item">
+                  <span class="label">Debêntures:</span>
+                  <span class="value">{{ formatCurrency(note.debentures) }}</span>
+                </div>
+              }
+              <div class="metadata-item">
+                <span class="label">Vendas à vista:</span>
+                <span class="value">{{ note.vendas_a_vista !== null && note.vendas_a_vista !== undefined ? formatCurrency(note.vendas_a_vista) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Compras à vista:</span>
+                <span class="value">{{ note.compras_a_vista !== null && note.compras_a_vista !== undefined ? formatCurrency(note.compras_a_vista) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Valor das operações:</span>
+                <span class="value">{{ note.valor_das_operacoes !== null && note.valor_das_operacoes !== undefined ? formatCurrency(note.valor_das_operacoes) : 'R$ 0,00' }}</span>
+              </div>
+            </div>
           </div>
-          <div class="metadata-item">
-            <span class="label">Número:</span>
-            <span class="value">{{ note.note_number }}</span>
+
+          <!-- Resumo Financeiro Card -->
+          <div class="metadata-card">
+            <div class="card-header">
+              <h3>Resumo Financeiro</h3>
+            </div>
+            <div class="card-content">
+              <div class="metadata-item">
+                <span class="label">Valor líquido das operações:</span>
+                <span class="value">{{ note.valor_liquido_operacoes !== null && note.valor_liquido_operacoes !== undefined ? formatCurrency(note.valor_liquido_operacoes) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Taxa de liquidação:</span>
+                <span class="value">{{ note.taxa_liquidacao !== null && note.taxa_liquidacao !== undefined ? formatCurrency(note.taxa_liquidacao) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Taxa de registro:</span>
+                <span class="value">{{ note.taxa_registro !== null && note.taxa_registro !== undefined ? formatCurrency(note.taxa_registro) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Total CBLC:</span>
+                <span class="value">{{ note.total_cblc !== null && note.total_cblc !== undefined ? formatCurrency(note.total_cblc) : 'R$ 0,00' }}</span>
+              </div>
+            </div>
           </div>
-          <div class="metadata-item">
-            <span class="label">Operações:</span>
-            <span class="value">{{ note.operations_count }}</span>
+
+          <!-- Bolsa Card -->
+          <div class="metadata-card">
+            <div class="card-header">
+              <h3>Bolsa</h3>
+            </div>
+            <div class="card-content">
+              <div class="metadata-item">
+                <span class="label">Emolumentos:</span>
+                <span class="value">{{ note.emolumentos !== null && note.emolumentos !== undefined ? formatCurrency(note.emolumentos) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Taxa de transferência de ativos:</span>
+                <span class="value">{{ note.taxa_transferencia_ativos !== null && note.taxa_transferencia_ativos !== undefined ? formatCurrency(note.taxa_transferencia_ativos) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Total Bovespa:</span>
+                <span class="value">{{ note.total_bovespa !== null && note.total_bovespa !== undefined ? formatCurrency(note.total_bovespa) : 'R$ 0,00' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custos Operacionais Card -->
+          <div class="metadata-card">
+            <div class="card-header">
+              <h3>Custos Operacionais</h3>
+            </div>
+            <div class="card-content">
+              <div class="metadata-item">
+                <span class="label">Taxa operacional:</span>
+                <span class="value">{{ note.taxa_operacional !== null && note.taxa_operacional !== undefined ? formatCurrency(note.taxa_operacional) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Execução:</span>
+                <span class="value">{{ note.execucao !== null && note.execucao !== undefined ? formatCurrency(note.execucao) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Taxa de custódia:</span>
+                <span class="value">{{ note.taxa_custodia !== null && note.taxa_custodia !== undefined ? formatCurrency(note.taxa_custodia) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Impostos:</span>
+                <span class="value">{{ note.impostos !== null && note.impostos !== undefined ? formatCurrency(note.impostos) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">I.R.R.F. s/ operações:</span>
+                <span class="value">{{ note.irrf_operacoes !== null && note.irrf_operacoes !== undefined ? formatCurrency(note.irrf_operacoes) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">I.R.R.F. s/ base:</span>
+                <span class="value">{{ note.irrf_base !== null && note.irrf_base !== undefined ? formatCurrency(note.irrf_base) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Outros custos:</span>
+                <span class="value">{{ note.outros_custos !== null && note.outros_custos !== undefined ? formatCurrency(note.outros_custos) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Total custos/despesas:</span>
+                <span class="value">{{ note.total_custos_despesas !== null && note.total_custos_despesas !== undefined ? formatCurrency(note.total_custos_despesas) : 'R$ 0,00' }}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="label">Líquido para {{ note.liquido_data || '' }}:</span>
+                <span class="value">{{ note.liquido !== null && note.liquido !== undefined ? formatCurrency(note.liquido) : 'R$ 0,00' }}</span>
+              </div>
+            </div>
           </div>
         </div>
 
