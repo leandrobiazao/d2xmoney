@@ -215,13 +215,17 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private processPositions(positions: Position[], loadingUserId: string): void {
-    // Fetch current prices for all positions
-    const tickers = positions.map(p => p.titulo);
+    // Filter out positions with zero quantity before fetching prices
+    const activePositions = positions.filter(p => p.quantidadeTotal > 0);
+    const tickers = activePositions.map(p => p.titulo);
+    
+    this.debug.log(`[Position Filter] Filtered ${positions.length} positions to ${activePositions.length} active positions (removed ${positions.length - activePositions.length} zero quantity positions)`);
+    
     if (tickers.length > 0) {
       // First, load stocks to get investment type mappings
-      this.loadStocksForInvestmentTypes(tickers, positions, loadingUserId);
+      this.loadStocksForInvestmentTypes(tickers, activePositions, loadingUserId);
     } else {
-      // No positions - ensure array is empty
+      // No active positions - ensure array is empty
       this.positions = [];
       this.groupedPositions.clear();
     }

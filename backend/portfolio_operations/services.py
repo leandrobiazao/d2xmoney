@@ -3,7 +3,10 @@ Portfolio service for managing aggregated portfolio summaries.
 This service manages portfolio summaries per user per ticker, including realized profit calculations using FIFO method.
 """
 from typing import List, Dict, Optional, Tuple
-from .models import PortfolioPosition
+from decimal import Decimal
+from datetime import datetime
+from django.db import transaction
+from .models import PortfolioPosition, CorporateEvent
 from brokerage_notes.services import BrokerageNoteHistoryService
 
 
@@ -243,6 +246,8 @@ class PortfolioService:
                     summary['precoMedio'] = summary['valorTotalInvestido'] / new_quantity
                 else:
                     summary['precoMedio'] = 0.0
+                
+                print(f"  [VENDA] {ticker} {operation_date_str}: -{quantidade} -> Total: {new_quantity}")
         
         return ticker_summaries
     
@@ -336,12 +341,324 @@ class PortfolioService:
         return ticker_summaries
     
     @staticmethod
+    def process_operations_with_corporate_events(operations: List[Dict], events_by_ticker: Dict[str, List[CorporateEvent]]) -> Dict[str, Dict]:
+        """
+        Process operations chronologically and apply corporate events when appropriate.
+        
+        When processing reaches an operation date that is equal to or after a corporate event's ex_date,
+        the accumulated positions for that ticker are adjusted before processing that operation.
+        
+        Args:
+            operations: List of operations sorted chronologically
+            events_by_ticker: Dict mapping ticker to list of CorporateEvent objects (sorted by ex_date)
+        
+        Returns:
+            Dict mapping ticker to summary: {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
+        """
+        from datetime import datetime
+        
+        ticker_summaries = {}  # {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
+        applied_events = {}  # Track which events have been applied per ticker: {ticker: [event_id, ...]}
+        
+        for operation in operations:
+            ticker = operation.get('titulo', '').strip().upper()
+            if not ticker:
+                continue
+            
+            operation_date_str = operation.get('data', '')
+            if not operation_date_str:
+                continue
+            
+            # Parse operation date (DD/MM/YYYY)
+            try:
+                parts = operation_date_str.split('/')
+                if len(parts) == 3:
+                    day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+                    operation_date = datetime(year, month, day).date()
+                else:
+                    operation_date = None
+            except (ValueError, IndexError):
+                operation_date = None
+            
+            # Check for corporate events that should be applied before this operation
+            if ticker in events_by_ticker and operation_date:
+                for event in events_by_ticker[ticker]:
+                    # Skip if event already applied
+                    if ticker in applied_events and event.id in applied_events[ticker]:
+                        continue
+                    
+                    # Apply event if operation date is >= ex_date
+                    if operation_date >= event.ex_date:
+                        # Initialize ticker summary if needed
+                        if ticker not in ticker_summaries:
+                            ticker_summaries[ticker] = {
+                                'quantidade': 0,
+                                'precoMedio': 0.0,
+                                'valorTotalInvestido': 0.0,
+                                'lucroRealizado': 0.0,
+                            }
+                        
+                        # Apply corporate event adjustment
+                        PortfolioService._apply_corporate_event_to_summary(
+                            ticker_summaries[ticker], event
+                        )
+                        
+                        # Mark event as applied
+                        if ticker not in applied_events:
+                            applied_events[ticker] = []
+                        applied_events[ticker].append(event.id)
+            
+            # Process the operation
+            tipo_operacao = operation.get('tipoOperacao', '').upper()
+            quantidade = abs(operation.get('quantidade', 0))
+            preco = operation.get('preco', 0.0)
+            valor_operacao = operation.get('valorOperacao', 0.0)
+            
+            # Initialize ticker summary if not exists
+            if ticker not in ticker_summaries:
+                ticker_summaries[ticker] = {
+                    'quantidade': 0,
+                    'precoMedio': 0.0,
+                    'valorTotalInvestido': 0.0,
+                    'lucroRealizado': 0.0,
+                }
+            
+            summary = ticker_summaries[ticker]
+            
+            if tipo_operacao == 'C':  # Purchase
+                # Calculate new weighted average price
+                current_quantity = summary['quantidade']
+                current_value = summary['valorTotalInvestido']
+                
+                new_quantity = current_quantity + quantidade
+                new_value = current_value + valor_operacao
+                
+                # Update quantity and total invested value
+                summary['quantidade'] = new_quantity
+                summary['valorTotalInvestido'] = new_value
+                
+                # Recalculate weighted average price
+                summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                
+            elif tipo_operacao == 'V':  # Sale
+                # Calculate realized profit using current average cost
+                current_average_cost = summary['precoMedio']
+                realized_profit = PortfolioService.calculate_average_cost_profit(
+                    quantidade, preco, current_average_cost
+                )
+                
+                # Update realized profit (cumulative)
+                summary['lucroRealizado'] += realized_profit
+                
+                # Update quantity and total invested value
+                current_quantity = summary['quantidade']
+                new_quantity = current_quantity - quantidade
+                if new_quantity < 0:
+                    new_quantity = 0
+                
+                # Recalculate value invested (proportional reduction)
+                if current_quantity > 0:
+                    reduction_ratio = quantidade / current_quantity
+                    summary['valorTotalInvestido'] *= (1 - reduction_ratio)
+                    if summary['valorTotalInvestido'] < 0:
+                        summary['valorTotalInvestido'] = 0.0
+                else:
+                    summary['valorTotalInvestido'] = 0.0
+                
+                summary['quantidade'] = new_quantity
+                
+                # Update average cost (should remain the same if using average cost method correctly)
+                if new_quantity > 0:
+                    summary['precoMedio'] = summary['valorTotalInvestido'] / new_quantity
+                else:
+                    summary['precoMedio'] = 0.0
+        
+        # Apply any remaining corporate events that haven't been applied yet
+        # This handles cases where all operations occurred before the ex-date
+        for ticker_key, events in events_by_ticker.items():
+            ticker_upper = ticker_key.upper()
+            for event in events:
+                # Skip if event already applied
+                if ticker_upper in applied_events and event.id in applied_events[ticker_upper]:
+                    continue
+                
+                # Check if ticker has a position (check both original and uppercase key)
+                ticker_in_summary = ticker_upper if ticker_upper in ticker_summaries else None
+                if not ticker_in_summary:
+                    # Try to find matching ticker (case-insensitive)
+                    for existing_ticker in ticker_summaries.keys():
+                        if existing_ticker.upper() == ticker_upper:
+                            ticker_in_summary = existing_ticker
+                            break
+                
+                # If ticker has a position, apply the event
+                if ticker_in_summary and ticker_summaries[ticker_in_summary]['quantidade'] > 0:
+                    PortfolioService._apply_corporate_event_to_summary(
+                        ticker_summaries[ticker_in_summary], event
+                    )
+                    # Mark as applied
+                    if ticker_upper not in applied_events:
+                        applied_events[ticker_upper] = []
+                    applied_events[ticker_upper].append(event.id)
+        
+        return ticker_summaries
+    
+    @staticmethod
+    def _apply_corporate_event_to_summary(summary: Dict, event: CorporateEvent) -> None:
+        """
+        Apply a corporate event adjustment to a ticker summary dictionary.
+        
+        For grouping (reverse split): If resulting quantity < 1, the position is zeroed (sold at market).
+        """
+        try:
+            numerator, denominator = event.parse_ratio()
+        except ValueError:
+            return  # Skip invalid events
+        
+        old_quantity = summary['quantidade']
+        old_price = summary['precoMedio']
+        old_total = summary['valorTotalInvestido']
+        
+        if old_quantity <= 0:
+            return  # Nothing to adjust
+        
+        # Convert to Decimal for calculations
+        old_price_decimal = Decimal(str(old_price))
+        old_total_decimal = Decimal(str(old_total))
+        
+        if event.event_type == 'GROUPING':
+            # Reverse split (grupamento): 20:1 means 20 old shares become 1 new share
+            # Quantity decreases by dividing by numerator (20), price increases by multiplying by numerator
+            new_quantity_float = old_quantity / numerator
+            new_quantity = int(new_quantity_float)
+            
+            # If resulting quantity is less than 1 (fraction), position is sold at market (zeroed)
+            if new_quantity < 1:
+                # Position liquidated (sold at market value)
+                summary['quantidade'] = 0
+                summary['precoMedio'] = 0.0
+                summary['valorTotalInvestido'] = 0.0
+            else:
+                new_price = old_price_decimal * Decimal(str(numerator))
+                new_total = Decimal(str(new_quantity)) * new_price
+                summary['quantidade'] = new_quantity
+                summary['precoMedio'] = float(new_price)
+                summary['valorTotalInvestido'] = float(new_total)
+                
+        elif event.event_type == 'SPLIT':
+            # Split (desdobramento): 1:5 means 1 old share becomes 5 new shares
+            # Quantity increases, price decreases
+            new_quantity = int(old_quantity * numerator)
+            new_price = old_price_decimal / Decimal(str(numerator))
+            new_total = Decimal(str(new_quantity)) * new_price
+            summary['quantidade'] = new_quantity
+            summary['precoMedio'] = float(new_price)
+            summary['valorTotalInvestido'] = float(new_total)
+            
+        elif event.event_type == 'BONUS':
+            # Bonus: typically increases quantity, maintains total value
+            bonus_shares = int((old_quantity / denominator) * numerator)
+            new_quantity = old_quantity + bonus_shares
+            new_total = old_total_decimal  # Keep total invested constant
+            new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
+            summary['quantidade'] = new_quantity
+            summary['precoMedio'] = float(new_price)
+            summary['valorTotalInvestido'] = float(new_total)
+    
+    @staticmethod
+    @transaction.atomic
+    def apply_ticker_change(event: CorporateEvent) -> Dict:
+        """
+        Apply a ticker change event to consolidate positions and operations under the new ticker.
+        
+        This method:
+        1. Finds all positions with the old ticker
+        2. Updates them to use the new ticker (or merges if new ticker position already exists)
+        3. Updates all operations in brokerage notes to use the new ticker
+        
+        Args:
+            event: CorporateEvent with event_type='TICKER_CHANGE'
+        
+        Returns:
+            Dict with result information
+        """
+        if event.event_type != 'TICKER_CHANGE':
+            raise ValueError(f"Event must be of type TICKER_CHANGE, got {event.event_type}")
+        
+        if not event.previous_ticker:
+            raise ValueError("previous_ticker is required for TICKER_CHANGE events")
+        
+        old_ticker = event.previous_ticker.upper()
+        new_ticker = event.ticker.upper()
+        
+        # Find all positions with the old ticker
+        old_positions = PortfolioPosition.objects.filter(ticker=old_ticker)
+        positions_updated = 0
+        
+        for old_pos in old_positions:
+            # Check if a position with the new ticker already exists for this user
+            try:
+                new_pos = PortfolioPosition.objects.get(user_id=old_pos.user_id, ticker=new_ticker)
+                # Merge positions: add quantities and recalculate weighted average
+                total_quantity = new_pos.quantidade + old_pos.quantidade
+                total_invested = float(new_pos.valor_total_investido) + float(old_pos.valor_total_investido)
+                
+                if total_quantity > 0:
+                    new_pos.preco_medio = Decimal(str(total_invested / total_quantity))
+                else:
+                    new_pos.preco_medio = Decimal('0.00')
+                
+                new_pos.quantidade = total_quantity
+                new_pos.valor_total_investido = Decimal(str(total_invested))
+                new_pos.lucro_realizado += old_pos.lucro_realizado
+                new_pos.save()
+                
+                # Delete the old position
+                old_pos.delete()
+                positions_updated += 1
+            except PortfolioPosition.DoesNotExist:
+                # No existing position with new ticker, just rename
+                old_pos.ticker = new_ticker
+                old_pos.save()
+                positions_updated += 1
+        
+        # Update operations in brokerage notes
+        from brokerage_notes.models import BrokerageNote
+        notes = BrokerageNote.objects.all()
+        operations_updated = 0
+        
+        for note in notes:
+            operations = note.operations or []
+            modified = False
+            
+            for operation in operations:
+                if operation.get('titulo', '').upper() == old_ticker:
+                    operation['titulo'] = new_ticker
+                    modified = True
+                    operations_updated += 1
+            
+            if modified:
+                note.operations = operations
+                note.save()
+        
+        return {
+            'success': True,
+            'message': f'Ticker change applied: {old_ticker} -> {new_ticker}',
+            'positions_updated': positions_updated,
+            'operations_updated': operations_updated,
+            'old_ticker': old_ticker,
+            'new_ticker': new_ticker,
+        }
+    
+    @staticmethod
     def refresh_portfolio_from_brokerage_notes() -> None:
         """
         Rebuild entire portfolio from all brokerage notes.
         This function processes all operations from brokerage notes chronologically
-        and rebuilds the complete portfolio summary.
+        and rebuilds the complete portfolio summary, applying corporate events when appropriate.
         """
+        from datetime import datetime
+        
         # Load all brokerage notes
         notes = BrokerageNoteHistoryService.load_history()
         
@@ -349,6 +666,15 @@ class PortfolioService:
             # No notes, create empty portfolio
             PortfolioService.save_portfolio({})
             return
+        
+        # Load all corporate events
+        corporate_events = CorporateEvent.objects.filter(applied=True).order_by('ex_date')
+        events_by_ticker = {}
+        for event in corporate_events:
+            ticker_key = event.ticker.upper()  # Use uppercase for consistency
+            if ticker_key not in events_by_ticker:
+                events_by_ticker[ticker_key] = []
+            events_by_ticker[ticker_key].append(event)
         
         # Extract all operations from all notes
         all_operations = []
@@ -388,8 +714,10 @@ class PortfolioService:
         # Process each user's operations
         portfolio = {}
         for user_id, user_operations in operations_by_user.items():
-            # Process operations using Average Cost method
-            ticker_summaries = PortfolioService.process_operations_average_cost(user_operations)
+            # Process operations with corporate events
+            ticker_summaries = PortfolioService.process_operations_with_corporate_events(
+                user_operations, events_by_ticker
+            )
             
             # Convert to list format sorted by ticker
             ticker_list = [
@@ -408,3 +736,107 @@ class PortfolioService:
         # Save portfolio to database
         PortfolioService.save_portfolio(portfolio)
         print(f"Portfolio refreshed: {len(portfolio)} users, {sum(len(tickers) for tickers in portfolio.values())} total ticker positions")
+    
+    @staticmethod
+    @transaction.atomic
+    def apply_corporate_event(event: CorporateEvent, user_id: Optional[str] = None) -> Dict:
+        """
+        Apply a corporate event adjustment to portfolio positions.
+        
+        For grouping (reverse split) events:
+        - Quantity: divide by ratio denominator (e.g., 20:1 -> divide by 20)
+        - Average price: multiply by ratio denominator (to maintain total invested value)
+        - Total invested: remains constant
+        
+        For split events:
+        - Quantity: multiply by ratio numerator (e.g., 1:5 -> multiply by 5)
+        - Average price: divide by ratio numerator
+        - Total invested: remains constant
+        
+        Args:
+            event: CorporateEvent instance
+            user_id: Optional user ID to apply only to that user. If None, applies to all users with the ticker.
+        
+        Returns:
+            Dict with statistics about the adjustment
+        """
+        try:
+            numerator, denominator = event.parse_ratio()
+        except ValueError as e:
+            raise ValueError(f"Invalid ratio format for event {event.id}: {e}")
+        
+        # Query positions to adjust
+        query = PortfolioPosition.objects.filter(ticker=event.ticker.upper())
+        if user_id:
+            query = query.filter(user_id=user_id)
+        
+        positions_to_adjust = list(query)
+        
+        if not positions_to_adjust:
+            return {
+                'success': True,
+                'message': f'No positions found for ticker {event.ticker}',
+                'positions_adjusted': 0
+            }
+        
+        adjusted_count = 0
+        
+        # Apply adjustment based on event type
+        for position in positions_to_adjust:
+            if position.quantidade <= 0:
+                # Skip positions with zero or negative quantity
+                continue
+            
+            old_quantity = position.quantidade
+            old_price = Decimal(str(position.preco_medio))
+            old_total = Decimal(str(position.valor_total_investido))
+            
+            if event.event_type == 'GROUPING':
+                # Reverse split (grupamento): 20:1 means 20 old shares become 1 new share
+                # Quantity decreases, price increases
+                new_quantity = int(old_quantity / denominator)
+                if new_quantity < 1:
+                    new_quantity = 0
+                    new_price = Decimal('0.00')
+                    new_total = Decimal('0.00')
+                else:
+                    new_price = old_price * Decimal(str(denominator))
+                    new_total = Decimal(str(new_quantity)) * new_price
+                
+            elif event.event_type == 'SPLIT':
+                # Split (desdobramento): 1:5 means 1 old share becomes 5 new shares
+                # Quantity increases, price decreases
+                new_quantity = int(old_quantity * numerator)
+                new_price = old_price / Decimal(str(numerator))
+                new_total = Decimal(str(new_quantity)) * new_price
+                
+            elif event.event_type == 'BONUS':
+                # Bonus: typically increases quantity, maintains total value
+                # Ratio format: "X:Y" where X new shares are given for Y existing
+                # Example: "1:10" means 1 bonus share for every 10 existing
+                bonus_shares = int((old_quantity / denominator) * numerator)
+                new_quantity = old_quantity + bonus_shares
+                # Price adjusts to maintain total invested value
+                new_total = old_total  # Keep total invested constant
+                new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
+                
+            else:
+                # Unknown event type, skip
+                continue
+            
+            # Update position
+            position.quantidade = new_quantity
+            position.preco_medio = float(new_price) if isinstance(new_price, Decimal) else new_price
+            position.valor_total_investido = float(new_total) if isinstance(new_total, Decimal) else new_total
+            position.save(update_fields=['quantidade', 'preco_medio', 'valor_total_investido'])
+            
+            adjusted_count += 1
+        
+        return {
+            'success': True,
+            'message': f'Applied {event.get_event_type_display()} adjustment to {adjusted_count} position(s)',
+            'positions_adjusted': adjusted_count,
+            'ticker': event.ticker,
+            'event_type': event.event_type,
+            'ratio': event.ratio
+        }

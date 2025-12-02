@@ -1,0 +1,263 @@
+<div class="corporate-events-container">
+  <div class="header-actions">
+    <h3>Eventos Corporativos</h3>
+    <button class="btn btn-primary" (click)="onCreate()">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
+        <path d="M8 3V13M3 8H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Novo Evento
+    </button>
+  </div>
+
+  @if (errorMessage) {
+    <div class="message error" (click)="clearMessages()">
+      <strong>Erro:</strong> {{ errorMessage }}
+    </div>
+  }
+
+  @if (successMessage) {
+    <div class="message success" (click)="clearMessages()">
+      {{ successMessage }}
+    </div>
+  }
+
+  @if (showForm) {
+    <div class="form-container">
+      <div class="form-header">
+        <h4>{{ editingEvent ? 'Editar Evento' : 'Novo Evento Corporativo' }}</h4>
+        <button class="btn-close" (click)="onCancel()">×</button>
+      </div>
+
+      <form (ngSubmit)="onSave()">
+        <div class="form-row">
+          <div class="form-group required">
+            <label for="ticker">{{ formData.event_type === 'TICKER_CHANGE' ? 'Novo Ticker *' : 'Ticker *' }}</label>
+            <input
+              type="text"
+              id="ticker"
+              [(ngModel)]="formData.ticker"
+              name="ticker"
+              [placeholder]="formData.event_type === 'TICKER_CHANGE' ? 'Ex: ISAE4 (novo)' : 'Ex: AERI3'"
+              required
+              maxlength="20"
+              [disabled]="editingEvent !== null"
+            />
+          </div>
+
+          @if (formData.event_type === 'TICKER_CHANGE') {
+            <div class="form-group required">
+              <label for="previous_ticker">Ticker Anterior *</label>
+              <input
+                type="text"
+                id="previous_ticker"
+                [(ngModel)]="formData.previous_ticker"
+                name="previous_ticker"
+                placeholder="Ex: TRPL4 (antigo)"
+                required
+                maxlength="20"
+              />
+            </div>
+          }
+
+          <div class="form-group required">
+            <label for="asset_type">Tipo de Ativo *</label>
+            <select
+              id="asset_type"
+              [(ngModel)]="formData.asset_type"
+              name="asset_type"
+              required
+            >
+              <option value="STOCK">Ação</option>
+              <option value="FII">Fundo Imobiliário (FII)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group required">
+            <label for="event_type">Tipo de Evento *</label>
+            <select
+              id="event_type"
+              [(ngModel)]="formData.event_type"
+              name="event_type"
+              required
+            >
+              <option value="GROUPING">Grupamento (Reverse Split)</option>
+              <option value="SPLIT">Desdobramento (Split)</option>
+              <option value="BONUS">Bonificação</option>
+              <option value="SUBSCRIPTION">Subscrição</option>
+              <option value="TICKER_CHANGE">Mudança de Ticker/Nome</option>
+            </select>
+          </div>
+
+          <div class="form-group required">
+            <label for="ex_date">Data Ex-Evento *</label>
+            <input
+              type="date"
+              id="ex_date"
+              [(ngModel)]="formData.ex_date"
+              name="ex_date"
+              required
+            />
+          </div>
+        </div>
+
+        @if (formData.event_type !== 'TICKER_CHANGE') {
+          <div class="form-row">
+            <div class="form-group required">
+              <label for="ratio">Proporção *</label>
+              <input
+                type="text"
+                id="ratio"
+                [(ngModel)]="formData.ratio"
+                name="ratio"
+                placeholder="Ex: 20:1 (grupamento), 1:5 (split)"
+                required
+                pattern="\d+:\d+"
+                title="Formato: X:Y (ex: 20:1, 1:5)"
+            />
+            <small class="form-hint">Formato: X:Y (ex: 20:1 para grupamento, 1:5 para split)</small>
+          </div>
+        </div>
+        }
+
+        <div class="form-row">
+          <div class="form-group full-width">
+            <label for="description">Descrição</label>
+            <textarea
+              id="description"
+              [(ngModel)]="formData.description"
+              name="description"
+              rows="3"
+              placeholder="Descrição detalhada do evento (opcional)"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="onCancel()">
+            Cancelar
+          </button>
+          <button type="submit" class="btn btn-primary">
+            {{ editingEvent ? 'Atualizar' : 'Criar' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  }
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>Buscar Ticker:</label>
+      <input
+        type="text"
+        [(ngModel)]="searchTicker"
+        (input)="applyFilters()"
+        placeholder="Ex: AERI3"
+      />
+    </div>
+
+    <div class="filter-group">
+      <label>Tipo de Evento:</label>
+      <select [(ngModel)]="filterEventType" (change)="applyFilters()">
+        <option value="">Todos</option>
+        <option value="GROUPING">Grupamento</option>
+        <option value="SPLIT">Desdobramento</option>
+        <option value="BONUS">Bonificação</option>
+        <option value="SUBSCRIPTION">Subscrição</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Tipo de Ativo:</label>
+      <select [(ngModel)]="filterAssetType" (change)="applyFilters()">
+        <option value="">Todos</option>
+        <option value="STOCK">Ação</option>
+        <option value="FII">FII</option>
+      </select>
+    </div>
+
+    <button class="btn btn-secondary" (click)="resetFilters()">
+      Limpar Filtros
+    </button>
+  </div>
+
+  @if (isLoading) {
+    <div class="loading">Carregando eventos corporativos...</div>
+  } @else if (filteredEvents.length === 0) {
+    <div class="empty-state">
+      <p>Nenhum evento corporativo encontrado.</p>
+    </div>
+  } @else {
+    <div class="table-container">
+      <table class="events-table">
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Tipo Ativo</th>
+            <th>Tipo Evento</th>
+            <th>Data Ex-Evento</th>
+            <th>Proporção</th>
+            <th>Descrição</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (event of filteredEvents; track event.id) {
+            <tr>
+              <td class="ticker">{{ event.ticker }}</td>
+              <td>{{ event.asset_type_display }}</td>
+              <td>{{ event.event_type_display }}</td>
+              <td>{{ formatDate(event.ex_date) }}</td>
+              <td class="ratio">{{ event.ratio }}</td>
+              <td class="description">{{ event.description || '-' }}</td>
+              <td>
+                <span class="badge" [class.applied]="event.applied">
+                  {{ event.applied ? 'Aplicado' : 'Pendente' }}
+                </span>
+              </td>
+              <td>
+                <div class="event-actions">
+                  <button
+                    class="btn-icon"
+                    (click)="onEdit(event)"
+                    title="Editar"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M11.333 2a2.828 2.828 0 1 1 4 4L6 15.333H2v-4L11.333 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="btn-icon btn-apply"
+                    (click)="onApply(event)"
+                    [disabled]="applyingEventId === event.id"
+                    [title]="event.applied ? 'Ajuste já aplicado' : 'Aplicar ajuste ao portfólio'"
+                  >
+                    @if (applyingEventId === event.id) {
+                      <span class="spinner">⏳</span>
+                    } @else {
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M13.333 4L6 11.333 2.667 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    }
+                  </button>
+                  <button
+                    class="btn-icon btn-danger"
+                    (click)="onDelete(event)"
+                    title="Excluir"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 4h12M6 4V2a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2m2 0v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4h8z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
