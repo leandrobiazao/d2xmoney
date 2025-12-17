@@ -107,3 +107,6 @@ class Command(BaseCommand):
                 f'python manage.py apply_aeri3_grouping --apply'
             )
 
+
+
+

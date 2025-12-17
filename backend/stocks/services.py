@@ -56,6 +56,9 @@ class StockService:
         For Brazilian stocks (B3 market), appends .SA suffix to ticker.
         Example: BERK34 -> BERK34.SA
         
+        Uses stock.info as primary source (more reliable for current prices),
+        with stock.history() as fallback.
+        
         Args:
             ticker: Stock ticker symbol
             market: Financial market (default 'B3' for Brazilian stocks)
@@ -68,7 +71,21 @@ class StockService:
             yfinance_ticker = f"{ticker}.SA" if market == 'B3' else ticker
             
             stock = yf.Ticker(yfinance_ticker)
-            # Fetch last day's data
+            
+            # Try to get price from stock.info first (more reliable for current price)
+            try:
+                info = stock.info
+                # Try different price fields in order of preference
+                price_fields = ['regularMarketPrice', 'currentPrice', 'previousClose', 'regularMarketPreviousClose']
+                for field in price_fields:
+                    if field in info and info[field] is not None:
+                        price = float(info[field])
+                        if price > 0:
+                            return price
+            except:
+                pass  # If info fails, try history as fallback
+            
+            # Fallback: Fetch last day's data from history
             data = stock.history(period="1d")
             
             if not data.empty and 'Close' in data.columns:

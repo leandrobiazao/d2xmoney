@@ -143,6 +143,20 @@ export class CorporateEventsComponent implements OnInit {
         this.errorMessage = 'Ticker anterior é obrigatório para mudança de ticker';
         return;
       }
+      this.formData.ratio = ''; // Clear ratio for ticker change
+    } else if (this.formData.event_type === 'FUND_CONVERSION') {
+      if (!this.formData.previous_ticker) {
+        this.errorMessage = 'Ticker do fundo extinto é obrigatório para conversão de fundo';
+        return;
+      }
+      if (!this.formData.ratio) {
+        this.errorMessage = 'Proporção é obrigatória para conversão de fundo (ex: 3:2)';
+        return;
+      }
+      if (!/^\d+:\d+$/.test(this.formData.ratio)) {
+        this.errorMessage = 'Proporção deve estar no formato X:Y (ex: 3:2 para 3 novas cotas para cada 2 antigas)';
+        return;
+      }
     } else {
       // For other event types, ratio is required
       if (!this.formData.ratio) {

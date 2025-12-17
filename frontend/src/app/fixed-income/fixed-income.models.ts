@@ -48,6 +48,7 @@ export interface ImportResult {
   cdb_count: number;
   tesouro_count: number;
   caixa_count?: number;
+  fund_count?: number;
   debug_info?: string[];
   error_details?: string;
 }

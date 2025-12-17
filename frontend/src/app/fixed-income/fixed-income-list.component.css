@@ -377,4 +377,31 @@ td {
   }
 }
 
+/* Investment Funds Section */
+.funds-section {
+  margin-bottom: 2rem;
+}
+
+.fund-name {
+  font-weight: 600;
+  color: #1d1d1f;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.funds-section table th {
+  background: #f5f5f7;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6e6e73;
+}
+
+.funds-section table td {
+  font-size: 0.9375rem;
+}
+
 

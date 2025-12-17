@@ -215,8 +215,8 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private processPositions(positions: Position[], loadingUserId: string): void {
-    // Filter out positions with zero quantity before fetching prices
-    const activePositions = positions.filter(p => p.quantidadeTotal > 0);
+    // Filter out positions with zero quantity before fetching prices (include negative quantities)
+    const activePositions = positions.filter(p => p.quantidadeTotal !== 0);
     const tickers = activePositions.map(p => p.titulo);
     
     this.debug.log(`[Position Filter] Filtered ${positions.length} positions to ${activePositions.length} active positions (removed ${positions.length - activePositions.length} zero quantity positions)`);
@@ -264,18 +264,19 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
               let valorAtual: number | undefined;
               let totalLucro: number | undefined;
 
-              if (currentPrice !== undefined && position.quantidadeTotal > 0) {
+              if (currentPrice !== undefined && position.quantidadeTotal !== 0) {
                 // Calculate unrealized P&L: (Current Price - Average Cost) × Quantity
+                // For negative quantities (short positions), this represents unrealized P&L from the short position
                 unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
-                // Calculate Valor Atual: Quantidade × Preço Atual
+                // Calculate Valor Atual: Quantidade × Preço Atual (can be negative for short positions)
                 valorAtual = position.quantidadeTotal * currentPrice;
                 // Calculate Total Lucro: Lucro Realizado + Lucro Não Realizado
                 totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
-              } else if (position.quantidadeTotal > 0) {
+              } else if (position.quantidadeTotal !== 0) {
                 // If no price, total lucro is just realized profit
                 totalLucro = position.lucroRealizado || 0;
               } else {
-                // No quantity, total lucro is just realized profit
+                // Zero quantity, total lucro is just realized profit
                 totalLucro = position.lucroRealizado || 0;
               }
 
@@ -322,11 +323,12 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
               let valorAtual: number | undefined;
               let totalLucro: number | undefined;
 
-              if (currentPrice !== undefined && position.quantidadeTotal > 0) {
+              if (currentPrice !== undefined && position.quantidadeTotal !== 0) {
+                // Calculate unrealized P&L for both long and short positions
                 unrealizedPnL = (currentPrice - position.precoMedioPonderado) * position.quantidadeTotal;
                 valorAtual = position.quantidadeTotal * currentPrice;
                 totalLucro = (position.lucroRealizado || 0) + unrealizedPnL;
-              } else if (position.quantidadeTotal > 0) {
+              } else if (position.quantidadeTotal !== 0) {
                 totalLucro = position.lucroRealizado || 0;
               } else {
                 totalLucro = position.lucroRealizado || 0;
@@ -578,7 +580,8 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   getActivePositionsCount(): number {
-    return this.positions.filter(pos => pos.quantidadeTotal > 0).length;
+    // Include both long (positive) and short (negative) positions, exclude zero
+    return this.positions.filter(pos => pos.quantidadeTotal !== 0).length;
   }
 
   getTotalValorAtual(): number {

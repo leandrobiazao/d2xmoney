@@ -40,6 +40,9 @@
           @if (importResult.caixa_count !== undefined) {
             <span>CAIXA: {{ importResult.caixa_count }}</span>
           }
+          @if (importResult.fund_count !== undefined) {
+            <span>Fundos: {{ importResult.fund_count }}</span>
+          }
         </div>
       </div>
       <button class="btn-dismiss" (click)="dismissImportMessage()">×</button>
@@ -57,7 +60,7 @@
   }
 
   <!-- Summary Cards -->
-  @if (!isLoading && groupedPositions.length > 0) {
+  @if (!isLoading && (groupedPositions.length > 0 || investmentFunds.length > 0)) {
     <div class="summary-cards">
       <div class="summary-card">
         <span class="label">Total Investido:</span>
@@ -82,11 +85,53 @@
     <div class="error-state">
       <p>{{ errorMessage }}</p>
     </div>
-  } @else if (groupedPositions.length === 0) {
+  } @else if (groupedPositions.length === 0 && investmentFunds.length === 0) {
     <div class="empty-state">
       <p>Nenhuma posição de Renda Fixa encontrada.</p>
     </div>
   } @else {
+    <!-- Investment Funds Section -->
+    @if (investmentFunds.length > 0) {
+      <div class="group-section funds-section">
+        <div class="positions-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Fundo</th>
+                <th>Tipo</th>
+                <th>Data Cota</th>
+                <th>Valor Cota</th>
+                <th>Qtd. Cotas</th>
+                <th>Em Cotização</th>
+                <th>Posição</th>
+                <th>Valor Líquido</th>
+                <th>Rent. Líquida</th>
+                <th>% Alocação</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (fund of investmentFunds; track fund.id) {
+                <tr>
+                  <td class="fund-name">{{ fund.fund_name }}</td>
+                  <td>{{ fund.fund_type_display }}</td>
+                  <td>{{ formatDate(fund.quota_date) }}</td>
+                  <td>{{ formatCurrency(fund.quota_value) }}</td>
+                  <td>{{ fund.quota_quantity }}</td>
+                  <td>{{ formatCurrency(fund.in_quotation) }}</td>
+                  <td class="positive">{{ formatCurrency(fund.position_value) }}</td>
+                  <td class="positive">{{ formatCurrency(fund.net_value) }}</td>
+                  <td class="positive">
+                    {{ formatPercent(fund.net_return_percent) }}
+                  </td>
+                  <td>{{ getFundAllocationPercent(fund).toFixed(2) }}%</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
     <!-- Grouped Positions -->
     @for (group of groupedPositions; track group.type) {
         <div class="group-section">

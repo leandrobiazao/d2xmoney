@@ -26,9 +26,14 @@ export function parseDate(dateStr: string): Date {
  * @returns Formatted currency string
  */
 export function formatCurrency(value: number): string {
+  if (value === null || value === undefined || isNaN(value)) {
+    return 'R$ 0,00';
+  }
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
-    currency: 'BRL'
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
   }).format(value);
 }
 

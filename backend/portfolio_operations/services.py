@@ -5,6 +5,7 @@ This service manages portfolio summaries per user per ticker, including realized
 from typing import List, Dict, Optional, Tuple
 from decimal import Decimal
 from datetime import datetime
+import re
 from django.db import transaction
 from .models import PortfolioPosition, CorporateEvent
 from brokerage_notes.services import BrokerageNoteHistoryService
@@ -12,6 +13,17 @@ from brokerage_notes.services import BrokerageNoteHistoryService
 
 class PortfolioService:
     """Service for managing portfolio summaries using Django ORM."""
+    
+    @staticmethod
+    def is_fii(ticker: str) -> bool:
+        """
+        Check if a ticker is a FII (Fundo Imobiliário).
+        FIIs typically end with '11' in Brazilian market.
+        """
+        if not ticker:
+            return False
+        ticker_upper = ticker.strip().upper()
+        return ticker_upper.endswith('11')
     
     @staticmethod
     def get_portfolio_file_path():
@@ -204,50 +216,112 @@ class PortfolioService:
                 current_value = summary['valorTotalInvestido']
                 
                 new_quantity = current_quantity + quantidade
-                new_value = current_value + valor_operacao
                 
-                # Update quantity and total invested value
-                summary['quantidade'] = new_quantity
-                summary['valorTotalInvestido'] = new_value
-                
-                # Recalculate weighted average price
-                summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                # If closing a short position (going from negative to zero or positive)
+                if current_quantity < 0:
+                    if new_quantity <= 0:
+                        # Still short or exactly zero - reduce short position
+                        short_closing_qty = min(quantidade, abs(current_quantity))
+                        if short_closing_qty > 0:
+                            closing_profit = (summary['precoMedio'] - preco) * short_closing_qty
+                            summary['lucroRealizado'] += closing_profit
+                        
+                        summary['quantidade'] = new_quantity
+                        summary['valorTotalInvestido'] = 0.0
+                        
+                        if new_quantity < 0:
+                            # Still short - update average short price
+                            old_abs_qty = abs(current_quantity)
+                            old_price = summary['precoMedio']
+                            new_abs_qty = abs(new_quantity)
+                            if old_abs_qty > 0:
+                                total_short_value = old_abs_qty * old_price - short_closing_qty * preco
+                                summary['precoMedio'] = total_short_value / new_abs_qty if new_abs_qty > 0 else 0.0
+                            else:
+                                summary['precoMedio'] = preco
+                        else:
+                            # Exactly zero - close short position completely
+                            summary['precoMedio'] = 0.0
+                    else:
+                        # Closing short and going long
+                        short_closing_profit = (summary['precoMedio'] - preco) * abs(current_quantity)
+                        summary['lucroRealizado'] += short_closing_profit
+                        remaining_qty = new_quantity
+                        summary['quantidade'] = remaining_qty
+                        summary['valorTotalInvestido'] = remaining_qty * preco
+                        summary['precoMedio'] = preco
+                else:
+                    # Normal purchase (from zero or positive)
+                    new_value = current_value + valor_operacao
+                    summary['quantidade'] = new_quantity
+                    summary['valorTotalInvestido'] = new_value
+                    summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                    if new_quantity == 0:
+                        summary['valorTotalInvestido'] = 0.0
+                        summary['precoMedio'] = 0.0
                 
             elif tipo_operacao == 'V':  # Sale
                 # Calculate realized profit using current average cost
                 current_average_cost = summary['precoMedio']
-                realized_profit = PortfolioService.calculate_average_cost_profit(
-                    quantidade, preco, current_average_cost
-                )
-                
-                # Update realized profit (cumulative)
-                summary['lucroRealizado'] += realized_profit
-                
-                # Update quantity and total invested value
                 current_quantity = summary['quantidade']
-                new_quantity = current_quantity - quantidade
-                if new_quantity < 0:
-                    new_quantity = 0
                 
-                # Recalculate value invested (proportional reduction)
+                # Calculate realized profit for the full sale quantity
+                # Allow selling more than available (short position)
                 if current_quantity > 0:
+                    realized_profit = PortfolioService.calculate_average_cost_profit(
+                        quantidade, preco, current_average_cost
+                    )
+                    
+                    # Recalculate value invested (proportional reduction)
                     reduction_ratio = quantidade / current_quantity
                     summary['valorTotalInvestido'] *= (1 - reduction_ratio)
                     if summary['valorTotalInvestido'] < 0:
                         summary['valorTotalInvestido'] = 0.0
                 else:
+                    # Selling more than available (short position or negative quantity)
+                    if current_quantity < 0:
+                        # Already in short position
+                        realized_profit = PortfolioService.calculate_average_cost_profit(
+                            quantidade, preco, current_average_cost
+                        )
+                    else:
+                        # Going from positive/zero to negative
+                        realized_profit = 0.0
                     summary['valorTotalInvestido'] = 0.0
                 
-                summary['quantidade'] = new_quantity
+                # Update realized profit (cumulative)
+                summary['lucroRealizado'] += realized_profit
                 
-                # Update average cost (should remain the same if using average cost method correctly)
-                # But recalculate to ensure accuracy after rounding
-                if new_quantity > 0 and summary['valorTotalInvestido'] > 0:
-                    summary['precoMedio'] = summary['valorTotalInvestido'] / new_quantity
-                else:
+                # Update quantity - allow negative values
+                summary['quantidade'] = current_quantity - quantidade
+                
+                # If quantity reached zero, zero out invested value
+                if summary['quantidade'] == 0:
+                    summary['valorTotalInvestido'] = 0.0
                     summary['precoMedio'] = 0.0
+                elif summary['quantidade'] > 0:
+                    # Positive quantity - update average cost
+                    if summary['valorTotalInvestido'] > 0:
+                        summary['precoMedio'] = summary['valorTotalInvestido'] / summary['quantidade']
+                    else:
+                        summary['precoMedio'] = 0.0
+                else:
+                    # Negative quantity (short position)
+                    # Calculate weighted average of short positions
+                    old_abs_qty = abs(current_quantity) if current_quantity < 0 else 0
+                    old_price = summary['precoMedio'] if current_quantity < 0 and summary['precoMedio'] > 0 else 0.0
+                    
+                    new_abs_qty = abs(summary['quantidade'])
+                    if old_abs_qty > 0:
+                        # Weighted average
+                        total_short_value = old_abs_qty * old_price + quantidade * preco
+                        summary['precoMedio'] = total_short_value / new_abs_qty
+                    else:
+                        # First time going short
+                        summary['precoMedio'] = preco
+                    summary['valorTotalInvestido'] = 0.0
                 
-                print(f"  [VENDA] {ticker} {operation_date_str}: -{quantidade} -> Total: {new_quantity}")
+                print(f"  [VENDA] {ticker} {operation_date_str}: -{quantidade} -> Total: {summary['quantidade']}")
         
         return ticker_summaries
     
@@ -308,28 +382,53 @@ class PortfolioService:
                 
             elif tipo_operacao == 'V':  # Sale
                 # Calculate realized profit using FIFO
-                realized_profit, updated_queue = PortfolioService.calculate_fifo_profit(
-                    quantidade, preco, summary['purchase_queue']
-                )
+                current_quantity = summary['quantidade']
+                
+                if current_quantity > 0 and len(summary['purchase_queue']) > 0:
+                    # Normal FIFO processing when we have shares
+                    realized_profit, updated_queue = PortfolioService.calculate_fifo_profit(
+                        quantidade, preco, summary['purchase_queue']
+                    )
+                    summary['purchase_queue'] = updated_queue
+                else:
+                    # Short position or no shares - no FIFO queue to process
+                    if current_quantity < 0:
+                        # Already short, calculate profit based on current average
+                        realized_profit = PortfolioService.calculate_average_cost_profit(
+                            quantidade, preco, summary['precoMedio']
+                        )
+                    else:
+                        # Going short for the first time
+                        realized_profit = 0.0
+                    summary['purchase_queue'] = []  # No purchase queue for short positions
                 
                 # Update realized profit
                 summary['lucroRealizado'] += realized_profit
                 
-                # Update purchase queue
-                summary['purchase_queue'] = updated_queue
+                # Update quantity - allow negative values
+                summary['quantidade'] = current_quantity - quantidade
                 
-                # Update quantity
-                summary['quantidade'] -= quantidade
-                if summary['quantidade'] < 0:
-                    summary['quantidade'] = 0
-                
-                # Recalculate weighted average price from remaining purchases
-                if len(summary['purchase_queue']) > 0:
+                # Recalculate weighted average price
+                if summary['quantidade'] > 0 and len(summary['purchase_queue']) > 0:
+                    # Long position - calculate from purchase queue
                     total_value = sum(p['quantidade'] * p['preco'] for p in summary['purchase_queue'])
                     total_quantity = sum(p['quantidade'] for p in summary['purchase_queue'])
                     summary['precoMedio'] = total_value / total_quantity if total_quantity > 0 else 0.0
                     summary['valorTotalInvestido'] = total_value
+                elif summary['quantidade'] < 0:
+                    # Short position - update average short price
+                    old_abs_qty = abs(current_quantity) if current_quantity < 0 else 0
+                    old_price = summary['precoMedio'] if current_quantity < 0 and summary['precoMedio'] > 0 else 0.0
+                    
+                    new_abs_qty = abs(summary['quantidade'])
+                    if old_abs_qty > 0:
+                        total_short_value = old_abs_qty * old_price + quantidade * preco
+                        summary['precoMedio'] = total_short_value / new_abs_qty
+                    else:
+                        summary['precoMedio'] = preco
+                    summary['valorTotalInvestido'] = 0.0
                 else:
+                    # Zero quantity
                     summary['precoMedio'] = 0.0
                     summary['valorTotalInvestido'] = 0.0
         
@@ -431,47 +530,111 @@ class PortfolioService:
                 current_value = summary['valorTotalInvestido']
                 
                 new_quantity = current_quantity + quantidade
-                new_value = current_value + valor_operacao
                 
-                # Update quantity and total invested value
-                summary['quantidade'] = new_quantity
-                summary['valorTotalInvestido'] = new_value
-                
-                # Recalculate weighted average price
-                summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                # If closing a short position (going from negative to zero or positive)
+                if current_quantity < 0:
+                    if new_quantity <= 0:
+                        # Still short or exactly zero - reduce short position
+                        short_closing_qty = min(quantidade, abs(current_quantity))
+                        if short_closing_qty > 0:
+                            closing_profit = (summary['precoMedio'] - preco) * short_closing_qty
+                            summary['lucroRealizado'] += closing_profit
+                        
+                        summary['quantidade'] = new_quantity
+                        summary['valorTotalInvestido'] = 0.0
+                        
+                        if new_quantity < 0:
+                            # Still short - update average short price
+                            old_abs_qty = abs(current_quantity)
+                            old_price = summary['precoMedio']
+                            new_abs_qty = abs(new_quantity)
+                            if old_abs_qty > 0:
+                                total_short_value = old_abs_qty * old_price - short_closing_qty * preco
+                                summary['precoMedio'] = total_short_value / new_abs_qty if new_abs_qty > 0 else 0.0
+                            else:
+                                summary['precoMedio'] = preco
+                        else:
+                            # Exactly zero - close short position completely
+                            summary['precoMedio'] = 0.0
+                    else:
+                        # Closing short and going long
+                        short_closing_profit = (summary['precoMedio'] - preco) * abs(current_quantity)
+                        summary['lucroRealizado'] += short_closing_profit
+                        remaining_qty = new_quantity
+                        summary['quantidade'] = remaining_qty
+                        summary['valorTotalInvestido'] = remaining_qty * preco
+                        summary['precoMedio'] = preco
+                else:
+                    # Normal purchase (from zero or positive)
+                    new_value = current_value + valor_operacao
+                    summary['quantidade'] = new_quantity
+                    summary['valorTotalInvestido'] = new_value
+                    summary['precoMedio'] = new_value / new_quantity if new_quantity > 0 else 0.0
+                    if new_quantity == 0:
+                        summary['valorTotalInvestido'] = 0.0
+                        summary['precoMedio'] = 0.0
                 
             elif tipo_operacao == 'V':  # Sale
                 # Calculate realized profit using current average cost
                 current_average_cost = summary['precoMedio']
-                realized_profit = PortfolioService.calculate_average_cost_profit(
-                    quantidade, preco, current_average_cost
-                )
-                
-                # Update realized profit (cumulative)
-                summary['lucroRealizado'] += realized_profit
-                
-                # Update quantity and total invested value
                 current_quantity = summary['quantidade']
-                new_quantity = current_quantity - quantidade
-                if new_quantity < 0:
-                    new_quantity = 0
                 
-                # Recalculate value invested (proportional reduction)
+                # Calculate realized profit for the full sale quantity
+                # Allow selling more than available (short position) for both stocks and FIIs
                 if current_quantity > 0:
+                    realized_profit = PortfolioService.calculate_average_cost_profit(
+                        quantidade, preco, current_average_cost
+                    )
+                    
+                    # Recalculate value invested (proportional reduction)
                     reduction_ratio = quantidade / current_quantity
                     summary['valorTotalInvestido'] *= (1 - reduction_ratio)
                     if summary['valorTotalInvestido'] < 0:
                         summary['valorTotalInvestido'] = 0.0
                 else:
+                    # Selling more than available (short position or negative quantity)
+                    if current_quantity < 0:
+                        # Already in short position
+                        realized_profit = PortfolioService.calculate_average_cost_profit(
+                            quantidade, preco, current_average_cost
+                        )
+                    else:
+                        # Going from positive/zero to negative
+                        realized_profit = 0.0
                     summary['valorTotalInvestido'] = 0.0
                 
-                summary['quantidade'] = new_quantity
+                # Update realized profit (cumulative)
+                summary['lucroRealizado'] += realized_profit
                 
-                # Update average cost (should remain the same if using average cost method correctly)
-                if new_quantity > 0:
-                    summary['precoMedio'] = summary['valorTotalInvestido'] / new_quantity
-                else:
+                # Update quantity - allow negative values
+                summary['quantidade'] = current_quantity - quantidade
+                
+                # If quantity reached zero, zero out invested value
+                if summary['quantidade'] == 0:
+                    summary['valorTotalInvestido'] = 0.0
                     summary['precoMedio'] = 0.0
+                elif summary['quantidade'] > 0:
+                    # Positive quantity - update average cost from remaining invested value
+                    if summary['valorTotalInvestido'] > 0:
+                        summary['precoMedio'] = summary['valorTotalInvestido'] / summary['quantidade']
+                    else:
+                        summary['precoMedio'] = 0.0
+                else:
+                    # Negative quantity (short position) - use sale price as average for tracking
+                    # This represents the average price at which we're short
+                    # Calculate weighted average: (old_qty * old_price + new_qty * new_price) / total_qty
+                    old_abs_qty = abs(current_quantity) if current_quantity < 0 else 0
+                    old_price = summary['precoMedio'] if current_quantity < 0 and summary['precoMedio'] > 0 else 0.0
+                    
+                    new_abs_qty = abs(summary['quantidade'])
+                    if old_abs_qty > 0:
+                        # Weighted average of short positions
+                        total_short_value = old_abs_qty * old_price + quantidade * preco
+                        summary['precoMedio'] = total_short_value / new_abs_qty
+                    else:
+                        # First time going short
+                        summary['precoMedio'] = preco
+                    summary['valorTotalInvestido'] = 0.0
         
         # Apply any remaining corporate events that haven't been applied yet
         # This handles cases where all operations occurred before the ex-date
@@ -556,10 +719,30 @@ class PortfolioService:
             summary['valorTotalInvestido'] = float(new_total)
             
         elif event.event_type == 'BONUS':
-            # Bonus: typically increases quantity, maintains total value
+            # Bonus: increases quantity
+            # If bonus share value is specified in description (e.g., "R$ 5"), add it to total invested
+            # Otherwise, maintain total invested constant (bonus shares have zero cost basis)
+            bonus_share_value = None
+            if event.description:
+                # Try to extract bonus share value from description (e.g., "R$ 5", "R$5.00", "valor R$ 5")
+                match = re.search(r'R\$\s*(\d+(?:[.,]\d+)?)', event.description, re.IGNORECASE)
+                if match:
+                    try:
+                        bonus_share_value = Decimal(match.group(1).replace(',', '.'))
+                    except (ValueError, AttributeError):
+                        pass
+            
             bonus_shares = int((old_quantity / denominator) * numerator)
             new_quantity = old_quantity + bonus_shares
-            new_total = old_total_decimal  # Keep total invested constant
+            
+            if bonus_share_value is not None:
+                # Add bonus share value to total invested
+                bonus_total_value = Decimal(str(bonus_shares)) * bonus_share_value
+                new_total = old_total_decimal + bonus_total_value
+            else:
+                # Keep total invested constant (bonus shares have zero cost basis)
+                new_total = old_total_decimal
+            
             new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
             summary['quantidade'] = new_quantity
             summary['precoMedio'] = float(new_price)
@@ -648,6 +831,142 @@ class PortfolioService:
             'operations_updated': operations_updated,
             'old_ticker': old_ticker,
             'new_ticker': new_ticker,
+        }
+    
+    @staticmethod
+    @transaction.atomic
+    def apply_fund_conversion(event: CorporateEvent, user_id: Optional[str] = None) -> Dict:
+        """
+        Apply a fund conversion event (extinction/liquidation with conversion to another fund).
+        
+        This method:
+        1. Finds all positions with the old ticker (extinct fund)
+        2. Calculates new quantities using conversion ratio (e.g., 3:2 = 3 new for each 2 old)
+        3. Creates/updates positions with the new ticker
+        4. Removes old positions (extinct fund)
+        5. Updates operations in brokerage notes
+        
+        Args:
+            event: CorporateEvent with event_type='FUND_CONVERSION'
+            user_id: Optional user_id to apply only for specific user
+        
+        Returns:
+            Dict with result information
+        """
+        if event.event_type != 'FUND_CONVERSION':
+            raise ValueError(f"Event must be of type FUND_CONVERSION, got {event.event_type}")
+        
+        if not event.previous_ticker:
+            raise ValueError("previous_ticker is required for FUND_CONVERSION events (extinct fund)")
+        
+        if not event.ratio:
+            raise ValueError("ratio is required for FUND_CONVERSION events (e.g., '3:2' = 3 new for 2 old)")
+        
+        old_ticker = event.previous_ticker.upper()
+        new_ticker = event.ticker.upper()
+        
+        # Parse ratio (e.g., "3:2" means 3 new shares for every 2 old shares)
+        ratio_parts = event.ratio.split(':')
+        if len(ratio_parts) != 2:
+            raise ValueError(f"Invalid ratio format: {event.ratio}. Expected format: 'X:Y' (e.g., '3:2')")
+        
+        new_shares_numerator = Decimal(ratio_parts[0])
+        old_shares_denominator = Decimal(ratio_parts[1])
+        conversion_factor = new_shares_numerator / old_shares_denominator
+        
+        # Find all positions with the old ticker (extinct fund)
+        old_positions = PortfolioPosition.objects.filter(ticker=old_ticker)
+        if user_id:
+            old_positions = old_positions.filter(user_id=user_id)
+        
+        positions_updated = 0
+        positions_created = 0
+        
+        for old_pos in old_positions:
+            if old_pos.quantidade <= 0:
+                continue  # Skip zero-quantity positions
+            
+            # Calculate new quantity: old_quantity * (new_shares / old_shares)
+            # Example: 198 old * (3/2) = 297, then we need to check if we should round
+            # For FIIs, typically quantities are whole numbers, so we should round
+            new_quantity_float = float(old_pos.quantidade) * float(conversion_factor)
+            new_quantity = int(round(new_quantity_float))
+            
+            # Calculate new price: maintain the same total invested value
+            # New price = (old_price * old_quantity) / new_quantity
+            old_total_invested = float(old_pos.valor_total_investido)
+            if new_quantity > 0:
+                new_price = Decimal(str(old_total_invested / new_quantity))
+            else:
+                new_price = Decimal('0.00')
+            
+            # Check if a position with the new ticker already exists for this user
+            try:
+                new_pos = PortfolioPosition.objects.get(user_id=old_pos.user_id, ticker=new_ticker)
+                # Consolidate positions: add quantities and recalculate weighted average
+                total_old_quantity = new_pos.quantidade
+                total_old_invested = float(new_pos.valor_total_investido)
+                
+                # Add converted position
+                total_new_quantity = total_old_quantity + new_quantity
+                total_new_invested = total_old_invested + old_total_invested
+                
+                if total_new_quantity > 0:
+                    new_pos.preco_medio = Decimal(str(total_new_invested / total_new_quantity))
+                else:
+                    new_pos.preco_medio = Decimal('0.00')
+                
+                new_pos.quantidade = total_new_quantity
+                new_pos.valor_total_investido = Decimal(str(total_new_invested))
+                new_pos.lucro_realizado += old_pos.lucro_realizado  # Sum realized profit
+                new_pos.save()
+                positions_updated += 1
+            except PortfolioPosition.DoesNotExist:
+                # Create new position with converted values
+                new_pos = PortfolioPosition.objects.create(
+                    user_id=old_pos.user_id,
+                    ticker=new_ticker,
+                    quantidade=new_quantity,
+                    preco_medio=new_price,
+                    valor_total_investido=Decimal(str(old_total_invested)),
+                    lucro_realizado=old_pos.lucro_realizado,
+                )
+                positions_created += 1
+            
+            # Delete the old position (extinct fund)
+            old_pos.delete()
+        
+        # Update operations in brokerage notes (convert old ticker to new ticker)
+        from brokerage_notes.models import BrokerageNote
+        notes = BrokerageNote.objects.all()
+        operations_updated = 0
+        
+        for note in notes:
+            if user_id and note.user_id != user_id:
+                continue  # Skip notes from other users if filtering
+            
+            operations = note.operations or []
+            modified = False
+            
+            for operation in operations:
+                if operation.get('titulo', '').upper() == old_ticker:
+                    operation['titulo'] = new_ticker
+                    modified = True
+                    operations_updated += 1
+            
+            if modified:
+                note.operations = operations
+                note.save()
+        
+        return {
+            'success': True,
+            'message': f'Fund conversion applied: {old_ticker} (extinct) -> {new_ticker} (ratio {event.ratio})',
+            'positions_created': positions_created,
+            'positions_updated': positions_updated,
+            'operations_updated': operations_updated,
+            'old_ticker': old_ticker,
+            'new_ticker': new_ticker,
+            'conversion_ratio': event.ratio,
         }
     
     @staticmethod
@@ -811,13 +1130,30 @@ class PortfolioService:
                 new_total = Decimal(str(new_quantity)) * new_price
                 
             elif event.event_type == 'BONUS':
-                # Bonus: typically increases quantity, maintains total value
-                # Ratio format: "X:Y" where X new shares are given for Y existing
-                # Example: "1:10" means 1 bonus share for every 10 existing
+                # Bonus: increases quantity
+                # If bonus share value is specified in description (e.g., "R$ 5"), add it to total invested
+                # Otherwise, maintain total invested constant (bonus shares have zero cost basis)
+                bonus_share_value = None
+                if event.description:
+                    # Try to extract bonus share value from description (e.g., "R$ 5", "R$5.00", "valor R$ 5")
+                    match = re.search(r'R\$\s*(\d+(?:[.,]\d+)?)', event.description, re.IGNORECASE)
+                    if match:
+                        try:
+                            bonus_share_value = Decimal(match.group(1).replace(',', '.'))
+                        except (ValueError, AttributeError):
+                            pass
+                
                 bonus_shares = int((old_quantity / denominator) * numerator)
                 new_quantity = old_quantity + bonus_shares
-                # Price adjusts to maintain total invested value
-                new_total = old_total  # Keep total invested constant
+                
+                if bonus_share_value is not None:
+                    # Add bonus share value to total invested
+                    bonus_total_value = Decimal(str(bonus_shares)) * bonus_share_value
+                    new_total = old_total + bonus_total_value
+                else:
+                    # Keep total invested constant (bonus shares have zero cost basis)
+                    new_total = old_total
+                
                 new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
                 
             else:

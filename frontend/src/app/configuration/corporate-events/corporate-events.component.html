@@ -31,31 +31,48 @@
       <form (ngSubmit)="onSave()">
         <div class="form-row">
           <div class="form-group required">
-            <label for="ticker">{{ formData.event_type === 'TICKER_CHANGE' ? 'Novo Ticker *' : 'Ticker *' }}</label>
+            <label for="ticker">
+              @if (formData.event_type === 'TICKER_CHANGE') {
+                Novo Ticker *
+              } @else if (formData.event_type === 'FUND_CONVERSION') {
+                Novo Fundo (Ticker) *
+              } @else {
+                Ticker *
+              }
+            </label>
             <input
               type="text"
               id="ticker"
               [(ngModel)]="formData.ticker"
               name="ticker"
-              [placeholder]="formData.event_type === 'TICKER_CHANGE' ? 'Ex: ISAE4 (novo)' : 'Ex: AERI3'"
+              [placeholder]="formData.event_type === 'TICKER_CHANGE' ? 'Ex: ISAE4 (novo)' : (formData.event_type === 'FUND_CONVERSION' ? 'Ex: MCHY11 (novo fundo)' : 'Ex: AERI3')"
               required
               maxlength="20"
               [disabled]="editingEvent !== null"
             />
           </div>
 
-          @if (formData.event_type === 'TICKER_CHANGE') {
+          @if (formData.event_type === 'TICKER_CHANGE' || formData.event_type === 'FUND_CONVERSION') {
             <div class="form-group required">
-              <label for="previous_ticker">Ticker Anterior *</label>
+              <label for="previous_ticker">
+                @if (formData.event_type === 'TICKER_CHANGE') {
+                  Ticker Anterior *
+                } @else {
+                  Fundo Extinto (Ticker Anterior) *
+                }
+              </label>
               <input
                 type="text"
                 id="previous_ticker"
                 [(ngModel)]="formData.previous_ticker"
                 name="previous_ticker"
-                placeholder="Ex: TRPL4 (antigo)"
+                [placeholder]="formData.event_type === 'FUND_CONVERSION' ? 'Ex: MCHF11 (fundo extinto)' : 'Ex: TRPL4 (antigo)'"
                 required
                 maxlength="20"
               />
+              @if (formData.event_type === 'FUND_CONVERSION') {
+                <small class="form-hint">Ticker do fundo que foi extinto/liquidado</small>
+              }
             </div>
           }
 
@@ -87,6 +104,7 @@
               <option value="BONUS">Bonificação</option>
               <option value="SUBSCRIPTION">Subscrição</option>
               <option value="TICKER_CHANGE">Mudança de Ticker/Nome</option>
+              <option value="FUND_CONVERSION">Extinção/Conversão de Fundo</option>
             </select>
           </div>
 
@@ -111,12 +129,18 @@
                 id="ratio"
                 [(ngModel)]="formData.ratio"
                 name="ratio"
-                placeholder="Ex: 20:1 (grupamento), 1:5 (split)"
+                [placeholder]="formData.event_type === 'FUND_CONVERSION' ? 'Ex: 3:2 (3 novas para 2 antigas)' : 'Ex: 20:1 (grupamento), 1:5 (split)'"
                 required
                 pattern="\d+:\d+"
-                title="Formato: X:Y (ex: 20:1, 1:5)"
+                title="Formato: X:Y (ex: 20:1, 1:5, 3:2)"
             />
-            <small class="form-hint">Formato: X:Y (ex: 20:1 para grupamento, 1:5 para split)</small>
+            <small class="form-hint">
+              @if (formData.event_type === 'FUND_CONVERSION') {
+                Formato: X:Y (ex: 3:2 = 3 cotas novas para cada 2 cotas antigas)
+              } @else {
+                Formato: X:Y (ex: 20:1 para grupamento, 1:5 para split)
+              }
+            </small>
           </div>
         </div>
         }

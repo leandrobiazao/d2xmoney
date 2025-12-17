@@ -205,6 +205,23 @@ class CorporateEventApplyView(APIView):
                         'operations_updated': result['operations_updated'],
                         'event': CorporateEventSerializer(event).data
                     }, status=status.HTTP_200_OK)
+                elif event.event_type == 'FUND_CONVERSION':
+                    # Handle fund conversion (extinction/liquidation with conversion)
+                    result = PortfolioService.apply_fund_conversion(event, user_id=user_id)
+                    event.applied = True
+                    event.save()
+                    
+                    # Refresh portfolio to ensure consistency
+                    PortfolioService.refresh_portfolio_from_brokerage_notes()
+                    
+                    return Response({
+                        'success': True,
+                        'message': result['message'],
+                        'positions_created': result.get('positions_created', 0),
+                        'positions_updated': result.get('positions_updated', 0),
+                        'operations_updated': result.get('operations_updated', 0),
+                        'event': CorporateEventSerializer(event).data
+                    }, status=status.HTTP_200_OK)
                 else:
                     # Handle other event types (GROUPING, SPLIT, BONUS)
                     PortfolioService.apply_corporate_event(event, user_id=user_id)

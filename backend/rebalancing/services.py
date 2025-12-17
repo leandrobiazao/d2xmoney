@@ -165,16 +165,6 @@ class RebalancingService:
                             current_subtype_data[key] = st
                         break
                 
-                # Debug: Print current_subtype_data for Renda Fixa
-                if type_alloc.investment_type.name == 'Renda Fixa':
-                    print(f"DEBUG Renda Fixa current_subtype_data keys: {list(current_subtype_data.keys())}")
-                    for k, v in current_subtype_data.items():
-                        print(f"DEBUG   key={k} (type={type(k).__name__}): {v.get('sub_type_name')} = R$ {v.get('current_value', 0):,.2f}")
-                    # Also print the raw data structure before normalization
-                    print(f"DEBUG Raw current_allocation sub_types (before normalization):")
-                    for st in type_data.get('sub_types', []):
-                        print(f"DEBUG   raw sub_type_id={st.get('sub_type_id')} (type={type(st.get('sub_type_id')).__name__}), name={st.get('sub_type_name')}, value={st.get('current_value', 0)}")
-                
                 # Generate rebalancing actions for each subtype
                 for subtype_alloc in subtype_allocations:
                     subtype = subtype_alloc.sub_type
@@ -186,13 +176,6 @@ class RebalancingService:
                         except (ValueError, TypeError):
                             pass  # Keep as-is if conversion fails
                     subtype_name = subtype.name if subtype else subtype_alloc.custom_name
-                    
-                    # Debug: Print matching info for Tesouro Direto
-                    if subtype_name and 'tesouro' in subtype_name.lower():
-                        print(f"DEBUG Tesouro Direto: subtype_id={subtype_id} (type={type(subtype_id)}), subtype_name={subtype_name}")
-                        print(f"DEBUG current_subtype_data keys: {list(current_subtype_data.keys())}")
-                        for k, v in current_subtype_data.items():
-                            print(f"DEBUG   key={k} (type={type(k)}), name={v.get('sub_type_name')}, value={v.get('current_value')}")
                     
                     # Check if this is a crypto subtype - if so, create individual actions for each crypto position
                     is_crypto_subtype = False
@@ -334,22 +317,12 @@ class RebalancingService:
                         subtype_current_value = Decimal('0')
                         matched = False
                         
-                        # Debug for Tesouro Direto
-                        is_tesouro = subtype_name and 'tesouro' in subtype_name.lower()
-                        if is_tesouro:
-                            print(f"DEBUG Matching Tesouro: subtype_id={subtype_id} (type={type(subtype_id)})")
-                            print(f"DEBUG current_subtype_data keys: {list(current_subtype_data.keys())}")
-                            for k, v in current_subtype_data.items():
-                                print(f"DEBUG   key={k} (type={type(k)}), name={v.get('sub_type_name')}, value={v.get('current_value')}")
-                        
                         if current_subtype_data:
                             # Try multiple matching strategies to handle type inconsistencies
                             # Strategy 1: Direct key lookup (fastest) - try both original and normalized
                             if subtype_id in current_subtype_data:
                                 subtype_current_value = Decimal(str(current_subtype_data[subtype_id].get('current_value', 0)))
                                 matched = True
-                                if is_tesouro:
-                                    print(f"DEBUG Strategy 1 - Direct match found: subtype_id={subtype_id} -> value={subtype_current_value}")
                             else:
                                 # Strategy 2: Iterate and try exact match, then type conversion
                                 for sub_id, sub_data in current_subtype_data.items():
@@ -357,8 +330,6 @@ class RebalancingService:
                                     if sub_id == subtype_id:
                                         subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
                                         matched = True
-                                        if is_tesouro:
-                                            print(f"DEBUG Strategy 2a - Exact match found: sub_id={sub_id} (type={type(sub_id).__name__}) == subtype_id={subtype_id} (type={type(subtype_id).__name__}) -> value={subtype_current_value}")
                                         break
                                     
                                     # Try type conversion match (handles int vs string, etc.)
@@ -370,12 +341,8 @@ class RebalancingService:
                                             if normalized_sub_id == normalized_subtype_id:
                                                 subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
                                                 matched = True
-                                                if is_tesouro:
-                                                    print(f"DEBUG Strategy 2b - Type conversion match found: {normalized_sub_id}=={normalized_subtype_id} -> value={subtype_current_value}")
                                                 break
-                                    except (ValueError, TypeError) as e:
-                                        if is_tesouro:
-                                            print(f"DEBUG Strategy 2b - Type conversion failed: sub_id={sub_id}, subtype_id={subtype_id}, error={e}")
+                                    except (ValueError, TypeError):
                                         pass
                                 
                                 # Strategy 3: Name matching (fallback)
@@ -386,18 +353,7 @@ class RebalancingService:
                                         if current_name == target_name or current_name.startswith(target_name) or target_name.startswith(current_name):
                                             subtype_current_value = Decimal(str(sub_data.get('current_value', 0)))
                                             matched = True
-                                            if is_tesouro:
-                                                print(f"DEBUG Strategy 3 - Name match found: '{current_name}' == '{target_name}' -> value={subtype_current_value}")
                                             break
-                            
-                            if is_tesouro and not matched:
-                                print(f"DEBUG No match found for Tesouro Direto!")
-                                print(f"DEBUG   Looking for: subtype_id={subtype_id} (type={type(subtype_id)}), subtype_name={subtype_name}")
-                                print(f"DEBUG   Available keys: {list(current_subtype_data.keys())}")
-                                for k, v in current_subtype_data.items():
-                                    print(f"DEBUG     key={k} (type={type(k)}), name={v.get('sub_type_name')}")
-                                for k, v in current_subtype_data.items():
-                                    print(f"DEBUG     key={k}, name={v.get('sub_type_name')}, value={v.get('current_value')}")
                         
                         subtype_difference = subtype_target_value - subtype_current_value
                         
@@ -421,8 +377,6 @@ class RebalancingService:
                                 difference=subtype_difference,
                                 display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order
                             )
-                            if is_tesouro:
-                                print(f"DEBUG Created action for Tesouro Direto: current_value={subtype_current_value}, target_value={subtype_target_value}, difference={subtype_difference}")
         
         # Generate AMBB strategy recommendations for "Ações em Reais"
         # Pass the remaining monthly limit to consider previous sales this month
@@ -607,9 +561,36 @@ class RebalancingService:
                             current_quantity = 0
                             
                             if berk34_position:
-                                # Use valor_total_investido as current value (or could use current_price * quantity)
-                                current_value = Decimal(str(berk34_position.valor_total_investido))
+                                # Calculate current value using current price (same as get_current_allocation)
+                                from stocks.services import StockService
+                                current_price = None
+                                try:
+                                    # Try to get price from Stock catalog first (if recently updated)
+                                    from django.utils import timezone
+                                    from datetime import timedelta
+                                    
+                                    if berk34_stock.current_price and berk34_stock.current_price > 0:
+                                        # Use cached price if updated within last 1 hour
+                                        time_threshold = timezone.now() - timedelta(hours=1)
+                                        if berk34_stock.last_updated and berk34_stock.last_updated >= time_threshold:
+                                            current_price = float(berk34_stock.current_price)
+                                except Exception as e:
+                                    print(f"Error getting cached price for BERK34: {e}")
+                                
+                                # If no cached price available, fetch from API
+                                if current_price is None:
+                                    try:
+                                        current_price = StockService.fetch_price_from_google_finance('BERK34', 'B3')
+                                        # Update Stock catalog with new price if fetch succeeded
+                                        if current_price is not None:
+                                            StockService.update_stock_price('BERK34', current_price)
+                                    except Exception as e:
+                                        print(f"Error fetching current price for BERK34: {e}")
+                                
+                                # Use current price if available, otherwise use average price as fallback
+                                price = Decimal(str(current_price)) if current_price else berk34_position.preco_medio
                                 current_quantity = berk34_position.quantidade
+                                current_value = Decimal(str(current_quantity)) * price
                             
                             difference = target_value - current_value
                             

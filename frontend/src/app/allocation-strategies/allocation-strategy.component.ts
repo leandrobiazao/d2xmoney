@@ -283,10 +283,12 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   getSubTypeTotal(typeAlloc: DraftTypeAllocation): number {
-    return (typeAlloc.sub_type_allocations || []).reduce(
+    const total = (typeAlloc.sub_type_allocations || []).reduce(
       (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
       0
     );
+    // Round to 1 decimal place to avoid floating-point precision issues (e.g., 40.099999 -> 40.1)
+    return Math.round(total * 10) / 10;
   }
 
   isSubTypeTotalValid(typeAlloc: DraftTypeAllocation): boolean {
@@ -334,8 +336,13 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     
     if (subAlloc) {
       subAlloc.target_percentage = numericValue;
-      // Update the parent type percentage to match the sum of subtypes
-      typeAlloc.target_percentage = this.getSubTypeTotal(typeAlloc);
+      // Update the parent type percentage to match the exact sum of subtypes (without rounding)
+      // This ensures consistency when saving
+      const exactSubTotal = (typeAlloc.sub_type_allocations || []).reduce(
+        (sum, sub) => sum + Number(sub.target_percentage || 0),
+        0
+      );
+      typeAlloc.target_percentage = exactSubTotal;
     }
   }
 
@@ -419,27 +426,51 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       return;
     }
 
-    // Validate subtype totals for each type allocation
+    // Validate and fix subtype totals for each type allocation
     for (const typeAlloc of this.draftTypeAllocations) {
       if (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0) {
-        if (!this.isSubTypeTotalValid(typeAlloc)) {
-          alert(`Os subtipos de "${typeAlloc.investment_type.name}" precisam somar 100%`);
+        // Calculate exact sum of subtypes (without rounding)
+        const exactSubTotal = (typeAlloc.sub_type_allocations || []).reduce(
+          (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
+          0
+        );
+        
+        // Ensure parent type percentage matches exact sum of subtypes
+        // This prevents rounding issues when saving
+        typeAlloc.target_percentage = exactSubTotal;
+        
+        // Validate that subtypes sum matches parent (with tolerance for floating point)
+        if (Math.abs(exactSubTotal - Number(typeAlloc.target_percentage || 0)) >= 0.01) {
+          alert(`Os subtipos de "${typeAlloc.investment_type.name}" precisam somar ${typeAlloc.target_percentage.toFixed(2)}% (mesmo valor do tipo)`);
           return;
         }
       }
     }
 
-    const payload = this.draftTypeAllocations.map((typeAlloc, index) => ({
-      investment_type_id: typeAlloc.investment_type_id,
-      target_percentage: Number(typeAlloc.target_percentage),
-      display_order: index,
-      sub_type_allocations: (typeAlloc.sub_type_allocations || []).map((subAlloc, subIndex) => ({
-        sub_type_id: subAlloc.sub_type_id,
-        custom_name: subAlloc.custom_name,
-        target_percentage: Number(subAlloc.target_percentage),
-        display_order: subIndex
-      }))
-    }));
+    const payload = this.draftTypeAllocations.map((typeAlloc, index) => {
+      // Calculate exact sum of subtypes for this type allocation
+      const exactSubTotal = (typeAlloc.sub_type_allocations || []).reduce(
+        (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
+        0
+      );
+      
+      // Use exact sum if subtypes exist, otherwise use the type allocation percentage
+      const finalTargetPercentage = (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0)
+        ? exactSubTotal
+        : Number(typeAlloc.target_percentage);
+      
+      return {
+        investment_type_id: typeAlloc.investment_type_id,
+        target_percentage: finalTargetPercentage,
+        display_order: index,
+        sub_type_allocations: (typeAlloc.sub_type_allocations || []).map((subAlloc, subIndex) => ({
+          sub_type_id: subAlloc.sub_type_id,
+          custom_name: subAlloc.custom_name,
+          target_percentage: Number(subAlloc.target_percentage),
+          display_order: subIndex
+        }))
+      };
+    });
 
     this.isSaving = true;
     this.allocationStrategyService
@@ -719,9 +750,12 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   onTabChange(tab: 'configuration' | 'rebalancing'): void {
     this.activeTab = tab;
-    if (tab === 'rebalancing' && this.selectedUser) {
-      this.loadRecommendations(this.selectedUser.id);
+    if (this.selectedUser) {
+      // Always reload current allocation when switching tabs to ensure data is up-to-date
       this.loadCurrentAllocation(this.selectedUser.id);
+      if (tab === 'rebalancing') {
+        this.loadRecommendations(this.selectedUser.id);
+      }
     }
   }
 
@@ -770,8 +804,19 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   getAcoesReaisRebalanceActions(): RebalancingAction[] {
     const actions = this.getAcoesReaisActions().filter(a => a.action_type === 'rebalance');
-    // Sort by ranking (display_order) - lower is better
-    return actions.sort((a, b) => (a.display_order || 999) - (b.display_order || 999));
+    // Sort by smallest difference (absolute value) for stocks to sell, then by ranking for others
+    return actions.sort((a, b) => {
+      // If both need to sell (negative difference), sort by smallest absolute difference first
+      if (a.difference < 0 && b.difference < 0) {
+        const diffA = Math.abs(a.difference);
+        const diffB = Math.abs(b.difference);
+        if (diffA !== diffB) {
+          return diffA - diffB; // Smallest difference first
+        }
+      }
+      // Otherwise, sort by ranking (display_order) - lower is better
+      return (a.display_order || 999) - (b.display_order || 999);
+    });
   }
 
   getTotalAcoesReaisValueAfterRebalancing(): number {

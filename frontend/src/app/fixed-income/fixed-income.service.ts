@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { FixedIncomePosition, TesouroDiretoPosition, ImportResult } from './fixed-income.models';
+import { InvestmentFund, InvestmentFundSummary } from './investment-fund.models';
 
 @Injectable({
   providedIn: 'root'
@@ -51,6 +52,35 @@ export class FixedIncomeService {
       params = params.set('user_id', userId);
     }
     return this.http.get<TesouroDiretoPosition[]>(`${this.apiUrl}/tesouro-direto/`, { params });
+  }
+
+  // Investment Funds methods
+  getInvestmentFunds(userId?: string, fundType?: string): Observable<InvestmentFund[]> {
+    let params = new HttpParams();
+    if (userId) {
+      params = params.set('user_id', userId);
+    }
+    if (fundType) {
+      params = params.set('fund_type', fundType);
+    }
+    return this.http.get<InvestmentFund[]>(`${this.apiUrl}/investment-funds/`, { params });
+  }
+
+  getInvestmentFundSummary(userId: string): Observable<InvestmentFundSummary> {
+    const params = new HttpParams().set('user_id', userId);
+    return this.http.get<InvestmentFundSummary>(`${this.apiUrl}/investment-funds/summary/`, { params });
+  }
+
+  createInvestmentFund(fund: Partial<InvestmentFund>): Observable<InvestmentFund> {
+    return this.http.post<InvestmentFund>(`${this.apiUrl}/investment-funds/`, fund);
+  }
+
+  updateInvestmentFund(id: number, fund: Partial<InvestmentFund>): Observable<InvestmentFund> {
+    return this.http.patch<InvestmentFund>(`${this.apiUrl}/investment-funds/${id}/`, fund);
+  }
+
+  deleteInvestmentFund(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/investment-funds/${id}/`);
   }
 }
 

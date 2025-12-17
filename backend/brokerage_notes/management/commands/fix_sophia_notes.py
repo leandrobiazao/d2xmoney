@@ -54,3 +54,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f'\n✅ Successfully updated {updated} note(s)!'))
             self.stdout.write('All Sophia notes now have the correct user_id.')
 
+
+
+

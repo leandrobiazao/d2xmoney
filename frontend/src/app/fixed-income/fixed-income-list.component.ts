@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition, ImportResult } from './fixed-income.models';
+import { InvestmentFund } from './investment-fund.models';
 import { FixedIncomeDetailComponent } from './fixed-income-detail.component';
 
 interface GroupedPositions {
@@ -38,10 +39,12 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   
   positions: FixedIncomePosition[] = [];
+  investmentFunds: InvestmentFund[] = [];
   groupedPositions: GroupedPositions[] = [];
   filteredPositions: FixedIncomePosition[] = [];
   selectedPosition: FixedIncomePosition | null = null;
   isLoading = false;
+  isLoadingFunds = false;
   errorMessage: string | null = null;
   
   // Import related properties
@@ -89,6 +92,25 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       error: (error) => {
         this.errorMessage = 'Erro ao carregar posições de Renda Fixa';
         this.isLoading = false;
+      }
+    });
+
+    // Load investment funds
+    this.loadInvestmentFunds();
+  }
+
+  loadInvestmentFunds(): void {
+    if (!this.userId) return;
+    
+    this.isLoadingFunds = true;
+    this.fixedIncomeService.getInvestmentFunds(this.userId).subscribe({
+      next: (funds) => {
+        this.investmentFunds = funds;
+        this.isLoadingFunds = false;
+      },
+      error: (error) => {
+        console.error('Erro ao carregar fundos de investimento:', error);
+        this.isLoadingFunds = false;
       }
     });
   }
@@ -233,23 +255,53 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
 
   getTotalInvestido(): number {
     // Sum all applied_value (Total Aplicado) from all positions
-    return this.positions.reduce((sum, pos) => {
+    const positionsTotal = this.positions.reduce((sum, pos) => {
       const appliedValue = this.getPositionValue(pos.applied_value);
       return sum + appliedValue;
     }, 0);
+    
+    // Add investment funds applied_value
+    const fundsTotal = this.investmentFunds.reduce((sum, fund) => {
+      const appliedValue = typeof fund.applied_value === 'string' 
+        ? parseFloat(fund.applied_value) 
+        : (fund.applied_value || 0);
+      return sum + (isNaN(appliedValue) ? 0 : appliedValue);
+    }, 0);
+    
+    return positionsTotal + fundsTotal;
   }
 
   getValorAtual(): number {
     // Sum all position_value (Posição atual) from all positions
-    return this.groupedPositions.reduce((sum, group) => sum + group.totalValue, 0);
+    const positionsTotal = this.groupedPositions.reduce((sum, group) => sum + group.totalValue, 0);
+    
+    // Add investment funds position_value
+    const fundsTotal = this.investmentFunds.reduce((sum, fund) => {
+      const positionValue = typeof fund.position_value === 'string' 
+        ? parseFloat(fund.position_value) 
+        : (fund.position_value || 0);
+      return sum + (isNaN(positionValue) ? 0 : positionValue);
+    }, 0);
+    
+    return positionsTotal + fundsTotal;
   }
 
   getActivePositionsCount(): number {
     // Count positions with position_value > 0 (active positions)
-    return this.positions.filter(pos => {
+    const positionsCount = this.positions.filter(pos => {
       const positionValue = this.getPositionValue(pos.position_value);
       return positionValue > 0;
     }).length;
+    
+    // Count investment funds with position_value > 0
+    const fundsCount = this.investmentFunds.filter(fund => {
+      const positionValue = typeof fund.position_value === 'string' 
+        ? parseFloat(fund.position_value) 
+        : (fund.position_value || 0);
+      return !isNaN(positionValue) && positionValue > 0;
+    }).length;
+    
+    return positionsCount + fundsCount;
   }
 
   getSubtypePercentage(position: FixedIncomePosition): number {
@@ -277,24 +329,6 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
 
   closeDetail(): void {
     this.selectedPosition = null;
-  }
-
-  formatCurrency(value: number | undefined | null): string {
-    if (value === undefined || value === null || isNaN(value)) return 'R$ 0,00';
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
-  }
-
-  formatDate(date: string | undefined): string {
-    if (!date) return '-';
-    try {
-      const d = new Date(date);
-      return d.toLocaleDateString('pt-BR');
-    } catch {
-      return date;
-    }
   }
 
   formatPercentage(value: number): string {
@@ -384,6 +418,48 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   dismissImportMessage(): void {
     this.importResult = null;
     this.importErrorMessage = null;
+  }
+
+  // Helper methods for formatting
+  formatCurrency(value: number | string | undefined | null): string {
+    if (value === undefined || value === null) return 'R$ 0,00';
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue)) return 'R$ 0,00';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(numValue);
+  }
+
+  formatPercent(value: number | string | undefined | null): string {
+    if (value === undefined || value === null) return '0,00%';
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue)) return '0,00%';
+    return numValue.toFixed(2).replace('.', ',') + '%';
+  }
+
+  formatDate(date: string | undefined | null): string {
+    if (!date) return '-';
+    try {
+      const d = new Date(date);
+      return d.toLocaleDateString('pt-BR');
+    } catch {
+      return '-';
+    }
+  }
+
+  getTotalFundsValue(): number {
+    return this.investmentFunds.reduce((sum, fund) => {
+      const value = typeof fund.position_value === 'string' ? parseFloat(fund.position_value) : fund.position_value;
+      return sum + (isNaN(value) ? 0 : value);
+    }, 0);
+  }
+
+  getFundAllocationPercent(fund: InvestmentFund): number {
+    const totalValue = this.getTotalFundsValue();
+    if (totalValue === 0) return 0;
+    const fundValue = typeof fund.position_value === 'string' ? parseFloat(fund.position_value) : fund.position_value;
+    return (fundValue / totalValue) * 100;
   }
 }
 

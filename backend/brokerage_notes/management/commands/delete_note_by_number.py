@@ -89,3 +89,6 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.ERROR('No notes were deleted'))
 
+
+
+

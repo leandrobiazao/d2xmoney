@@ -171,11 +171,53 @@ class AllocationStrategyService:
                 'unallocated_cash': Decimal('0')
             }
         
-        # Calculate total portfolio value from stock positions
-        stock_total_value = sum(
-            Decimal(str(pos.valor_total_investido))
-            for pos in positions
-        )
+        # Calculate total portfolio value from stock positions using current prices
+        # For stocks, we need to fetch current prices and multiply by quantity
+        from stocks.services import StockService
+        stock_total_value = Decimal('0')
+        stock_position_current_values = {}  # Cache: ticker -> current_value for grouping later
+        
+        for pos in positions:
+            if pos.quantidade > 0:
+                # Try to get price from Stock catalog first (if recently updated)
+                current_price = None
+                try:
+                    from django.utils import timezone
+                    from datetime import timedelta
+                    
+                    stock = Stock.objects.filter(ticker=pos.ticker, is_active=True).first()
+                    if stock and stock.current_price and stock.current_price > 0:
+                        # Use cached price if updated within last 1 hour (reduced from 4 hours for more accuracy)
+                        time_threshold = timezone.now() - timedelta(hours=1)
+                        if stock.last_updated and stock.last_updated >= time_threshold:
+                            current_price = float(stock.current_price)
+                except Exception as e:
+                    print(f"Error getting cached price for {pos.ticker}: {e}")
+                
+                # If no cached price available, fetch from API
+                if current_price is None:
+                    try:
+                        current_price = StockService.fetch_price_from_google_finance(pos.ticker, 'B3')
+                        # Update Stock catalog with new price if fetch succeeded
+                        if current_price is not None:
+                            try:
+                                stock = Stock.objects.filter(ticker=pos.ticker, is_active=True).first()
+                                if stock:
+                                    StockService.update_stock_price(pos.ticker, current_price)
+                            except Exception as e:
+                                print(f"Error updating stock price for {pos.ticker}: {e}")
+                        else:
+                            print(f"Warning: Could not fetch current price for {pos.ticker}, using average price")
+                    except Exception as e:
+                        print(f"Error fetching current price for {pos.ticker}: {e}")
+                
+                # Use current price if available, otherwise use average price as fallback
+                price = Decimal(str(current_price)) if current_price else pos.preco_medio
+                position_current_value = Decimal(str(pos.quantidade)) * price
+                stock_total_value += position_current_value
+                
+                # Store position current value for later grouping by type/subtype
+                stock_position_current_values[pos.ticker] = position_current_value
         
         # Get CAIXA positions (cash) - these are part of RENDA_FIXA
         caixa_positions = FixedIncomePosition.objects.filter(
@@ -250,8 +292,17 @@ class AllocationStrategyService:
                 price = current_price if current_price else Decimal(str(crypto_pos.average_price))
                 crypto_total_value += Decimal(str(crypto_pos.quantity)) * price
         
-        # Total portfolio value = stocks + fixed income (including CAIXA) + crypto
-        total_value = stock_total_value + renda_fixa_total_value + crypto_total_value
+        # Get Investment Funds (Fundos de Investimento) - part of RENDA_FIXA
+        from fixed_income.models import InvestmentFund
+        investment_funds = InvestmentFund.objects.filter(user_id=str(user.id))
+        
+        investment_funds_total_value = sum(
+            Decimal(str(fund.position_value)) if fund.position_value > 0 else Decimal(str(fund.net_value))
+            for fund in investment_funds
+        )
+        
+        # Total portfolio value = stocks + fixed income (including CAIXA) + crypto + investment funds
+        total_value = stock_total_value + renda_fixa_total_value + crypto_total_value + investment_funds_total_value
         
         # Group positions by investment type and subtype (via stock)
         type_values = {}
@@ -285,8 +336,13 @@ class AllocationStrategyService:
                             'current_value': Decimal('0')
                         }
                     
-                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += Decimal(str(position.valor_total_investido))
-                    type_values[type_id]['current_value'] += Decimal(str(position.valor_total_investido))
+                    # Use current value (quantity * current price), not invested value
+                    position_current_value = stock_position_current_values.get(
+                        position.ticker,
+                        Decimal(str(position.valor_total_investido))  # Fallback if not cached
+                    )
+                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_current_value
+                    type_values[type_id]['current_value'] += position_current_value
             except Stock.DoesNotExist:
                 # Stock not in catalog - treat as unallocated
                 pass
@@ -342,6 +398,24 @@ class AllocationStrategyService:
                 type_values[type_id]['sub_types'][caixa_subtype_id]['current_value'] += remaining_caixa_value
             
             type_values[type_id]['current_value'] += renda_fixa_total_value
+            
+            # Add Investment Funds to RENDA_FIXA, grouped by subtype
+            for fund in investment_funds:
+                if fund.investment_type and fund.investment_type.id == type_id:
+                    subtype = fund.investment_sub_type
+                    subtype_id = subtype.id if subtype else None
+                    subtype_name = subtype.name if subtype else 'Fundos de Investimento'
+                    
+                    if subtype_id not in type_values[type_id]['sub_types']:
+                        type_values[type_id]['sub_types'][subtype_id] = {
+                            'sub_type_id': subtype_id,
+                            'sub_type_name': subtype_name,
+                            'current_value': Decimal('0')
+                        }
+                    
+                    fund_value = Decimal(str(fund.position_value)) if fund.position_value > 0 else Decimal(str(fund.net_value))
+                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += fund_value
+                    type_values[type_id]['current_value'] += fund_value
         
         # Add crypto positions to "Renda Variável em Dólares"
         if renda_var_dolares_type and crypto_positions.exists():
@@ -388,7 +462,8 @@ class AllocationStrategyService:
                 (type_data['current_value'] / total_value * 100)
                 if total_value > 0 else Decimal('0')
             )
-            type_data['current_percentage'] = percentage
+            # Round to 1 decimal place to avoid floating-point precision issues
+            type_data['current_percentage'] = percentage.quantize(Decimal('0.1'))
             
             # Calculate percentages for subtypes within this type
             sub_types_list = []
@@ -397,7 +472,8 @@ class AllocationStrategyService:
                     (subtype_data['current_value'] / type_data['current_value'] * 100)
                     if type_data['current_value'] > 0 else Decimal('0')
                 )
-                subtype_data['current_percentage'] = subtype_percentage
+                # Round to 1 decimal place to avoid floating-point precision issues
+                subtype_data['current_percentage'] = subtype_percentage.quantize(Decimal('0.1'))
                 sub_types_list.append(subtype_data)
             
             type_data['sub_types'] = sub_types_list

@@ -33,6 +33,7 @@ class CorporateEvent(models.Model):
         ('BONUS', 'Bonificação'),
         ('SUBSCRIPTION', 'Subscrição'),
         ('TICKER_CHANGE', 'Mudança de Ticker/Nome'),
+        ('FUND_CONVERSION', 'Extinção/Conversão de Fundo'),
     ]
     
     ASSET_TYPE_CHOICES = [
@@ -40,13 +41,13 @@ class CorporateEvent(models.Model):
         ('FII', 'Fundo Imobiliário (FII)'),
     ]
     
-    ticker = models.CharField(max_length=20, db_index=True, help_text="Ticker da ação ou FII (novo ticker para TICKER_CHANGE)")
+    ticker = models.CharField(max_length=20, db_index=True, help_text="Ticker da ação ou FII (novo ticker para TICKER_CHANGE/FUND_CONVERSION)")
     previous_ticker = models.CharField(
         max_length=20,
         blank=True,
         null=True,
         db_index=True,
-        help_text="Ticker anterior (usado apenas para TICKER_CHANGE)"
+        help_text="Ticker anterior (usado para TICKER_CHANGE e FUND_CONVERSION - fundo extinto)"
     )
     event_type = models.CharField(
         max_length=20, 
@@ -63,7 +64,7 @@ class CorporateEvent(models.Model):
     ratio = models.CharField(
         max_length=20,
         blank=True,
-        help_text="Proporção do evento, ex: '20:1' para grupamento, '1:5' para split (não usado para TICKER_CHANGE)"
+        help_text="Proporção do evento, ex: '20:1' para grupamento, '1:5' para split, '3:2' para conversão (novas:antigas)"
     )
     description = models.TextField(blank=True, help_text="Descrição detalhada do evento")
     applied = models.BooleanField(

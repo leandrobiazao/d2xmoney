@@ -3,7 +3,7 @@ Serializers for fixed income app.
 """
 from decimal import Decimal
 from rest_framework import serializers
-from .models import FixedIncomePosition, TesouroDiretoPosition
+from .models import FixedIncomePosition, TesouroDiretoPosition, InvestmentFund
 from configuration.serializers import InvestmentTypeSerializer, InvestmentSubTypeSerializer
 
 
@@ -177,5 +177,47 @@ class FixedIncomePositionListSerializer(serializers.ModelSerializer):
             'investment_type',
             'investment_sub_type',
         ]
+
+
+class InvestmentFundSerializer(serializers.ModelSerializer):
+    """Serializer for Investment Fund model."""
+    
+    fund_type_display = serializers.CharField(source='get_fund_type_display', read_only=True)
+    allocation_percent = serializers.SerializerMethodField()
+    investment_type = serializers.PrimaryKeyRelatedField(read_only=True)
+    investment_sub_type = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    class Meta:
+        model = InvestmentFund
+        fields = [
+            'id',
+            'user_id',
+            'fund_name',
+            'fund_cnpj',
+            'fund_type',
+            'fund_type_display',
+            'investment_type',
+            'investment_sub_type',
+            'quota_date',
+            'quota_value',
+            'quota_quantity',
+            'in_quotation',
+            'position_value',
+            'net_value',
+            'applied_value',
+            'gross_return_percent',
+            'net_return_percent',
+            'source',
+            'import_date',
+            'created_at',
+            'updated_at',
+            'allocation_percent',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'import_date', 'allocation_percent']
+    
+    def get_allocation_percent(self, obj):
+        """Calculate allocation percentage (can be enhanced with total portfolio value)."""
+        # This is a placeholder - in a real scenario, you'd pass total portfolio value
+        return None
 
 
