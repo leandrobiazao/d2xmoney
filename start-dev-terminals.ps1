@@ -46,3 +46,5 @@ Start-Process $shellPath -ArgumentList "-NoExit", "-Command", $frontendCommand
 Write-Host "Terminals launched. Backend on http://localhost:8000, frontend on http://localhost:4400." -ForegroundColor Green
 
 
+
+

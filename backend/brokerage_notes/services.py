@@ -23,13 +23,56 @@ class BrokerageNoteHistoryService:
     def load_history() -> List[Dict]:
         """Load all notes from database."""
         try:
-            # Load all notes (don't use only() to ensure all fields including financial summary are loaded)
-            notes = BrokerageNote.objects.all()
+            # First, check if status and error_message columns exist in the database
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA table_info(brokerage_notes)")
+                columns = [row[1] for row in cursor.fetchall()]
+                has_status = 'status' in columns
+                has_error_message = 'error_message' in columns
+            
+            # Build list of fields to select (only those that exist in database)
+            fields_to_select = [
+                'id', 'user_id', 'file_name', 'original_file_path',
+                'note_date', 'note_number', 'processed_at',
+                'operations_count', 'operations'
+            ]
+            if has_status:
+                fields_to_select.append('status')
+            if has_error_message:
+                fields_to_select.append('error_message')
+            
+            # Use only() to select only existing fields
+            notes = BrokerageNote.objects.all().only(*fields_to_select)
             
             result = []
             for note in notes:
-                # Use _note_to_dict to ensure all fields are included
-                note_dict = BrokerageNoteHistoryService._note_to_dict(note)
+                note_dict = {
+                    'id': str(note.id),
+                    'user_id': note.user_id,
+                    'file_name': note.file_name,
+                    'original_file_path': note.original_file_path,
+                    'note_date': note.note_date,
+                    'note_number': note.note_number,
+                    'processed_at': note.processed_at.isoformat() if note.processed_at else None,
+                    'operations_count': note.operations_count,
+                    'operations': note.operations or [],
+                }
+                
+                # Add status and error_message - only access if column exists
+                # If column doesn't exist, use defaults without trying to access
+                if has_status and 'status' in fields_to_select:
+                    # Only access if it was selected
+                    note_dict['status'] = getattr(note, 'status', 'success')
+                else:
+                    note_dict['status'] = 'success'
+                
+                if has_error_message and 'error_message' in fields_to_select:
+                    # Only access if it was selected
+                    note_dict['error_message'] = getattr(note, 'error_message', None)
+                else:
+                    note_dict['error_message'] = None
+                
                 result.append(note_dict)
             
             return result
@@ -52,9 +95,27 @@ class BrokerageNoteHistoryService:
     def get_note_by_id(note_id: str) -> Optional[Dict]:
         """Get note by ID."""
         try:
-            # Get the full note object (don't use only() to ensure all fields are loaded)
-            # This ensures financial summary fields are included
-            note = BrokerageNote.objects.get(id=note_id)
+            # Check if status and error_message columns exist
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("PRAGMA table_info(brokerage_notes)")
+                columns = [row[1] for row in cursor.fetchall()]
+                has_status = 'status' in columns
+                has_error_message = 'error_message' in columns
+            
+            # Build list of fields to select (only those that exist in database)
+            fields_to_select = [
+                'id', 'user_id', 'file_name', 'original_file_path',
+                'note_date', 'note_number', 'processed_at',
+                'operations_count', 'operations'
+            ]
+            if has_status:
+                fields_to_select.append('status')
+            if has_error_message:
+                fields_to_select.append('error_message')
+            
+            # Use only() to select only existing fields
+            note = BrokerageNote.objects.only(*fields_to_select).get(id=note_id)
             return BrokerageNoteHistoryService._note_to_dict(note)
         except BrokerageNote.DoesNotExist:
             return None
@@ -74,10 +135,8 @@ class BrokerageNoteHistoryService:
                 note_number=note_number,
                 note_date=note_date
             )
-            print(f"DEBUG: Duplicate note found: id={note.id}, user_id={user_id}, note_number={note_number}, note_date={note_date}")
             return BrokerageNoteHistoryService._note_to_dict(note)
         except BrokerageNote.DoesNotExist:
-            print(f"DEBUG: No duplicate note found for user_id={user_id}, note_number={note_number}, note_date={note_date}")
             return None
     
     @staticmethod
@@ -119,58 +178,24 @@ class BrokerageNoteHistoryService:
     @staticmethod
     def delete_note(note_id: str) -> None:
         """Delete note from history."""
+        from django.db import connection
         import uuid
         
-        # Use atomic transaction to ensure deletion is committed
-        with transaction.atomic():
-            try:
-                # Try to convert to UUID if it's a string
-                try:
-                    note_uuid = uuid.UUID(str(note_id))
-                except (ValueError, AttributeError):
-                    # If it's not a valid UUID, try to find by string representation
-                    note_uuid = note_id
-                
-                # Use Django ORM to delete - this ensures proper transaction handling
-                # and respects the database constraints
-                try:
-                    note = BrokerageNote.objects.get(id=note_uuid)
-                except BrokerageNote.DoesNotExist:
-                    # Try as string if UUID lookup failed
-                    try:
-                        note = BrokerageNote.objects.get(id=str(note_id))
-                    except BrokerageNote.DoesNotExist:
-                        raise ValueError(f"Note with id {note_id} not found")
-                
-                # Log before deletion for debugging
-                print(f"DEBUG: Deleting note {note_id} (user_id={note.user_id}, note_number={note.note_number}, note_date={note.note_date})")
-                
-                # Delete the note - this will cascade delete operations due to CASCADE on_delete
-                note.delete()
-                
-                print(f"DEBUG: Note {note_id} deleted successfully")
-                
-            except Exception as e:
-                print(f"DEBUG: Error deleting note with Django ORM: {e}")
-                # If Django ORM fails, fall back to raw SQL (for edge cases)
-                from django.db import connection
-                note_id_str = str(note_id).replace('-', '')
-                
-                with connection.cursor() as cursor:
-                    # Check if note exists first (try both with and without hyphens)
-                    cursor.execute("SELECT id, user_id, note_number, note_date FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
-                    row = cursor.fetchone()
-                    if not row:
-                        raise ValueError(f"Note with id {note_id} not found")
-                    
-                    print(f"DEBUG: Deleting note {note_id} using raw SQL (user_id={row[1]}, note_number={row[2]}, note_date={row[3]})")
-                    
-                    # First delete operations (cascade) - try both formats
-                    cursor.execute("DELETE FROM operations WHERE note_id = %s OR note_id = %s", [note_id_str, str(note_id)])
-                    # Then delete the note - try both formats
-                    cursor.execute("DELETE FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
-                    
-                    print(f"DEBUG: Note {note_id} deleted successfully using raw SQL")
+        # Convert note_id to string and handle UUID format (with or without hyphens)
+        note_id_str = str(note_id).replace('-', '')  # Remove hyphens to match database format
+        
+        # Use raw SQL to delete directly, avoiding any field access issues
+        # Django's SQLite backend uses %s placeholders
+        with connection.cursor() as cursor:
+            # Check if note exists first (try both with and without hyphens)
+            cursor.execute("SELECT id FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
+            if not cursor.fetchone():
+                raise ValueError(f"Note with id {note_id} not found")
+            
+            # First delete operations (cascade) - try both formats
+            cursor.execute("DELETE FROM operations WHERE note_id = %s OR note_id = %s", [note_id_str, str(note_id)])
+            # Then delete the note - try both formats
+            cursor.execute("DELETE FROM brokerage_notes WHERE id = %s OR id = %s", [note_id_str, str(note_id)])
     
     @staticmethod
     def generate_note_id() -> str:
@@ -204,30 +229,6 @@ class BrokerageNoteHistoryService:
                             'operations': note_data.get('operations', []),
                             'status': note_data.get('status', 'success'),
                             'error_message': note_data.get('error_message'),
-                            # Resumo dos Negócios
-                            'debentures': note_data.get('debentures'),
-                            'vendas_a_vista': note_data.get('vendas_a_vista'),
-                            'compras_a_vista': note_data.get('compras_a_vista'),
-                            'valor_das_operacoes': note_data.get('valor_das_operacoes'),
-                            # Resumo Financeiro
-                            'valor_liquido_operacoes': note_data.get('valor_liquido_operacoes'),
-                            'taxa_liquidacao': note_data.get('taxa_liquidacao'),
-                            'taxa_registro': note_data.get('taxa_registro'),
-                            'total_cblc': note_data.get('total_cblc'),
-                            'emolumentos': note_data.get('emolumentos'),
-                            'taxa_transferencia_ativos': note_data.get('taxa_transferencia_ativos'),
-                            'total_bovespa': note_data.get('total_bovespa'),
-                            # Custos Operacionais
-                            'taxa_operacional': note_data.get('taxa_operacional'),
-                            'execucao': note_data.get('execucao'),
-                            'taxa_custodia': note_data.get('taxa_custodia'),
-                            'impostos': note_data.get('impostos'),
-                            'irrf_operacoes': note_data.get('irrf_operacoes'),
-                            'irrf_base': note_data.get('irrf_base'),
-                            'outros_custos': note_data.get('outros_custos'),
-                            'total_custos_despesas': note_data.get('total_custos_despesas'),
-                            'liquido': note_data.get('liquido'),
-                            'liquido_data': note_data.get('liquido_data'),
                         }
                     )
                     
@@ -311,126 +312,6 @@ class BrokerageNoteHistoryService:
             result['error_message'] = getattr(note, 'error_message', None)
         except Exception:
             result['error_message'] = None
-        
-        # Add financial summary fields (Resumo dos Negócios)
-        try:
-            result['debentures'] = float(note.debentures) if note.debentures is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['debentures'] = None
-        
-        try:
-            result['vendas_a_vista'] = float(note.vendas_a_vista) if note.vendas_a_vista is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['vendas_a_vista'] = None
-        
-        try:
-            result['compras_a_vista'] = float(note.compras_a_vista) if note.compras_a_vista is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['compras_a_vista'] = None
-        
-        try:
-            result['valor_das_operacoes'] = float(note.valor_das_operacoes) if note.valor_das_operacoes is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['valor_das_operacoes'] = None
-        
-        # Add financial summary fields (Resumo Financeiro)
-        try:
-            result['valor_liquido_operacoes'] = float(note.valor_liquido_operacoes) if note.valor_liquido_operacoes is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['valor_liquido_operacoes'] = None
-        
-        try:
-            result['taxa_liquidacao'] = float(note.taxa_liquidacao) if note.taxa_liquidacao is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['taxa_liquidacao'] = None
-        
-        try:
-            result['taxa_registro'] = float(note.taxa_registro) if note.taxa_registro is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['taxa_registro'] = None
-        
-        try:
-            result['total_cblc'] = float(note.total_cblc) if note.total_cblc is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['total_cblc'] = None
-        
-        try:
-            result['emolumentos'] = float(note.emolumentos) if note.emolumentos is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['emolumentos'] = None
-        
-        try:
-            result['taxa_transferencia_ativos'] = float(note.taxa_transferencia_ativos) if note.taxa_transferencia_ativos is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['taxa_transferencia_ativos'] = None
-        
-        try:
-            result['total_bovespa'] = float(note.total_bovespa) if note.total_bovespa is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['total_bovespa'] = None
-        
-        # Add operational costs (Custos Operacionais)
-        try:
-            result['taxa_operacional'] = float(note.taxa_operacional) if note.taxa_operacional is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['taxa_operacional'] = None
-        
-        try:
-            result['execucao'] = float(note.execucao) if note.execucao is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['execucao'] = None
-        
-        try:
-            result['taxa_custodia'] = float(note.taxa_custodia) if note.taxa_custodia is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['taxa_custodia'] = None
-        
-        try:
-            result['impostos'] = float(note.impostos) if note.impostos is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['impostos'] = None
-        
-        try:
-            result['irrf_operacoes'] = float(note.irrf_operacoes) if note.irrf_operacoes is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['irrf_operacoes'] = None
-        
-        try:
-            result['irrf_base'] = float(note.irrf_base) if note.irrf_base is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['irrf_base'] = None
-        
-        try:
-            result['outros_custos'] = float(note.outros_custos) if note.outros_custos is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['outros_custos'] = None
-        
-        try:
-            if note.total_custos_despesas is not None:
-                # Handle both Decimal and float/int types
-                from decimal import Decimal
-                if isinstance(note.total_custos_despesas, Decimal):
-                    result['total_custos_despesas'] = float(note.total_custos_despesas)
-                else:
-                    result['total_custos_despesas'] = float(note.total_custos_despesas)
-            else:
-                result['total_custos_despesas'] = None
-        except (AttributeError, ValueError, TypeError) as e:
-            # Log the error for debugging
-            import traceback
-            print(f"Warning: Error converting total_custos_despesas: {e}")
-            print(traceback.format_exc())
-            result['total_custos_despesas'] = None
-        
-        try:
-            result['liquido'] = float(note.liquido) if note.liquido is not None else None
-        except (AttributeError, ValueError, TypeError):
-            result['liquido'] = None
-        
-        try:
-            result['liquido_data'] = note.liquido_data
-        except (AttributeError, ValueError, TypeError):
-            result['liquido_data'] = None
         
         return result
     

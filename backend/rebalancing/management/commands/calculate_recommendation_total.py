@@ -194,3 +194,5 @@ class Command(BaseCommand):
         self.stdout.write(f"   Limite Disponível para Vendas: R$ {recommendation.sales_limit_remaining:,.2f}")
         self.stdout.write(f"   Total Vendas na Recomendação: R$ {recommendation.total_sales_value:,.2f}")
 
+
+

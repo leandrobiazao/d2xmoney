@@ -19,48 +19,25 @@ class BrokerageNoteListView(APIView):
     def get(self, request):
         """Get all notes with optional filters."""
         try:
-            # Apply filters at database level for better performance and accuracy
+            notes = BrokerageNoteHistoryService.load_history()
+            
+            # Apply filters
             user_id = request.query_params.get('user_id')
             date_from = request.query_params.get('date_from')
             date_to = request.query_params.get('date_to')
             note_number = request.query_params.get('note_number')
             
-            # Use database-level filtering instead of loading all and filtering in memory
-            from .models import BrokerageNote
-            
-            query = BrokerageNote.objects.all()
-            
             if user_id:
-                query = query.filter(user_id=user_id)
+                notes = [n for n in notes if n.get('user_id') == user_id]
             
             if note_number:
-                query = query.filter(note_number=note_number)
+                notes = [n for n in notes if n.get('note_number') == note_number]
             
-            # Apply date filters if provided
-            if date_from or date_to:
-                # Note: note_date is stored as string DD/MM/YYYY, so we need string comparison
-                # For proper date filtering, we'd need to parse and compare, but for now
-                # string comparison works for exact matches and same-format strings
-                if date_from:
-                    # String comparison for DD/MM/YYYY format
-                    # This works when dates are in the same format
-                    notes_list = list(query)
-                    notes_list = [n for n in notes_list if n.note_date >= date_from]
-                    # Convert back to queryset-like list
-                    note_ids = [n.id for n in notes_list]
-                    query = BrokerageNote.objects.filter(id__in=note_ids)
-                
-                if date_to:
-                    notes_list = list(query)
-                    notes_list = [n for n in notes_list if n.note_date <= date_to]
-                    note_ids = [n.id for n in notes_list]
-                    query = BrokerageNote.objects.filter(id__in=note_ids)
+            if date_from:
+                notes = [n for n in notes if n.get('note_date') >= date_from]
             
-            # Convert to list of dicts
-            notes = []
-            for note in query:
-                note_dict = BrokerageNoteHistoryService._note_to_dict(note)
-                notes.append(note_dict)
+            if date_to:
+                notes = [n for n in notes if n.get('note_date') <= date_to]
             
             return Response(notes, status=status.HTTP_200_OK)
         except Exception as e:
@@ -86,12 +63,6 @@ class BrokerageNoteListView(APIView):
         note_data = serializer.validated_data.copy()
         note_data['processed_at'] = datetime.now().isoformat()
         note_data['operations_count'] = len(note_data.get('operations', []))
-        
-        # Debug: Log financial summary fields
-        print(f"DEBUG: Financial summary in request:")
-        print(f"  total_custos_despesas: {note_data.get('total_custos_despesas')}")
-        print(f"  taxa_operacional: {note_data.get('taxa_operacional')}")
-        print(f"  execucao: {note_data.get('execucao')}")
         
         # Check for duplicate note
         user_id = note_data.get('user_id')
