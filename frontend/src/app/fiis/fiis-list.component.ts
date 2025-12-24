@@ -67,7 +67,9 @@ export class FIIListComponent implements OnInit, OnChanges {
                     if (this.userId !== loadingUserId) return;
                     
                     // Filter positions for FIIs only
-                    const fiiPositions = positions.filter(pos => this.fiiTickers.has(pos.titulo));
+                    const fiiPositions = positions.filter(pos => 
+                        this.fiiTickers.has(pos.titulo)
+                    );
                     
                     // Fetch current prices and process positions
                     this.processPositions(fiiPositions, loadingUserId);

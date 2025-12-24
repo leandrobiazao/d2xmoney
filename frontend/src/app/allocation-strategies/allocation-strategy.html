@@ -102,7 +102,16 @@
                         <div class="allocation-values-grid">
                           <div class="value-column">
                             <div class="percentage-input">
-                              @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
+                              @if (isFIIInvestmentType(typeAlloc)) {
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.1"
+                                  [ngModel]="typeAlloc.target_percentage"
+                                  (ngModelChange)="onFIITypePercentageChange(typeIndex, $event)"
+                                />
+                              } @else if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
                                 <input
                                   type="number"
                                   min="0"
@@ -135,7 +144,108 @@
                         </div>
                       </div>
 
-                      @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
+                      @if (isFIIInvestmentType(typeAlloc)) {
+                        <!-- FII Selection Panel -->
+                        <div class="fii-selection-panel">
+                          @if (!isFIITotalValid(typeAlloc)) {
+                            <div class="validation-banner small invalid">
+                              <span>Total por FII: {{ getFIITotal(typeAlloc) | number:'1.0-2' }}% / {{ typeAlloc.target_percentage | number:'1.0-2' }}%</span>
+                              <span>Os FIIs precisam somar {{ typeAlloc.target_percentage | number:'1.0-2' }}% (mesmo valor do tipo)</span>
+                            </div>
+                          }
+                          
+                          <!-- 5 Fixed FII Rows with Dropdowns -->
+                          <table class="fii-rows-table">
+                            <thead>
+                              <tr>
+                                <th>FII</th>
+                                <th>Nome</th>
+                                <th>Administrador</th>
+                                <th>Porcentagem</th>
+                                <th>Valor Atual</th>
+                                <th>Valor Alvo</th>
+                                <th>Ações</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              @for (rowIndex of [0, 1, 2, 3, 4]; track rowIndex) {
+                                @let fii = getFIIAtRow(typeIndex, rowIndex);
+                                <tr class="fii-row" [class.fii-row-empty]="!fii">
+                                  <td>
+                                    <div class="fii-dropdown-container">
+                                      <select
+                                        class="fii-dropdown-select"
+                                        [class.fii-dropdown-empty]="!fii"
+                                        [ngModel]="fii ? (fii.stock_id || (fii.stock && fii.stock.id)) : ''"
+                                        (ngModelChange)="onFIISelectChange(typeIndex, rowIndex, $event)"
+                                      >
+                                        <option value="">-- Selecione um FII --</option>
+                                        @for (availableFii of getAvailableFIIsForRow(typeIndex, rowIndex); track availableFii.stock_id) {
+                                          <option [value]="availableFii.stock_id">
+                                            {{ availableFii.ticker }} - {{ availableFii.segment || 'N/A' }} | {{ availableFii.administrator || 'N/A' }}
+                                          </option>
+                                        }
+                                      </select>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      {{ getFIIName(fii) }}
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      {{ getFIIAdministrator(fii) }}
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      <div class="percentage-input">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          [ngModel]="fii.target_percentage"
+                                          (ngModelChange)="onFIIPercentageChange(typeIndex, rowIndex, $event)"
+                                        />
+                                        <span>%</span>
+                                      </div>
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      <span class="value-text current-value">R$ {{ getCurrentFIIValue(typeAlloc.investment_type_id, getFIITicker(fii)) | number:'1.2-2' }}</span>
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      <span class="value-text target-value">R$ {{ getTargetFIIValue(typeAlloc, fii) | number:'1.2-2' }}</span>
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                  <td>
+                                    @if (fii) {
+                                      <button class="fii-remove-btn" (click)="onRemoveFIIAtRow(typeIndex, rowIndex)" type="button">×</button>
+                                    } @else {
+                                      <span class="fii-empty-text">--</span>
+                                    }
+                                  </td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      } @else if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
                         <div class="sub-allocations">
                           @if (!isSubTypeTotalValid(typeAlloc)) {
                             <div class="validation-banner small invalid">
@@ -245,6 +355,15 @@
                       <span class="summary-percentage">{{ (getRendaVarReaisTotal()?.percentage || 0) | number:'1.2-2' }}%</span>
                     </div>
                   </div>
+                  @if (getFIIActions().length > 0) {
+                    <div class="summary-item">
+                      <span class="summary-label">Valor Total Fundos Imobiliários</span>
+                      <div class="summary-item-content">
+                        <span class="summary-value">R$ {{ (getFIITotalSummary()?.value || 0) | number:'1.2-2' }}</span>
+                        <span class="summary-percentage">{{ (getFIITotalSummary()?.percentage || 0) | number:'1.2-2' }}%</span>
+                      </div>
+                    </div>
+                  }
                 </div>
               </section>
             }
@@ -437,6 +556,51 @@
                       
                       <!-- SubType-Level Summary - Nested inside Type-Level -->
                       <div class="subtype-level-summary">
+                        <!-- Ações em Dólares Subsection (stocks that are not BDRs) -->
+                        @if (getAcoesDolaresSubtypeActions().length > 0) {
+                          <div class="subtype-action-group">
+                            <h5>Ações em Dólares</h5>
+                            <table class="actions-table">
+                              <thead>
+                                <tr>
+                                  <th>Ticker</th>
+                                  <th>Nome</th>
+                                  <th>Valor Atual</th>
+                                  <th>Valor Alvo</th>
+                                  <th>Diferença</th>
+                                  <th>Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (action of getAcoesDolaresSubtypeActions(); track action.id) {
+                                  <tr>
+                                    <td><strong>{{ action.stock?.ticker || '-' }}</strong></td>
+                                    <td>{{ action.stock?.name || '-' }}</td>
+                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                    <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                      R$ {{ action.difference | number:'1.2-2' }}
+                                    </td>
+                                    <td>
+                                      @if (action.quantity_to_buy) {
+                                        <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                      } @else if (action.quantity_to_sell) {
+                                        <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                      } @else if (action.difference > 0) {
+                                        <span class="badge badge-buy">Aumentar</span>
+                                      } @else if (action.difference < 0) {
+                                        <span class="badge badge-sell">Reduzir</span>
+                                      } @else {
+                                        <span class="badge badge-maintain">Manter</span>
+                                      }
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                        
                         <!-- BDRs Subsection -->
                         @if (getBDRsSubtypeActions().length > 0) {
                           <div class="subtype-action-group">
@@ -500,9 +664,50 @@
                                 </thead>
                                 <tbody>
                                   @for (action of subtypeGroup.subtypeActions; track action.id) {
-                                    <!-- Only show individual crypto actions (with crypto symbol like "BTC") -->
-                                    @if (isCryptoSymbol(action.subtype_name)) {
-                                      <tr>
+                                    <tr>
+                                      <!-- Show aggregated subtype action, crypto ETF stock, or individual crypto action -->
+                                      @if (action.stock) {
+                                        <!-- Crypto ETF stock (like HASH11) -->
+                                        <td><strong>{{ action.stock.ticker || '-' }}</strong></td>
+                                        <td>{{ action.stock.name || '-' }}</td>
+                                        <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                        <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                        <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                          R$ {{ action.difference | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                          @if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+                                            <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                          } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+                                            <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                          } @else if (action.difference > 0) {
+                                            <span class="badge badge-buy">Comprar</span>
+                                          } @else if (action.difference < 0) {
+                                            <span class="badge badge-sell">Vender</span>
+                                          } @else {
+                                            <span class="badge badge-maintain">Manter</span>
+                                          }
+                                        </td>
+                                      } @else if (!isCryptoSymbol(action.subtype_name)) {
+                                        <!-- Aggregated subtype action (e.g., "Cryptocurrency" overall) -->
+                                        <td><strong>-</strong></td>
+                                        <td>{{ action.investment_subtype?.name || 'Cryptocurrency' }}</td>
+                                        <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                        <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                        <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                          R$ {{ action.difference | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                          @if (action.difference > 0) {
+                                            <span class="badge badge-buy">Aumentar</span>
+                                          } @else if (action.difference < 0) {
+                                            <span class="badge badge-sell">Reduzir</span>
+                                          } @else {
+                                            <span class="badge badge-maintain">Manter</span>
+                                          }
+                                        </td>
+                                      } @else {
+                                        <!-- Individual crypto action (with crypto symbol like "BTC") -->
                                         <td><strong>{{ action.subtype_name || action.crypto_currency_symbol || '-' }}</strong></td>
                                         <td>{{ getCryptoDisplayName(action.crypto_currency_name) }}</td>
                                         <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
@@ -520,15 +725,15 @@
                                               Vender {{ (action.quantity_to_sell / 1000000) | number:'1.6-6' }} {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}
                                             </span>
                                           } @else if (action.difference > 0) {
-                                            <span class="badge badge-buy">Comprar {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
+                                            <span class="badge badge-buy">Aumentar</span>
                                           } @else if (action.difference < 0) {
-                                            <span class="badge badge-sell">Vender {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
+                                            <span class="badge badge-sell">Reduzir</span>
                                           } @else {
                                             <span class="badge badge-maintain">Manter</span>
                                           }
                                         </td>
-                                      </tr>
-                                    }
+                                      }
+                                    </tr>
                                   }
                                 </tbody>
                               </table>
@@ -727,6 +932,146 @@
                       <div class="summary-value">R$ {{ getTotalAcoesReaisValueAfterRebalancing() | number:'1.2-2' }}</div>
                     </div>
                   </div>
+                </section>
+              }
+
+              <!-- Fundos Imobiliários (FIIs) Section -->
+              @if (getFIISellActions().length > 0 || getFIIBuyActions().length > 0 || getFIIRebalanceActions().length > 0) {
+                <section class="rebalancing-section">
+                  <h4>Fundos Imobiliários (FIIs) - Rebalanceamento</h4>
+                  
+                  <!-- FIIs to Sell -->
+                  @if (getFIISellActions().length > 0) {
+                    <div class="action-group">
+                      <h5>FIIs para Vender</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ordem</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Atual</th>
+                            <th>Quantidade</th>
+                            <th>Motivo</th>
+                            <th>Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getFIISellActions(); track action.id) {
+                            <tr>
+                              <td>
+                                @if (action.display_order && action.display_order < 9999) {
+                                  {{ action.display_order }}
+                                } @else {
+                                  -
+                                }
+                              </td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>{{ action.quantity_to_sell }}</td>
+                              <td>
+                                <span class="badge">
+                                  @if (action.reason) {
+                                    {{ action.reason }}
+                                  } @else {
+                                    FII não está na estratégia configurada
+                                  }
+                                </span>
+                              </td>
+                              <td>
+                                @if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Vender {{ action.quantity_to_sell }}</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+
+                  <!-- FIIs to Buy -->
+                  @if (getFIIBuyActions().length > 0) {
+                    <div class="action-group">
+                      <h5>FIIs para Comprar</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ordem</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Alvo</th>
+                            <th>Quantidade</th>
+                            <th>Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getFIIBuyActions(); track action.id) {
+                            <tr>
+                              <td>{{ action.display_order }}</td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td>{{ action.quantity_to_buy }}</td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+
+                  <!-- FIIs to Rebalance -->
+                  @if (getFIIRebalanceActions().length > 0) {
+                    <div class="action-group">
+                      <h5>FIIs para Rebalancear</h5>
+                      <table class="actions-table">
+                        <thead>
+                          <tr>
+                            <th>Ordem</th>
+                            <th>Ticker</th>
+                            <th>Nome</th>
+                            <th>Valor Atual</th>
+                            <th>Valor Alvo</th>
+                            <th>Diferença</th>
+                            <th>Ação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (action of getFIIRebalanceActions(); track action.id) {
+                            <tr>
+                              <td>{{ action.display_order }}</td>
+                              <td><strong>{{ action.stock?.ticker }}</strong></td>
+                              <td>{{ action.stock?.name }}</td>
+                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                R$ {{ action.difference | number:'1.2-2' }}
+                              </td>
+                              <td>
+                                @if (action.quantity_to_buy) {
+                                  <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                } @else if (action.quantity_to_sell) {
+                                  <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                } @else {
+                                  <span class="badge badge-maintain">Manter</span>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
                 </section>
               }
 

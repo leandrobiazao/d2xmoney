@@ -100,14 +100,15 @@ class AMBBStrategyService:
             ticker = stock_data['codigo']
             try:
                 stock = Stock.objects.get(ticker=ticker, is_active=True)
-                if stock.investment_type == acoes_reais_type:
+                # Filter: must be "Ações em Reais" type AND NOT a FII (stock_class != 'FII')
+                if stock.investment_type == acoes_reais_type and stock.stock_class != 'FII':
                     ambb_reais_stocks.append(stock_data)
                     current_ambb_tickers[ticker] = stock_data
             except Stock.DoesNotExist:
                 # Stock not in catalog - try to fetch from yFinance
                 try:
                     fetched_stock = StockService.fetch_and_create_stock(ticker, 'RENDA_VARIAVEL_REAIS')
-                    if fetched_stock and fetched_stock.investment_type == acoes_reais_type:
+                    if fetched_stock and fetched_stock.investment_type == acoes_reais_type and fetched_stock.stock_class != 'FII':
                         ambb_reais_stocks.append(stock_data)
                         current_ambb_tickers[ticker] = stock_data
                 except Exception as e:
@@ -119,12 +120,13 @@ class AMBBStrategyService:
         positions = PortfolioPosition.objects.filter(user_id=str(user.id))
         portfolio_tickers = {pos.ticker: pos for pos in positions if pos.quantidade > 0}
         
-        # Filter portfolio stocks to only "Ações em Reais" type
+        # Filter portfolio stocks to only "Ações em Reais" type (exclude FIIs)
         portfolio_stocks = {}
         for ticker in portfolio_tickers.keys():
             try:
                 stock = Stock.objects.get(ticker=ticker, is_active=True)
-                if stock.investment_type == acoes_reais_type:
+                # Filter: must be "Ações em Reais" type AND NOT a FII (stock_class != 'FII')
+                if stock.investment_type == acoes_reais_type and stock.stock_class != 'FII':
                     position = portfolio_tickers[ticker]
                     # Calculate current value using current price (same as AllocationStrategyService)
                     # Fetch current price, fallback to average price if fetch fails

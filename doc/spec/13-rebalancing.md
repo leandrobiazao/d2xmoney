@@ -119,6 +119,22 @@ GET /api/rebalancing/recommendations/
         "quantity_to_buy": 400,
         "quantity_to_sell": null,
         "display_order": 1
+      },
+      {
+        "id": 2,
+        "action_type": "rebalance",
+        "stock": {
+          "ticker": "RINV11",
+          "name": "Rio Bravo Renda Imobiliária",
+          "stock_class": "FII"
+        },
+        "current_value": "5000.00",
+        "target_value": "6000.00",
+        "difference": "1000.00",
+        "quantity_to_buy": 10,
+        "quantity_to_sell": null,
+        "display_order": 1,
+        "subtype_name": "RINV11"
       }
     ]
   }
@@ -193,7 +209,8 @@ POST /api/rebalancing/recommendations/{id}/dismiss/
 4. **Generate Type Rebalancing Actions**: Creates rebalance actions for significant differences
 5. **Get AMBB Recommendations**: Fetches AMBB strategy recommendations
 6. **Generate Stock Actions**: Creates buy/sell/rebalance actions for stocks
-7. **Save Recommendation**: Saves recommendation with all actions
+7. **Generate FII Actions**: Creates sell/buy/rebalance actions for FIIs based on allocation strategy
+8. **Save Recommendation**: Saves recommendation with all actions
 
 ## Frontend Components
 
@@ -267,9 +284,14 @@ Rebalancing recommendations can be displayed in:
    - Stocks to buy
    - Stocks to sell
    - Stocks to rebalance
+   - FIIs to buy
+   - FIIs to sell
+   - FIIs to rebalance
 3. User reviews recommendations
-4. User executes trades
-5. User marks recommendation as applied
+4. User clicks "Aplicar Recomendação" button
+5. System automatically exports Excel file with all buy/sell orders (stocks + FIIs)
+6. User executes trades based on Excel file
+7. Recommendation status is updated to 'applied'
 
 ### Reviewing Recommendations
 

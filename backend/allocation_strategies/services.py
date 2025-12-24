@@ -13,7 +13,8 @@ from .models import (
     UserAllocationStrategy,
     InvestmentTypeAllocation,
     SubTypeAllocation,
-    StockAllocation
+    StockAllocation,
+    FIIAllocation
 )
 from configuration.models import InvestmentType, InvestmentSubType
 from stocks.models import Stock
@@ -93,9 +94,58 @@ class AllocationStrategyService:
                 display_order=type_alloc_data.get('display_order', 0)
             )
             
-            # Validate and create sub-type allocations
+            # Check if this is FII investment type - handle FII allocations separately
+            is_fii_type = (
+                investment_type.code == 'FIIS' or 
+                'Fundos Imobiliários' in investment_type.name or
+                'Fundo Imobiliário' in investment_type.name
+            )
+            
+            # Handle FII allocations (bypass subtypes)
+            fii_allocations = type_alloc_data.get('fii_allocations', [])
+            if is_fii_type and fii_allocations:
+                # Validate max 5 FIIs
+                if len(fii_allocations) > 5:
+                    raise ValidationError(
+                        f"Maximum 5 FIIs allowed for {investment_type.name}. Found {len(fii_allocations)}."
+                    )
+                
+                # Validate FII allocations sum to 100% of the type allocation
+                fii_percentages = [
+                    Decimal(str(fa['target_percentage']))
+                    for fa in fii_allocations
+                ]
+                expected_sum = Decimal(str(type_alloc_data['target_percentage']))
+                if not AllocationStrategyService.validate_percentage_sum(fii_percentages, expected_sum):
+                    raise ValidationError(
+                        f"FII allocations for {investment_type.name} must sum to {expected_sum}% (same as the parent type allocation)"
+                    )
+                
+                # Validate all stocks are FIIs
+                for fii_alloc_data in fii_allocations:
+                    stock_id = fii_alloc_data.get('stock_id')
+                    if stock_id:
+                        try:
+                            stock = Stock.objects.get(id=stock_id)
+                            if stock.stock_class != 'FII':
+                                raise ValidationError(
+                                    f"Stock {stock.ticker} is not a FII (stock_class={stock.stock_class})"
+                                )
+                        except Stock.DoesNotExist:
+                            raise ValidationError(f"Stock with id {stock_id} not found")
+                
+                # Create FII allocations
+                for fii_alloc_data in fii_allocations:
+                    FIIAllocation.objects.create(
+                        type_allocation=type_allocation,
+                        stock_id=fii_alloc_data['stock_id'],
+                        target_percentage=Decimal(str(fii_alloc_data['target_percentage'])),
+                        display_order=fii_alloc_data.get('display_order', 0)
+                    )
+            
+            # Validate and create sub-type allocations (skip for FIIs)
             sub_type_allocations = type_alloc_data.get('sub_type_allocations', [])
-            if sub_type_allocations:
+            if sub_type_allocations and not is_fii_type:
                 sub_percentages = [
                     Decimal(str(sta['target_percentage']))
                     for sta in sub_type_allocations
@@ -304,6 +354,19 @@ class AllocationStrategyService:
         # Total portfolio value = stocks + fixed income (including CAIXA) + crypto + investment funds
         total_value = stock_total_value + renda_fixa_total_value + crypto_total_value + investment_funds_total_value
         
+        # Get FII investment type to check if we should group by ticker instead of subtype
+        fii_type = None
+        try:
+            fii_type = InvestmentType.objects.filter(
+                code='FIIS'
+            ).first() or InvestmentType.objects.filter(
+                name__icontains='Fundos Imobiliários'
+            ).first() or InvestmentType.objects.filter(
+                name__icontains='Fundo Imobiliário'
+            ).first()
+        except:
+            pass
+        
         # Group positions by investment type and subtype (via stock)
         type_values = {}
         for position in positions:
@@ -325,23 +388,45 @@ class AllocationStrategyService:
                             'sub_types': {}
                         }
                     
-                    # Group by subtype within the investment type
-                    subtype_id = investment_subtype.id if investment_subtype else None
-                    subtype_name = investment_subtype.name if investment_subtype else 'Não categorizado'
-                    
-                    if subtype_id not in type_values[type_id]['sub_types']:
-                        type_values[type_id]['sub_types'][subtype_id] = {
-                            'sub_type_id': subtype_id,
-                            'sub_type_name': subtype_name,
-                            'current_value': Decimal('0')
-                        }
-                    
                     # Use current value (quantity * current price), not invested value
                     position_current_value = stock_position_current_values.get(
                         position.ticker,
                         Decimal(str(position.valor_total_investido))  # Fallback if not cached
                     )
-                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_current_value
+                    
+                    # For FIIs, group by individual ticker instead of subtype
+                    is_fii_type = (
+                        fii_type and fii_type.id == type_id
+                    ) or (
+                        investment_type.code == 'FIIS' or
+                        'Fundos Imobiliários' in investment_type.name or
+                        'Fundo Imobiliário' in investment_type.name
+                    )
+                    
+                    if is_fii_type and stock.stock_class == 'FII':
+                        # Group FIIs by ticker (not subtype)
+                        ticker_key = f"FII_{position.ticker}"
+                        if ticker_key not in type_values[type_id]['sub_types']:
+                            type_values[type_id]['sub_types'][ticker_key] = {
+                                'sub_type_id': None,
+                                'sub_type_name': position.ticker,  # Use ticker as name
+                                'ticker': position.ticker,  # Add ticker field
+                                'current_value': Decimal('0')
+                            }
+                        type_values[type_id]['sub_types'][ticker_key]['current_value'] += position_current_value
+                    else:
+                        # Group by subtype within the investment type (normal behavior)
+                        subtype_id = investment_subtype.id if investment_subtype else None
+                        subtype_name = investment_subtype.name if investment_subtype else 'Não categorizado'
+                        
+                        if subtype_id not in type_values[type_id]['sub_types']:
+                            type_values[type_id]['sub_types'][subtype_id] = {
+                                'sub_type_id': subtype_id,
+                                'sub_type_name': subtype_name,
+                                'current_value': Decimal('0')
+                            }
+                        type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_current_value
+                    
                     type_values[type_id]['current_value'] += position_current_value
             except Stock.DoesNotExist:
                 # Stock not in catalog - treat as unallocated

@@ -178,7 +178,7 @@ class InvestmentFund(models.Model):
             models.Index(fields=['user_id', 'fund_type']),
             models.Index(fields=['quota_date']),
         ]
-        unique_together = [['user_id', 'fund_name', 'quota_date']]
+        unique_together = [['user_id', 'fund_name']]
     
     def __str__(self):
         return f"{self.user_id} - {self.fund_name}"

@@ -139,7 +139,16 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     const tesouroPositions: FixedIncomePosition[] = [];
     const otherPositions: FixedIncomePosition[] = [];
 
+    // Filter out positions that are not actual investments (proventos, distribuições, etc.)
+    const excludedKeywords = ['proventos', 'distribuições', 'dividendos', 'rendimentos'];
+    
     this.positions.forEach(pos => {
+      // Skip positions with excluded keywords in asset_name
+      const assetNameLower = (pos.asset_name || '').toLowerCase();
+      if (excludedKeywords.some(keyword => assetNameLower.includes(keyword))) {
+        return; // Skip this position
+      }
+      
       if (pos.investment_type_name === 'Tesouro Direto') {
         tesouroPositions.push(pos);
       } else {
@@ -154,7 +163,56 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     });
 
     // Group non-Tesouro positions by investment type
+    // First, merge duplicate fund positions by normalized asset_name
+    const mergedPositions = new Map<string, FixedIncomePosition>();
+    
+    // Helper to normalize asset name for comparison (remove extra spaces, lowercase)
+    const normalizeAssetName = (name: string): string => {
+      return name.toLowerCase().trim().replace(/\s+/g, ' ');
+    };
+    
     otherPositions.forEach(pos => {
+      const assetName = (pos.asset_name || '').trim();
+      const normalizedName = normalizeAssetName(assetName);
+      
+      // Check if this looks like a fund (has "Cash CIC" or similar fund patterns)
+      const isFund = normalizedName.includes('cash cic') || 
+                     normalizedName.includes('fundo') ||
+                     normalizedName.includes('fund');
+      
+      if (isFund && mergedPositions.has(normalizedName)) {
+        // Merge with existing position - sum values
+        const existing = mergedPositions.get(assetName)!;
+        const existingQty = typeof existing.quantity === 'string' ? parseFloat(existing.quantity) : (existing.quantity || 0);
+        const posQty = typeof pos.quantity === 'string' ? parseFloat(String(pos.quantity)) : (pos.quantity || 0);
+        existing.quantity = existingQty + posQty;
+        
+        const existingApplied = typeof existing.applied_value === 'string' ? parseFloat(existing.applied_value) : (existing.applied_value || 0);
+        const posApplied = typeof pos.applied_value === 'string' ? parseFloat(String(pos.applied_value)) : (pos.applied_value || 0);
+        existing.applied_value = existingApplied + posApplied;
+        
+        const existingPosition = typeof existing.position_value === 'string' ? parseFloat(existing.position_value) : (existing.position_value || 0);
+        const posPosition = typeof pos.position_value === 'string' ? parseFloat(String(pos.position_value)) : (pos.position_value || 0);
+        existing.position_value = existingPosition + posPosition;
+        
+        const existingNet = typeof existing.net_value === 'string' ? parseFloat(existing.net_value) : (existing.net_value || 0);
+        const posNet = typeof pos.net_value === 'string' ? parseFloat(String(pos.net_value)) : (pos.net_value || 0);
+        existing.net_value = existingNet + posNet;
+        
+        // Use the most recent price_date if available
+        if (pos.price_date && (!existing.price_date || pos.price_date > existing.price_date)) {
+          existing.price_date = pos.price_date;
+          existing.price = pos.price;
+        }
+      } else {
+        // Add as new position (use normalized name as key for funds, original for others)
+        const key = isFund ? normalizedName : assetName;
+        mergedPositions.set(key, { ...pos });
+      }
+    });
+    
+    // Now group the merged positions
+    Array.from(mergedPositions.values()).forEach(pos => {
       const typeName = pos.investment_type_name || 'Outros';
       const typeCode = pos.investment_type_name || 'outros';
       

@@ -22,6 +22,7 @@ export interface InvestmentTypeAllocation {
   target_percentage: number;
   display_order: number;
   sub_type_allocations?: SubTypeAllocation[];
+  fii_allocations?: FIIAllocation[];
 }
 
 export interface SubTypeAllocation {
@@ -38,6 +39,17 @@ export interface SubTypeAllocation {
 }
 
 export interface StockAllocation {
+  id: number;
+  stock: {
+    id: number;
+    ticker: string;
+    name: string;
+  };
+  target_percentage: number;
+  display_order: number;
+}
+
+export interface FIIAllocation {
   id: number;
   stock: {
     id: number;

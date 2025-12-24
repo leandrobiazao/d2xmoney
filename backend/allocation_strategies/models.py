@@ -118,3 +118,31 @@ class StockAllocation(models.Model):
 
     def __str__(self):
         return f"{self.sub_type_allocation} - {self.stock.ticker}: {self.target_percentage}%"
+
+
+class FIIAllocation(models.Model):
+    """FII allocations linking directly to InvestmentTypeAllocation (bypassing subtypes)."""
+    type_allocation = models.ForeignKey(
+        InvestmentTypeAllocation,
+        on_delete=models.CASCADE,
+        related_name='fii_allocations'
+    )
+    stock = models.ForeignKey(
+        Stock,
+        on_delete=models.CASCADE,
+        related_name='fii_allocations'
+    )
+    target_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))]
+    )
+    display_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'fii_allocations'
+        ordering = ['type_allocation', 'display_order']
+        unique_together = [['type_allocation', 'stock']]
+
+    def __str__(self):
+        return f"{self.type_allocation} - {self.stock.ticker}: {self.target_percentage}%"

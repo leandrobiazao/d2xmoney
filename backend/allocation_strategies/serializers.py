@@ -6,7 +6,8 @@ from .models import (
     UserAllocationStrategy,
     InvestmentTypeAllocation,
     SubTypeAllocation,
-    StockAllocation
+    StockAllocation,
+    FIIAllocation
 )
 from configuration.serializers import InvestmentTypeSerializer, InvestmentSubTypeSerializer
 from stocks.serializers import StockSerializer
@@ -18,6 +19,16 @@ class StockAllocationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = StockAllocation
+        fields = ['id', 'stock', 'target_percentage', 'display_order']
+        read_only_fields = ['id']
+
+
+class FIIAllocationSerializer(serializers.ModelSerializer):
+    """Serializer for FIIAllocation."""
+    stock = StockSerializer(read_only=True)
+    
+    class Meta:
+        model = FIIAllocation
         fields = ['id', 'stock', 'target_percentage', 'display_order']
         read_only_fields = ['id']
 
@@ -40,14 +51,20 @@ class InvestmentTypeAllocationSerializer(serializers.ModelSerializer):
     """Serializer for InvestmentTypeAllocation."""
     investment_type = InvestmentTypeSerializer(read_only=True)
     sub_type_allocations = SubTypeAllocationSerializer(many=True, read_only=True)
+    fii_allocations = serializers.SerializerMethodField()
     
     class Meta:
         model = InvestmentTypeAllocation
         fields = [
             'id', 'investment_type', 'target_percentage',
-            'display_order', 'sub_type_allocations'
+            'display_order', 'sub_type_allocations', 'fii_allocations'
         ]
         read_only_fields = ['id']
+    
+    def get_fii_allocations(self, obj):
+        """Return FII allocations for this type allocation."""
+        fii_allocations = obj.fii_allocations.all()
+        return FIIAllocationSerializer(fii_allocations, many=True).data
 
 
 class UserAllocationStrategySerializer(serializers.ModelSerializer):

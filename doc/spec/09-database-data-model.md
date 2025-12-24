@@ -421,6 +421,7 @@ The database models are organized into the following functional areas:
 - Many-to-One: `UserAllocationStrategy` (via `strategy` ForeignKey)
 - Many-to-One: `InvestmentType` (via `investment_type` ForeignKey)
 - One-to-Many: `SubTypeAllocation` (via `sub_type_allocations` related_name)
+- One-to-Many: `FIIAllocation` (via `fii_allocations` related_name)
 
 **Meta Options**:
 - `db_table`: `investment_type_allocations`
@@ -485,6 +486,41 @@ The database models are organized into the following functional areas:
 - `db_table`: `stock_allocations`
 - `ordering`: `['sub_type_allocation', 'display_order']`
 - `unique_together`: `[['sub_type_allocation', 'stock']]`
+
+#### FIIAllocation
+
+**Table**: `fii_allocations`
+
+**Purpose**: Defines FII allocations linking directly to InvestmentTypeAllocation (bypassing subtypes). Allows manual selection of up to 5 FIIs from the catalog with individual allocation percentages.
+
+**Fields**:
+
+| Field Name | Type | Constraints | Description |
+|------------|------|-------------|-------------|
+| `id` | AutoField | Primary Key, Auto-generated | Unique identifier |
+| `type_allocation` | ForeignKey | InvestmentTypeAllocation, CASCADE | Parent type allocation |
+| `stock` | ForeignKey | Stock, CASCADE | FII stock (stock_class='FII') from catalog |
+| `target_percentage` | DecimalField | max_digits=5, decimal_places=2, validators | Target allocation percentage (0-100) |
+| `display_order` | IntegerField | default=0 | Display order for UI |
+
+**Validators**:
+- `MinValueValidator(Decimal('0'))`
+- `MaxValueValidator(Decimal('100'))`
+
+**Relationships**:
+- Many-to-One: `InvestmentTypeAllocation` (via `type_allocation` ForeignKey)
+- Many-to-One: `Stock` (via `stock` ForeignKey, related_name='fii_allocations')
+
+**Meta Options**:
+- `db_table`: `fii_allocations`
+- `ordering`: `['type_allocation', 'display_order']`
+- `unique_together`: `[['type_allocation', 'stock']]`
+
+**Business Rules**:
+- Maximum 5 FIIs per InvestmentTypeAllocation
+- FII allocations must sum to 100% of the parent type allocation percentage
+- Only FII stocks (stock_class='FII') can be allocated
+- Used only for "Fundos Imobiliários" investment type (bypasses subtype allocations)
 
 ---
 
@@ -836,6 +872,14 @@ erDiagram
         int display_order
     }
     
+    FIIAllocation {
+        int id PK
+        int type_allocation_id FK
+        string stock_ticker FK
+        decimal target_percentage
+        int display_order
+    }
+    
     TickerMapping {
         int id PK
         string company_name UK
@@ -917,6 +961,8 @@ erDiagram
 - **InvestmentTypeAllocation → SubTypeAllocation** (One-to-Many): A type allocation contains multiple sub-type allocations
 - **SubTypeAllocation → StockAllocation** (One-to-Many): A sub-type allocation can contain multiple stock allocations
 - **Stock → StockAllocation** (One-to-Many): A stock can be allocated in multiple strategies
+- **InvestmentTypeAllocation → FIIAllocation** (One-to-Many): A type allocation can contain multiple FII allocations (for FII investment type)
+- **Stock → FIIAllocation** (One-to-Many): A FII stock can be allocated in multiple strategies
 
 ### Fixed Income Relationships
 
@@ -991,6 +1037,7 @@ Django automatically creates indexes on ForeignKey fields. Additionally, explici
 - `InvestmentSubType`: `['investment_type', 'code']` - Unique code per type
 - `InvestmentTypeAllocation`: `['strategy', 'investment_type']` - One allocation per type per strategy
 - `StockAllocation`: `['sub_type_allocation', 'stock']` - One allocation per stock per sub-type
+- `FIIAllocation`: `['type_allocation', 'stock']` - One FII allocation per stock per type allocation
 - `StockSnapshotStock`: `['snapshot', 'codigo']` - One stock per snapshot
 
 ---
@@ -1003,6 +1050,7 @@ Django automatically creates indexes on ForeignKey fields. Additionally, explici
 - `InvestmentTypeAllocation.target_percentage`
 - `SubTypeAllocation.target_percentage`
 - `StockAllocation.target_percentage`
+- `FIIAllocation.target_percentage`
 
 ### Choice Fields
 

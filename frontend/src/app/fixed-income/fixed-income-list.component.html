@@ -102,7 +102,7 @@
                 <th>Data Cota</th>
                 <th>Valor Cota</th>
                 <th>Qtd. Cotas</th>
-                <th>Em Cotização</th>
+                <th>Valor Aplicado</th>
                 <th>Posição</th>
                 <th>Valor Líquido</th>
                 <th>Rent. Líquida</th>
@@ -117,7 +117,7 @@
                   <td>{{ formatDate(fund.quota_date) }}</td>
                   <td>{{ formatCurrency(fund.quota_value) }}</td>
                   <td>{{ fund.quota_quantity }}</td>
-                  <td>{{ formatCurrency(fund.in_quotation) }}</td>
+                  <td>{{ formatCurrency(fund.applied_value) }}</td>
                   <td class="positive">{{ formatCurrency(fund.position_value) }}</td>
                   <td class="positive">{{ formatCurrency(fund.net_value) }}</td>
                   <td class="positive">

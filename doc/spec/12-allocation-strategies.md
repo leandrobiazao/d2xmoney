@@ -10,6 +10,7 @@ The Allocation Strategies app allows users to define target portfolio allocation
 - **Investment Type Allocations**: Target percentages for each investment type (e.g., 60% Ações, 30% Renda Fixa, 10% Tesouro Direto)
 - **Sub-Type Allocations**: Target percentages within investment types (e.g., 50% CDB, 30% LCI, 20% LCA within Renda Fixa)
 - **Stock Allocations**: Target percentages for specific stocks (e.g., 20% PETR4, 15% VALE3 within Ações)
+- **FII Allocations**: Manual selection of up to 5 FIIs (Fundos Imobiliários) with individual percentages, bypassing subtype allocations
 
 ## Backend Components
 
@@ -64,6 +65,7 @@ The Allocation Strategies app allows users to define target portfolio allocation
 - Many-to-One: `UserAllocationStrategy` (via `strategy` ForeignKey)
 - Many-to-One: `InvestmentType` (via `investment_type` ForeignKey)
 - One-to-Many: `SubTypeAllocation` (via `sub_type_allocations` related_name)
+- One-to-Many: `FIIAllocation` (via `fii_allocations` related_name)
 
 **Meta Options**:
 - `db_table`: `investment_type_allocations`
@@ -128,6 +130,41 @@ The Allocation Strategies app allows users to define target portfolio allocation
 - `db_table`: `stock_allocations`
 - `ordering`: `['sub_type_allocation', 'display_order']`
 - `unique_together`: `[['sub_type_allocation', 'stock']]`
+
+#### FIIAllocation
+
+**Table**: `fii_allocations`
+
+**Purpose**: Defines FII allocations linking directly to InvestmentTypeAllocation (bypassing subtypes). Allows manual selection of up to 5 FIIs from the catalog with individual allocation percentages.
+
+**Fields**:
+
+| Field Name | Type | Constraints | Description |
+|------------|------|-------------|-------------|
+| `id` | AutoField | Primary Key | Unique identifier |
+| `type_allocation` | ForeignKey | InvestmentTypeAllocation, CASCADE | Parent type allocation |
+| `stock` | ForeignKey | Stock, CASCADE | FII stock (stock_class='FII') from catalog |
+| `target_percentage` | DecimalField | max_digits=5, decimal_places=2, validators | Target allocation percentage (0-100) |
+| `display_order` | IntegerField | default=0 | Display order for UI |
+
+**Validators**:
+- `MinValueValidator(Decimal('0'))`
+- `MaxValueValidator(Decimal('100'))`
+
+**Relationships**:
+- Many-to-One: `InvestmentTypeAllocation` (via `type_allocation` ForeignKey)
+- Many-to-One: `Stock` (via `stock` ForeignKey, related_name='fii_allocations')
+
+**Meta Options**:
+- `db_table`: `fii_allocations`
+- `ordering`: `['type_allocation', 'display_order']`
+- `unique_together`: `[['type_allocation', 'stock']]`
+
+**Business Rules**:
+- Maximum 5 FIIs per InvestmentTypeAllocation
+- FII allocations must sum to 100% of the parent type allocation percentage
+- Only FII stocks (stock_class='FII') can be allocated
+- Used only for "Fundos Imobiliários" investment type (bypasses subtype allocations)
 
 ### API Endpoints
 
@@ -204,6 +241,29 @@ POST /api/allocation-strategies/allocation-strategies/create_strategy/
           ]
         }
       ]
+    },
+    {
+      "investment_type_id": 2,
+      "target_percentage": 20.00,
+      "display_order": 2,
+      "sub_type_allocations": [],
+      "fii_allocations": [
+        {
+          "stock_id": 10,
+          "target_percentage": 8.00,
+          "display_order": 0
+        },
+        {
+          "stock_id": 11,
+          "target_percentage": 7.00,
+          "display_order": 1
+        },
+        {
+          "stock_id": 12,
+          "target_percentage": 5.00,
+          "display_order": 2
+        }
+      ]
     }
   ]
 }
@@ -211,8 +271,10 @@ POST /api/allocation-strategies/allocation-strategies/create_strategy/
 
 **Validation**:
 - Investment type allocations must sum to 100%
-- Sub-type allocations within a type must sum to 100%
+- Sub-type allocations within a type must sum to 100% (or match type percentage)
 - Stock allocations within a sub-type must sum to 100%
+- FII allocations: Maximum 5 FIIs per type allocation
+- FII allocations within a type must sum to 100% of the type allocation percentage
 
 **Response** (201 Created): Created/updated strategy object
 
@@ -278,6 +340,7 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
 - Investment type allocation management
 - Sub-type allocation management
 - Stock allocation management
+- FII allocation management (manual selection, max 5 FIIs)
 - Percentage validation (must sum to 100%)
 - Pie chart visualization
 - Current vs target comparison
@@ -327,8 +390,9 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
 ### Percentage Validation
 
 - **Investment Type Allocations**: Must sum to exactly 100%
-- **Sub-Type Allocations**: Must sum to exactly 100% within each investment type
+- **Sub-Type Allocations**: Must sum to exactly 100% within each investment type (or match type percentage)
 - **Stock Allocations**: Must sum to exactly 100% within each sub-type
+- **FII Allocations**: Must sum to exactly 100% of the parent type allocation percentage (max 5 FIIs)
 - **Tolerance**: 0.01% rounding difference allowed
 
 ### Business Rules
@@ -337,7 +401,10 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
 - Investment types must exist in Configuration app
 - Sub-types must exist in Configuration app (if referenced)
 - Stocks must exist in Stock catalog (if referenced)
+- FIIs must exist in FII catalog and have stock_class='FII'
+- Maximum 5 FIIs per Fundos Imobiliários investment type allocation
 - Percentages must be between 0 and 100
+- FII allocations bypass subtype allocations (used instead of subtypes for FII investment type)
 
 ## Integration with Other Apps
 
