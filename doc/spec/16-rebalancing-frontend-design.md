@@ -442,6 +442,16 @@ stateDiagram-v2
 │  │  │  │  └────────────────────────────┴──────────────┴──────────────┴───────────────┴──────────────┘  │  │  │  │
 │  │  │  │                                                                                               │  │  │  │
 │  │  │  └───────────────────────────────────────────────────────────────────────────────────────────────┘  │  │  │
+│  │  │                                                                                                     │  │  │
+│  │  │  ┌─ ETF Renda Fixa ─────────────────────────────────────────────────────────────────────────────┐  │  │  │
+│  │  │  │                                                                                               │  │  │  │
+│  │  │  │  ┌────────┬─────────────────────────┬──────────────┬──────────────┬──────────────┬───────────┐│  │  │  │
+│  │  │  │  │ Ticker │ Nome                    │ Valor Atual  │ Valor Alvo   │ Diferença    │ Ação      ││  │  │  │
+│  │  │  │  ├────────┼─────────────────────────┼──────────────┼──────────────┼──────────────┼───────────┤│  │  │  │
+│  │  │  │  │ AUPO11 │ AU PREV FIC FIRF...     │ R$  0.00     │ R$ 17,605.76 │ R$ 17,605.76 │Comprar 173││  │  │  │
+│  │  │  │  └────────┴─────────────────────────┴──────────────┴──────────────┴──────────────┴───────────┘│  │  │  │
+│  │  │  │                                                                                               │  │  │  │
+│  │  │  └───────────────────────────────────────────────────────────────────────────────────────────────┘  │  │  │
 │  │  └─────────────────────────────────────────────────────────────────────────────────────────────────────┘  │  │ 
 │  └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -892,4 +902,6 @@ Maintain Badge:
 9. **Spacing**: Generous whitespace between sections (2rem) and within cards (1.5rem padding) for readability.
 
 10. **Interactive Elements**: Buttons have clear hover states, tables have row hover effects, and focus states are visible for accessibility.
+
+11. **ETF Renda Fixa**: The ETF Renda Fixa sub-type under Renda Fixa displays stock-level recommendations similar to BDRs. Shows Ticker, Nome, Valor Atual, Valor Alvo, Diferença, and action badge with buy/sell quantity (e.g., "Comprar 173" or "Vender 25"). The Diferença column shows positive values in green and negative values in red.
 

@@ -62,6 +62,9 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   allFIIs: FIIProfile[] = [];
   fiiSearchTerm: { [key: number]: string } = {}; // Search term per type allocation index
   
+  // ETF Renda Fixa catalog
+  etfRendaFixaStocks: any[] = [];
+  
   // Tab management
   activeTab: 'configuration' | 'rebalancing' = 'configuration';
   
@@ -84,6 +87,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   ngOnInit(): void {
     this.loadInvestmentSubTypes();
     this.loadFIIs();
+    // Note: loadETFRendaFixaStocks is called after subtypes are loaded (in loadInvestmentSubTypes callback)
     // Only load users if userId is not provided (standalone mode)
     if (!this.userId) {
       this.loadUsers();
@@ -256,6 +260,9 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
               // Check if this subtype was in the existing allocation
               const existingSubAlloc = existingAlloc?.sub_type_allocations?.find((sa: any) => sa.sub_type?.id === subType.id || sa.sub_type_id === subType.id);
               
+              // Preserve stock_allocations for ETF Renda Fixa
+              const stockAllocations = existingSubAlloc?.stock_allocations || [];
+              
               return {
                 ...existingSubAlloc,
                 sub_type_id: subType.id,
@@ -265,7 +272,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
                   code: subType.code
                 },
                 target_percentage: existingSubAlloc ? existingSubAlloc.target_percentage : 0,
-                display_order: existingSubAlloc?.display_order ?? subIndex
+                display_order: existingSubAlloc?.display_order ?? subIndex,
+                stock_allocations: stockAllocations
               };
             });
             
@@ -426,6 +434,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     this.configurationService.getInvestmentSubTypes(undefined, true).subscribe({
       next: (subTypes) => {
         this.investmentSubTypes = subTypes.filter(s => s.is_active).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        // Reload ETF Renda Fixa stocks now that we have subtype IDs
+        this.loadETFRendaFixaStocks();
       },
       error: (error) => {
         console.error('Error loading investment subtypes:', error);
@@ -442,6 +452,128 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
         console.error('Error loading FIIs:', error);
       }
     });
+  }
+
+  loadETFRendaFixaStocks(): void {
+    // Find ETF_RENDA_FIXA subtype ID
+    const etfSubType = this.investmentSubTypes.find(s => s.code === 'ETF_RENDA_FIXA');
+    const subtypeId = etfSubType?.id;
+    
+    if (!subtypeId) {
+      console.warn('ETF_RENDA_FIXA subtype not found, loading all ETFs');
+    }
+    
+    // Load stocks with stock_class=ETF and investment_subtype_id for ETF Renda Fixa
+    // Note: API endpoint is /api/stocks/stocks/ (stocks router has stocks/ viewset)
+    const url = subtypeId 
+      ? `/api/stocks/stocks/?stock_class=ETF&investment_subtype_id=${subtypeId}&exclude_fiis=false&active_only=true`
+      : '/api/stocks/stocks/?stock_class=ETF&exclude_fiis=false&active_only=true';
+    
+    console.log('Loading ETF Renda Fixa stocks from:', url);
+    
+    this.http.get<any[]>(url).subscribe({
+      next: (stocks) => {
+        console.log('Loaded ETF Renda Fixa stocks:', stocks);
+        this.etfRendaFixaStocks = stocks.sort((a, b) => a.ticker.localeCompare(b.ticker));
+      },
+      error: (error) => {
+        console.error('Error loading ETF Renda Fixa stocks:', error);
+      }
+    });
+  }
+
+  isETFRendaFixaSubType(subType: InvestmentSubType): boolean {
+    return subType?.code === 'ETF_RENDA_FIXA';
+  }
+
+  getSelectedETFForSubType(typeIndex: number, subTypeId: number): any | null {
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc?.sub_type_allocations) {
+      return null;
+    }
+    const subAlloc = typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
+    // Check if there's a stock_allocation for this subtype
+    if (subAlloc && (subAlloc as any).stock_allocations && (subAlloc as any).stock_allocations.length > 0) {
+      const stockAlloc = (subAlloc as any).stock_allocations[0];
+      // Handle both formats: stock_id (from local changes) or stock.id (from backend)
+      return {
+        ...stockAlloc,
+        stock_id: stockAlloc.stock_id || stockAlloc.stock?.id
+      };
+    }
+    return null;
+  }
+
+  getETFCurrentValue(typeIndex: number, subTypeId: number): number {
+    // Get selected ETF stock for this subtype
+    const selectedETF = this.getSelectedETFForSubType(typeIndex, subTypeId);
+    if (!selectedETF?.stock_id) {
+      return 0;
+    }
+    
+    // Get the investment type id from the type allocation
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc) {
+      return 0;
+    }
+    
+    // Use the subtype's current value (ETF is the only stock in this subtype)
+    return this.getCurrentSubTypeValue(typeAlloc.investment_type_id, subTypeId);
+  }
+
+  onETFSelectChange(typeIndex: number, subTypeId: number, stockId: string): void {
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc?.sub_type_allocations) {
+      return;
+    }
+    
+    const numericStockId = stockId ? Number(stockId) : null;
+    let subAlloc = typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
+    
+    if (!subAlloc) {
+      // Create subtype allocation if it doesn't exist
+      const subType = this.investmentSubTypes.find(s => s.id === subTypeId);
+      if (subType) {
+        subAlloc = {
+          sub_type_id: subTypeId,
+          sub_type: {
+            id: subType.id,
+            name: subType.name,
+            code: subType.code
+          },
+          target_percentage: 0,
+          display_order: typeAlloc.sub_type_allocations.length
+        };
+        typeAlloc.sub_type_allocations.push(subAlloc);
+      }
+    }
+    
+    if (subAlloc) {
+      // Initialize stock_allocations array if needed
+      if (!(subAlloc as any).stock_allocations) {
+        (subAlloc as any).stock_allocations = [];
+      }
+      
+      if (numericStockId) {
+        // Find the stock from etfRendaFixaStocks
+        const stock = this.etfRendaFixaStocks.find(s => s.id === numericStockId);
+        if (stock) {
+          // Replace any existing stock allocation with the new one (max 1 ETF)
+          (subAlloc as any).stock_allocations = [{
+            stock_id: numericStockId,
+            stock: {
+              id: stock.id,
+              ticker: stock.ticker,
+              name: stock.name
+            },
+            target_percentage: subAlloc.target_percentage
+          }];
+        }
+      } else {
+        // Clear stock allocation
+        (subAlloc as any).stock_allocations = [];
+      }
+    }
   }
 
   getSubTypesForInvestmentType(investmentTypeId: number): InvestmentSubType[] {
@@ -935,12 +1067,27 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
           investment_type_id: typeAlloc.investment_type_id,
           target_percentage: finalTargetPercentage,
           display_order: index,
-          sub_type_allocations: (typeAlloc.sub_type_allocations || []).map((subAlloc, subIndex) => ({
-            sub_type_id: subAlloc.sub_type_id,
-            custom_name: subAlloc.custom_name,
-            target_percentage: Number(subAlloc.target_percentage),
-            display_order: subIndex
-          }))
+          sub_type_allocations: (typeAlloc.sub_type_allocations || []).map((subAlloc, subIndex) => {
+            const subType = this.investmentSubTypes.find(s => s.id === subAlloc.sub_type_id);
+            const isETFRendaFixa = subType?.code === 'ETF_RENDA_FIXA';
+            
+            const baseAlloc: any = {
+              sub_type_id: subAlloc.sub_type_id,
+              custom_name: subAlloc.custom_name,
+              target_percentage: Number(subAlloc.target_percentage),
+              display_order: subIndex
+            };
+            
+            // Include stock_allocations for ETF Renda Fixa subtype
+            if (isETFRendaFixa && (subAlloc as any).stock_allocations) {
+              baseAlloc.stock_allocations = ((subAlloc as any).stock_allocations || []).map((stockAlloc: any) => ({
+                stock_id: stockAlloc.stock_id || stockAlloc.stock?.id,
+                target_percentage: Number(subAlloc.target_percentage) // Use subtype percentage
+              }));
+            }
+            
+            return baseAlloc;
+          })
         };
       }
     });
@@ -1023,6 +1170,11 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
         this.isGeneratingRecommendations = false;
       }
     });
+  }
+
+  async exportRecommendationExcel(): Promise<void> {
+    // Just export Excel without applying the recommendation
+    await this.generateOrderRequestExcel();
   }
 
   async applyRecommendation(recommendationId: number): Promise<void> {
@@ -1229,6 +1381,36 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
         }
       });
 
+      // Process ETF Renda Fixa actions
+      const etfRendaFixaActions = this.getETFRendaFixaActions();
+      console.log('ETF Renda Fixa actions for Excel export:', etfRendaFixaActions);
+      etfRendaFixaActions.forEach((action) => {
+        if (action.stock) {
+          // Process any action with quantity_to_sell
+          if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'V',
+              'QTDE': -Math.abs(action.quantity_to_sell),
+              'VOLUME R$': '',
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+          // Process any action with quantity_to_buy
+          if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+            allOrders.push({
+              'TICKER': action.stock.ticker,
+              'C/V': 'C',
+              'QTDE': Math.abs(action.quantity_to_buy),
+              'VOLUME R$': '',
+              'CONTA': accountNumber,
+              'PREÇO': 'MERCADO'
+            });
+          }
+        }
+      });
+
       // Create workbook with single sheet
       const workbook = XLSX.utils.book_new();
 
@@ -1322,6 +1504,13 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       
       // Exclude FIIs: check if investment_type code is 'FIIS' or if stock_class is 'FII'
       if (action.stock.investment_type?.code === 'FIIS' || (action.stock as any).stock_class === 'FII') {
+        return false;
+      }
+      
+      // Exclude ETF Renda Fixa stocks (they have their own section under Renda Fixa)
+      const subtypeCode = action.stock.investment_subtype?.code || '';
+      const stockClass = (action.stock as any).stock_class || '';
+      if (subtypeCode === 'ETF_RENDA_FIXA' || (stockClass === 'ETF' && action.stock.investment_type?.code === 'RENDA_FIXA')) {
         return false;
       }
       
@@ -1736,6 +1925,54 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     // Get type-level actions (no stock, no subtype) - these represent the total type allocation
     const actions = this.getRendaFixaActions();
     return actions.filter(action => !action.stock && !action.investment_subtype);
+  }
+
+  getETFRendaFixaActions(): RebalancingAction[] {
+    if (!this.currentRecommendation) {
+      console.log('getETFRendaFixaActions: No currentRecommendation');
+      return [];
+    }
+    
+    console.log('getETFRendaFixaActions: Checking recommendation ID:', this.currentRecommendation.id);
+    console.log('getETFRendaFixaActions: Total actions:', this.currentRecommendation.actions.length);
+    
+    // Filter actions for ETF Renda Fixa stocks (stock_class=ETF with ETF_RENDA_FIXA subtype)
+    const filtered = this.currentRecommendation.actions.filter(action => {
+      if (!action.stock) {
+        return false;
+      }
+      
+      // Check action's investment_subtype first (set by backend)
+      const actionSubtypeCode = action.investment_subtype?.code || '';
+      if (actionSubtypeCode === 'ETF_RENDA_FIXA') {
+        console.log('getETFRendaFixaActions: Found ETF Renda Fixa action:', {
+          ticker: action.stock?.ticker,
+          action_type: action.action_type,
+          quantity_to_buy: action.quantity_to_buy,
+          quantity_to_sell: action.quantity_to_sell,
+          investment_subtype: action.investment_subtype
+        });
+        return true;
+      }
+      
+      // Check stock's investment_subtype as fallback
+      const subtypeCode = action.stock.investment_subtype?.code || '';
+      const stockClass = (action.stock as any).stock_class || '';
+      
+      if (subtypeCode === 'ETF_RENDA_FIXA' || (stockClass === 'ETF' && action.stock.investment_type?.code === 'RENDA_FIXA')) {
+        console.log('getETFRendaFixaActions: Found via stock subtype:', {
+          ticker: action.stock?.ticker,
+          action_type: action.action_type,
+          quantity_to_buy: action.quantity_to_buy
+        });
+        return true;
+      }
+      
+      return false;
+    });
+    
+    console.log('getETFRendaFixaActions: Returning', filtered.length, 'actions');
+    return filtered;
   }
 
   getRendaFixaActionsBySubtype(): Array<{subtypeName: string, subtypeActions: RebalancingAction[]}> {

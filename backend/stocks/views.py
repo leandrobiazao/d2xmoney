@@ -19,7 +19,9 @@ class StockViewSet(viewsets.ModelViewSet):
         queryset = Stock.objects.select_related('investment_type', 'investment_subtype').all()
         search = self.request.query_params.get('search')
         investment_type_id = self.request.query_params.get('investment_type_id')
+        investment_subtype_id = self.request.query_params.get('investment_subtype_id')
         financial_market = self.request.query_params.get('financial_market')
+        stock_class = self.request.query_params.get('stock_class')
         active_only = self.request.query_params.get('active_only', 'true').lower() == 'true'
         exclude_fiis = self.request.query_params.get('exclude_fiis', 'true').lower() == 'true'
         
@@ -36,8 +38,12 @@ class StockViewSet(viewsets.ModelViewSet):
             )
         if investment_type_id:
             queryset = queryset.filter(investment_type_id=investment_type_id)
+        if investment_subtype_id:
+            queryset = queryset.filter(investment_subtype_id=investment_subtype_id)
         if financial_market:
             queryset = queryset.filter(financial_market=financial_market)
+        if stock_class:
+            queryset = queryset.filter(stock_class=stock_class)
         
         return queryset.order_by('ticker')
     

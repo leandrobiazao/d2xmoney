@@ -19,8 +19,51 @@ class UserJsonStorageService:
     @staticmethod
     def load_users() -> List[Dict]:
         """Load all users from database."""
+        # #region agent log
+        import json as json_module
+        try:
+            with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'services.py:20', 'message': 'load_users() entry', 'data': {}}, ensure_ascii=False) + '\n')
+        except Exception as log_err:
+            print(f"DEBUG LOG ERROR: {log_err}")
+        print("DEBUG: load_users() called")
+        # #endregion
+        # #region agent log
+        try:
+            with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'services.py:22', 'message': 'Before User.objects.all()', 'data': {'User_model': str(User)}}, ensure_ascii=False) + '\n')
+        except Exception as log_err:
+            print(f"DEBUG LOG ERROR: {log_err}")
+        # #endregion
         users = User.objects.all()
-        return [UserJsonStorageService._user_to_dict(user) for user in users]
+        # #region agent log
+        with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+            f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A', 'location': 'services.py:23', 'message': 'After User.objects.all()', 'data': {'queryset_type': str(type(users)), 'queryset_count': users.count() if hasattr(users, 'count') else 'unknown'}}, ensure_ascii=False) + '\n')
+        # #endregion
+        result = []
+        for idx, user in enumerate(users):
+            # #region agent log
+            with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+                f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'C', 'location': 'services.py:26', 'message': 'Before _user_to_dict()', 'data': {'user_idx': idx, 'user_id': str(user.id) if hasattr(user, 'id') else 'no_id', 'user_created_at': str(user.created_at) if hasattr(user, 'created_at') else 'no_attr', 'user_updated_at': str(user.updated_at) if hasattr(user, 'updated_at') else 'no_attr'}}, ensure_ascii=False) + '\n')
+            # #endregion
+            try:
+                user_dict = UserJsonStorageService._user_to_dict(user)
+                # #region agent log
+                with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'C', 'location': 'services.py:30', 'message': 'After _user_to_dict()', 'data': {'user_idx': idx, 'user_dict_keys': list(user_dict.keys()) if isinstance(user_dict, dict) else 'not_dict'}}, ensure_ascii=False) + '\n')
+                # #endregion
+                result.append(user_dict)
+            except Exception as e:
+                # #region agent log
+                with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+                    f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'C', 'location': 'services.py:33', 'message': 'Exception in _user_to_dict()', 'data': {'user_idx': idx, 'error': str(e), 'error_type': type(e).__name__}}, ensure_ascii=False) + '\n')
+                # #endregion
+                raise
+        # #region agent log
+        with open('c:\\app\\d2xmoney\\.cursor\\debug.log', 'a', encoding='utf-8') as f:
+            f.write(json_module.dumps({'sessionId': 'debug-session', 'runId': 'run1', 'hypothesisId': 'A,B,C', 'location': 'services.py:37', 'message': 'load_users() returning', 'data': {'result_count': len(result)}}, ensure_ascii=False) + '\n')
+        # #endregion
+        return result
     
     @staticmethod
     def save_users(users: List[Dict]) -> None:

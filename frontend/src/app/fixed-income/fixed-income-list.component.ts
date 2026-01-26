@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition, ImportResult } from './fixed-income.models';
-import { InvestmentFund } from './investment-fund.models';
 import { FixedIncomeDetailComponent } from './fixed-income-detail.component';
 
 interface GroupedPositions {
@@ -39,12 +38,10 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   
   positions: FixedIncomePosition[] = [];
-  investmentFunds: InvestmentFund[] = [];
   groupedPositions: GroupedPositions[] = [];
   filteredPositions: FixedIncomePosition[] = [];
   selectedPosition: FixedIncomePosition | null = null;
   isLoading = false;
-  isLoadingFunds = false;
   errorMessage: string | null = null;
   
   // Import related properties
@@ -94,25 +91,6 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
         this.isLoading = false;
       }
     });
-
-    // Load investment funds
-    this.loadInvestmentFunds();
-  }
-
-  loadInvestmentFunds(): void {
-    if (!this.userId) return;
-    
-    this.isLoadingFunds = true;
-    this.fixedIncomeService.getInvestmentFunds(this.userId).subscribe({
-      next: (funds) => {
-        this.investmentFunds = funds;
-        this.isLoadingFunds = false;
-      },
-      error: (error) => {
-        console.error('Erro ao carregar fundos de investimento:', error);
-        this.isLoadingFunds = false;
-      }
-    });
   }
 
   groupPositions(): void {
@@ -139,16 +117,7 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     const tesouroPositions: FixedIncomePosition[] = [];
     const otherPositions: FixedIncomePosition[] = [];
 
-    // Filter out positions that are not actual investments (proventos, distribuições, etc.)
-    const excludedKeywords = ['proventos', 'distribuições', 'dividendos', 'rendimentos'];
-    
     this.positions.forEach(pos => {
-      // Skip positions with excluded keywords in asset_name
-      const assetNameLower = (pos.asset_name || '').toLowerCase();
-      if (excludedKeywords.some(keyword => assetNameLower.includes(keyword))) {
-        return; // Skip this position
-      }
-      
       if (pos.investment_type_name === 'Tesouro Direto') {
         tesouroPositions.push(pos);
       } else {
@@ -163,56 +132,7 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     });
 
     // Group non-Tesouro positions by investment type
-    // First, merge duplicate fund positions by normalized asset_name
-    const mergedPositions = new Map<string, FixedIncomePosition>();
-    
-    // Helper to normalize asset name for comparison (remove extra spaces, lowercase)
-    const normalizeAssetName = (name: string): string => {
-      return name.toLowerCase().trim().replace(/\s+/g, ' ');
-    };
-    
     otherPositions.forEach(pos => {
-      const assetName = (pos.asset_name || '').trim();
-      const normalizedName = normalizeAssetName(assetName);
-      
-      // Check if this looks like a fund (has "Cash CIC" or similar fund patterns)
-      const isFund = normalizedName.includes('cash cic') || 
-                     normalizedName.includes('fundo') ||
-                     normalizedName.includes('fund');
-      
-      if (isFund && mergedPositions.has(normalizedName)) {
-        // Merge with existing position - sum values
-        const existing = mergedPositions.get(assetName)!;
-        const existingQty = typeof existing.quantity === 'string' ? parseFloat(existing.quantity) : (existing.quantity || 0);
-        const posQty = typeof pos.quantity === 'string' ? parseFloat(String(pos.quantity)) : (pos.quantity || 0);
-        existing.quantity = existingQty + posQty;
-        
-        const existingApplied = typeof existing.applied_value === 'string' ? parseFloat(existing.applied_value) : (existing.applied_value || 0);
-        const posApplied = typeof pos.applied_value === 'string' ? parseFloat(String(pos.applied_value)) : (pos.applied_value || 0);
-        existing.applied_value = existingApplied + posApplied;
-        
-        const existingPosition = typeof existing.position_value === 'string' ? parseFloat(existing.position_value) : (existing.position_value || 0);
-        const posPosition = typeof pos.position_value === 'string' ? parseFloat(String(pos.position_value)) : (pos.position_value || 0);
-        existing.position_value = existingPosition + posPosition;
-        
-        const existingNet = typeof existing.net_value === 'string' ? parseFloat(existing.net_value) : (existing.net_value || 0);
-        const posNet = typeof pos.net_value === 'string' ? parseFloat(String(pos.net_value)) : (pos.net_value || 0);
-        existing.net_value = existingNet + posNet;
-        
-        // Use the most recent price_date if available
-        if (pos.price_date && (!existing.price_date || pos.price_date > existing.price_date)) {
-          existing.price_date = pos.price_date;
-          existing.price = pos.price;
-        }
-      } else {
-        // Add as new position (use normalized name as key for funds, original for others)
-        const key = isFund ? normalizedName : assetName;
-        mergedPositions.set(key, { ...pos });
-      }
-    });
-    
-    // Now group the merged positions
-    Array.from(mergedPositions.values()).forEach(pos => {
       const typeName = pos.investment_type_name || 'Outros';
       const typeCode = pos.investment_type_name || 'outros';
       
@@ -313,53 +233,23 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
 
   getTotalInvestido(): number {
     // Sum all applied_value (Total Aplicado) from all positions
-    const positionsTotal = this.positions.reduce((sum, pos) => {
+    return this.positions.reduce((sum, pos) => {
       const appliedValue = this.getPositionValue(pos.applied_value);
       return sum + appliedValue;
     }, 0);
-    
-    // Add investment funds applied_value
-    const fundsTotal = this.investmentFunds.reduce((sum, fund) => {
-      const appliedValue = typeof fund.applied_value === 'string' 
-        ? parseFloat(fund.applied_value) 
-        : (fund.applied_value || 0);
-      return sum + (isNaN(appliedValue) ? 0 : appliedValue);
-    }, 0);
-    
-    return positionsTotal + fundsTotal;
   }
 
   getValorAtual(): number {
     // Sum all position_value (Posição atual) from all positions
-    const positionsTotal = this.groupedPositions.reduce((sum, group) => sum + group.totalValue, 0);
-    
-    // Add investment funds position_value
-    const fundsTotal = this.investmentFunds.reduce((sum, fund) => {
-      const positionValue = typeof fund.position_value === 'string' 
-        ? parseFloat(fund.position_value) 
-        : (fund.position_value || 0);
-      return sum + (isNaN(positionValue) ? 0 : positionValue);
-    }, 0);
-    
-    return positionsTotal + fundsTotal;
+    return this.groupedPositions.reduce((sum, group) => sum + group.totalValue, 0);
   }
 
   getActivePositionsCount(): number {
     // Count positions with position_value > 0 (active positions)
-    const positionsCount = this.positions.filter(pos => {
+    return this.positions.filter(pos => {
       const positionValue = this.getPositionValue(pos.position_value);
       return positionValue > 0;
     }).length;
-    
-    // Count investment funds with position_value > 0
-    const fundsCount = this.investmentFunds.filter(fund => {
-      const positionValue = typeof fund.position_value === 'string' 
-        ? parseFloat(fund.position_value) 
-        : (fund.position_value || 0);
-      return !isNaN(positionValue) && positionValue > 0;
-    }).length;
-    
-    return positionsCount + fundsCount;
   }
 
   getSubtypePercentage(position: FixedIncomePosition): number {
@@ -387,6 +277,24 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
 
   closeDetail(): void {
     this.selectedPosition = null;
+  }
+
+  formatCurrency(value: number | undefined | null): string {
+    if (value === undefined || value === null || isNaN(value)) return 'R$ 0,00';
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
+  }
+
+  formatDate(date: string | undefined): string {
+    if (!date) return '-';
+    try {
+      const d = new Date(date);
+      return d.toLocaleDateString('pt-BR');
+    } catch {
+      return date;
+    }
   }
 
   formatPercentage(value: number): string {
@@ -476,48 +384,6 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   dismissImportMessage(): void {
     this.importResult = null;
     this.importErrorMessage = null;
-  }
-
-  // Helper methods for formatting
-  formatCurrency(value: number | string | undefined | null): string {
-    if (value === undefined || value === null) return 'R$ 0,00';
-    const numValue = typeof value === 'string' ? parseFloat(value) : value;
-    if (isNaN(numValue)) return 'R$ 0,00';
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(numValue);
-  }
-
-  formatPercent(value: number | string | undefined | null): string {
-    if (value === undefined || value === null) return '0,00%';
-    const numValue = typeof value === 'string' ? parseFloat(value) : value;
-    if (isNaN(numValue)) return '0,00%';
-    return numValue.toFixed(2).replace('.', ',') + '%';
-  }
-
-  formatDate(date: string | undefined | null): string {
-    if (!date) return '-';
-    try {
-      const d = new Date(date);
-      return d.toLocaleDateString('pt-BR');
-    } catch {
-      return '-';
-    }
-  }
-
-  getTotalFundsValue(): number {
-    return this.investmentFunds.reduce((sum, fund) => {
-      const value = typeof fund.position_value === 'string' ? parseFloat(fund.position_value) : fund.position_value;
-      return sum + (isNaN(value) ? 0 : value);
-    }, 0);
-  }
-
-  getFundAllocationPercent(fund: InvestmentFund): number {
-    const totalValue = this.getTotalFundsValue();
-    if (totalValue === 0) return 0;
-    const fundValue = typeof fund.position_value === 'string' ? parseFloat(fund.position_value) : fund.position_value;
-    return (fundValue / totalValue) * 100;
   }
 }
 

@@ -81,7 +81,24 @@ class UserAllocationStrategyViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        current = AllocationStrategyService.get_current_allocation(user)
+        try:
+            print(f"DEBUG: current_vs_target called for user {user_id}")
+            current = AllocationStrategyService.get_current_allocation(user)
+            print(f"DEBUG: get_current_allocation returned total_value: {current.get('total_value', 0)}")
+            print(f"DEBUG: Investment types count: {len(current.get('investment_types', []))}")
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR in get_current_allocation: {e}")
+            print(f"ERROR traceback:\n{error_details}")
+            return Response(
+                {
+                    'error': 'Error calculating current allocation',
+                    'details': str(e),
+                    'traceback': error_details.split('\n')[-10:]
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         try:
             strategy = UserAllocationStrategy.objects.get(user=user)

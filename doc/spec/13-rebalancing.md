@@ -119,22 +119,6 @@ GET /api/rebalancing/recommendations/
         "quantity_to_buy": 400,
         "quantity_to_sell": null,
         "display_order": 1
-      },
-      {
-        "id": 2,
-        "action_type": "rebalance",
-        "stock": {
-          "ticker": "RINV11",
-          "name": "Rio Bravo Renda Imobiliária",
-          "stock_class": "FII"
-        },
-        "current_value": "5000.00",
-        "target_value": "6000.00",
-        "difference": "1000.00",
-        "quantity_to_buy": 10,
-        "quantity_to_sell": null,
-        "display_order": 1,
-        "subtype_name": "RINV11"
       }
     ]
   }
@@ -209,8 +193,7 @@ POST /api/rebalancing/recommendations/{id}/dismiss/
 4. **Generate Type Rebalancing Actions**: Creates rebalance actions for significant differences
 5. **Get AMBB Recommendations**: Fetches AMBB strategy recommendations
 6. **Generate Stock Actions**: Creates buy/sell/rebalance actions for stocks
-7. **Generate FII Actions**: Creates sell/buy/rebalance actions for FIIs based on allocation strategy
-8. **Save Recommendation**: Saves recommendation with all actions
+7. **Save Recommendation**: Saves recommendation with all actions
 
 ## Frontend Components
 
@@ -284,14 +267,9 @@ Rebalancing recommendations can be displayed in:
    - Stocks to buy
    - Stocks to sell
    - Stocks to rebalance
-   - FIIs to buy
-   - FIIs to sell
-   - FIIs to rebalance
 3. User reviews recommendations
-4. User clicks "Aplicar Recomendação" button
-5. System automatically exports Excel file with all buy/sell orders (stocks + FIIs)
-6. User executes trades based on Excel file
-7. Recommendation status is updated to 'applied'
+4. User executes trades
+5. User marks recommendation as applied
 
 ### Reviewing Recommendations
 
@@ -303,12 +281,59 @@ Rebalancing recommendations can be displayed in:
    - Quantities to buy/sell
 3. User can apply or dismiss
 
+## ETF Renda Fixa Rebalancing
+
+### Overview
+
+The ETF Renda Fixa feature allows users to allocate a portion of their Renda Fixa investment type to fixed income ETFs (like AUPO11). This provides:
+
+- Single ETF selection per "ETF Renda Fixa" sub-type
+- Stock-level rebalancing recommendations with buy/sell quantities
+- Integration with existing Renda Fixa allocation
+
+### How It Works
+
+1. **Configuration**: User selects an ETF (e.g., AUPO11) in the allocation strategy under Renda Fixa > ETF Renda Fixa
+2. **Price Retrieval**: System fetches current ETF price from stock catalog (can be updated via Yahoo Finance)
+3. **Recommendation Generation**: When generating rebalancing recommendations:
+   - Calculate target value based on sub-type percentage × total portfolio value
+   - Get current position value from portfolio
+   - Calculate quantity to buy/sell: (target - current) ÷ current_price
+4. **Display**: Shows in Renda Fixa section with columns: Ticker, Nome, Valor Atual, Valor Alvo, Diferença, Ação
+
+### RebalancingAction Fields for ETF Renda Fixa
+
+| Field | Description |
+|-------|-------------|
+| `stock` | ETF stock (e.g., AUPO11) |
+| `investment_subtype` | ETF_RENDA_FIXA sub-type |
+| `current_value` | Current position value |
+| `target_value` | Target value from allocation |
+| `difference` | Target - Current |
+| `quantity_to_buy` | Number of ETF shares to buy |
+| `quantity_to_sell` | Number of ETF shares to sell |
+
+### Example
+
+```
+ETF Renda Fixa sub-type: 7.6% allocation
+Total portfolio: R$ 231,655.26
+Target value: R$ 17,605.76
+
+ETF selected: AUPO11
+Current price: R$ 101.41
+Current position: R$ 0.00
+
+Recommendation: Comprar 173 (R$ 17,605.76 ÷ R$ 101.41 = 173 shares)
+```
+
 ## Validation Rules
 
 ### Recommendation Generation
 - User must have an allocation strategy
 - Current portfolio must have positions
 - Target allocation must be defined
+- ETF Renda Fixa: ETF must have valid current_price for quantity calculation
 
 ### Action Creation
 - Actions must have valid stock (if stock-specific)
@@ -342,7 +367,14 @@ Rebalancing recommendations can be displayed in:
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 2025  
+**Document Version**: 1.1  
+**Last Updated**: January 2026  
 **Status**: Complete
+
+## Change Log
+
+### Version 1.1 (January 2026)
+- Added ETF Renda Fixa rebalancing feature documentation
+- Stock-level recommendations for ETF Renda Fixa sub-type
+- Quantity calculation based on ETF current price
 

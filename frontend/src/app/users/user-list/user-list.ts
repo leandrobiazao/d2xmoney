@@ -44,13 +44,23 @@ export class UserListComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.errorMessage = null;
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/acab8374-5e33-40bd-8c47-7aa99bf1c597',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'user-list.ts:43',message:'loadUsers() entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
     this.userService.getUsers().subscribe({
       next: (users) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/acab8374-5e33-40bd-8c47-7aa99bf1c597',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'user-list.ts:48',message:'getUsers() success',data:{users_count:users?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C,D'})}).catch(()=>{});
+        // #endregion
         this.users = users;
         this.isLoading = false;
         this.errorMessage = null;
       },
       error: (error) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/acab8374-5e33-40bd-8c47-7aa99bf1c597',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'user-list.ts:54',message:'getUsers() error',data:{status:error?.status,statusText:error?.statusText,error_obj:error?.error,error_keys:error?.error?Object.keys(error.error):[],message:error?.message,name:error?.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         console.error('Error loading users:', error);
         this.isLoading = false;
         

@@ -11,6 +11,7 @@ The Allocation Strategies app allows users to define target portfolio allocation
 - **Sub-Type Allocations**: Target percentages within investment types (e.g., 50% CDB, 30% LCI, 20% LCA within Renda Fixa)
 - **Stock Allocations**: Target percentages for specific stocks (e.g., 20% PETR4, 15% VALE3 within Ações)
 - **FII Allocations**: Manual selection of up to 5 FIIs (Fundos Imobiliários) with individual percentages, bypassing subtype allocations
+- **ETF Renda Fixa Allocations**: Selection of a single ETF for the "ETF Renda Fixa" sub-type under Renda Fixa, with stock-level rebalancing recommendations
 
 ## Backend Components
 
@@ -106,7 +107,9 @@ The Allocation Strategies app allows users to define target portfolio allocation
 
 **Table**: `stock_allocations`
 
-**Purpose**: Defines specific stock allocations within a sub-type allocation (for Ações strategies).
+**Purpose**: Defines specific stock allocations within a sub-type allocation. Used for:
+- Ações strategies (multiple stocks within a sub-type)
+- ETF Renda Fixa sub-type (single ETF selection with the sub-type's percentage)
 
 **Fields**:
 
@@ -272,9 +275,10 @@ POST /api/allocation-strategies/allocation-strategies/create_strategy/
 **Validation**:
 - Investment type allocations must sum to 100%
 - Sub-type allocations within a type must sum to 100% (or match type percentage)
-- Stock allocations within a sub-type must sum to 100%
+- Stock allocations within a sub-type must sum to 100% (except for ETF Renda Fixa)
 - FII allocations: Maximum 5 FIIs per type allocation
 - FII allocations within a type must sum to 100% of the type allocation percentage
+- ETF Renda Fixa: Maximum 1 ETF per sub-type, uses the sub-type's percentage (not required to sum to 100%)
 
 **Response** (201 Created): Created/updated strategy object
 
@@ -405,6 +409,9 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
 - Maximum 5 FIIs per Fundos Imobiliários investment type allocation
 - Percentages must be between 0 and 100
 - FII allocations bypass subtype allocations (used instead of subtypes for FII investment type)
+- ETF Renda Fixa: Maximum 1 ETF per sub-type allocation
+- ETF Renda Fixa stocks must have stock_class='ETF' and investment_subtype with code='ETF_RENDA_FIXA'
+- ETF Renda Fixa uses the sub-type percentage for rebalancing calculations (single stock allocation)
 
 ## Integration with Other Apps
 
@@ -437,9 +444,23 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
    - 30% Renda Fixa
      - 50% CDB
      - 30% LCI
-     - 20% LCA
-   - 10% Tesouro Direto
+     - 12% Tesouro Direto
+     - 8% ETF Renda Fixa (select AUPO11 from dropdown)
+   - 10% FIIs (select up to 5 FIIs)
 4. User saves strategy
+
+### Setting Up ETF Renda Fixa
+
+1. User navigates to allocation strategy configuration
+2. Under "Renda Fixa" investment type, locate "ETF Renda Fixa" sub-type
+3. Set the target percentage (e.g., 7.6%)
+4. In the green-bordered ETF selection area below, select an ETF from dropdown (e.g., AUPO11)
+5. Save the strategy
+6. When generating rebalancing recommendations, the system will:
+   - Calculate target value based on the sub-type percentage
+   - Fetch current ETF price from stock catalog
+   - Calculate quantity to buy/sell (e.g., "Comprar 173")
+   - Display in Renda Fixa section with Ticker, Nome, Valor Atual, Valor Alvo, Diferença, and Ação columns
 
 ### Viewing Current vs Target
 
@@ -486,7 +507,16 @@ GET /api/allocation-strategies/allocation-strategies/pie_chart_data/?user_id={us
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 2025  
+**Document Version**: 1.1  
+**Last Updated**: January 2026  
 **Status**: Complete
+
+## Change Log
+
+### Version 1.1 (January 2026)
+- Added ETF Renda Fixa allocation support
+- Single ETF selection for "ETF Renda Fixa" sub-type under Renda Fixa
+- Stock-level rebalancing recommendations with buy/sell quantities
+- Green-bordered UI for ETF selection (similar to FII allocations)
+- Diferença column in rebalancing display
 

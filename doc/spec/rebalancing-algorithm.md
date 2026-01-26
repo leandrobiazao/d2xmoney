@@ -49,40 +49,6 @@ For types with subtypes (e.g., Fixed Income -> Tesouro Direto, CDB):
 3.  **Difference**: `Target - Current`.
 4.  **Action**: If `abs(Difference) > Threshold` (max of 1% of target or R$ 100), create a `rebalance` action.
 
-**Note**: Subtype rebalancing is skipped for "Fundos Imobiliários" investment type, which uses FII allocations instead.
-
-### 3.5. FII Rebalancing (Fundos Imobiliários)
-For "Fundos Imobiliários" investment type, rebalancing works per selected FII ticker (not per subtype):
-
-1.  **FII Selection**: User manually selects up to 5 FIIs from the FII catalog in allocation strategy.
-2.  **Target Value Per FII**: `Total Portfolio Value * Type Target % * FII Target %`.
-3.  **Current Value**: Current position value for that specific FII ticker (from PortfolioPosition).
-4.  **Difference**: `Target - Current`.
-
-5.  **Action Types** (based on FII presence in portfolio vs strategy):
-    - **SELL Action**: FII in portfolio but NOT in strategy configuration
-      - Sell entire position: `quantity_to_sell = PortfolioPosition.quantidade`
-      - Reason: "FII não está na estratégia configurada"
-    - **BUY Action**: FII in strategy but NOT in portfolio (current_value == 0)
-      - Buy to reach target: `quantity_to_buy = target_value / current_price`
-      - Calculate based on current FII market price
-    - **REBALANCE Action**: FII in both portfolio AND strategy
-      - Always use REBALANCE (whether difference is positive or negative)
-      - If `difference > 0`: Set `quantity_to_buy = difference / current_price`
-      - If `difference < 0`: Set `quantity_to_sell = abs(difference) / current_price`
-
-6.  **Threshold**: `max(R$ 1.00, 1% of target value)` - only create action if `abs(difference) > threshold`.
-
-7.  **Quantity Calculation**: Based on current FII price from StockService: `abs(difference) / current_price`.
-
-**Key Differences from Stocks**:
-- **No Sales Limit**: FIIs don't count toward the R$ 19,000 monthly sales limit (stocks do)
-- **Tax**: FIIs always pay 15% income tax on profit (no tax exemption like stocks)
-- **No AMBB Ranking**: FIIs don't use AMBB 2.0 ranking system (manual selection only)
-- **Manual Selection**: FIIs are manually selected in allocation strategy (up to 5 FIIs)
-- **Per-Ticker Actions**: Each selected FII gets its own rebalancing action (not grouped by subtype)
-- **Action Logic**: If FII is in strategy, always rebalance (not separate buy/sell like stocks)
-
 ### 4. AMBB Strategy (Stock Picking)
 This is the core logic for "Ações em Reais". It is handled by `AMBBStrategyService`.
 

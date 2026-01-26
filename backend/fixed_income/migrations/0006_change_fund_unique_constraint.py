@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('fixed_income', '0007_merge_duplicate_funds'),
+        ('fixed_income', '0005_add_investment_type_to_funds'),
     ]
 
     operations = [

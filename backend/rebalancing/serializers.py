@@ -280,24 +280,13 @@ class RebalancingRecommendationSerializer(serializers.ModelSerializer):
         return float(total_sales)
     
     def get_total_complete_sales_value(self, obj):
-        """Calculate total value of complete sales (sell actions only) for Ações em Reais stocks."""
+        """Calculate total value of complete sales (sell actions only)."""
         from decimal import Decimal
-        from configuration.models import InvestmentType
-        
         total = Decimal('0')
-        # Only count actions with action_type='sell' (complete sales) for "Ações em Reais" stocks
-        # Exclude FIIs - they should not be counted in this total
+        # Only count actions with action_type='sell' (complete sales)
+        # These are actions where the entire position is being sold
         for action in obj.actions.filter(action_type='sell'):
-            # Exclude FIIs: check if investment_type code is 'FIIS' or if stock_class is 'FII'
-            if action.stock:
-                # Skip FIIs
-                if action.stock.investment_type and action.stock.investment_type.code == 'FIIS':
-                    continue
-                if hasattr(action.stock, 'stock_class') and action.stock.stock_class == 'FII':
-                    continue
-                # Only count "Ações em Reais" stocks (not "Renda Variável em Dólares" either)
-                if action.stock.investment_type and action.stock.investment_type.code == 'RENDA_VARIAVEL_REAIS':
-                    total += action.current_value
+            total += action.current_value
         return float(total)
     
     def get_total_partial_sales_value(self, obj):

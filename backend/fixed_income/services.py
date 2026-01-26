@@ -2,12 +2,12 @@
 Services for fixed income portfolio import and management.
 """
 import re
-from datetime import datetime, date
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple
 import openpyxl
 from django.utils import timezone
-from .models import FixedIncomePosition, TesouroDiretoPosition, InvestmentFund
+from .models import FixedIncomePosition, TesouroDiretoPosition
 from configuration.models import InvestmentType, InvestmentSubType
 
 
@@ -67,41 +67,41 @@ class PortfolioExcelImportService:
     @staticmethod
     def parse_quantity(value: str) -> Decimal:
         """Parse quantity value."""
-        if not value or value == '-':
+        # Handle None, empty string, dash, or whitespace-only values as 0
+        if not value or value == '-' or (isinstance(value, str) and value.strip() == ''):
             return Decimal('0.00')
         
-        # Handle comma as decimal separator
-        value = str(value).replace(',', '.')
+        # Convert to string and strip whitespace
+        value_str = str(value).strip()
+        
+        # Handle comma as decimal separator (Brazilian format: "1,5" = 1.5)
+        value_str = value_str.replace(',', '.')
+        
+        # Remove any non-numeric characters except decimal point and minus sign
+        # This handles cases where Excel might have formatting or extra characters
+        import re
+        value_str = re.sub(r'[^\d\.\-]', '', value_str)
+        
         try:
-            return Decimal(value)
+            result = Decimal(value_str)
+            # Ensure non-negative (quantity can't be negative)
+            return max(result, Decimal('0.00'))
         except (InvalidOperation, ValueError):
+            print(f"DEBUG parse_quantity: Failed to parse '{value}' (original), returning 0.00")
             return Decimal('0.00')
     
     @staticmethod
     def detect_section(row: List) -> Optional[str]:
-        """Detect which section a row belongs to (Ações, Renda Fixa, Tesouro Direto, Fundos de Investimento)."""
+        """Detect which section a row belongs to (Ações, Renda Fixa, Tesouro Direto)."""
         if not row or len(row) == 0:
             return None
         
         first_cell = str(row[0]).upper() if row[0] else ''
         
-        # Skip section headers that are proventos/dividendos/distribuições (these are not actual sections)
-        excluded_keywords = [
-            'PROVENTOS', 'DIVIDENDOS', 'DISTRIBUIÇÕES', 'DISTRIBUICOES',
-            'RENDIMENTOS', 'JUROS', 'AMORTIZAÇÃO', 'AMORTIZACAO'
-        ]
-        if any(keyword in first_cell for keyword in excluded_keywords):
-            return None
-        
-        # Check for Fundos de Investimento first (before Renda Fixa, to avoid false matches)
-        if 'FUNDOS DE INVESTIMENTO' in first_cell or 'FUNDO DE INVESTIMENTO' in first_cell:
-            return 'fundos_investimento'
-        elif 'AÇÕES' in first_cell or '%|AÇÕES' in first_cell:
+        if 'AÇÕES' in first_cell or '%|AÇÕES' in first_cell:
             return 'acoes'
         elif 'RENDA FIXA' in first_cell or '%|RENDA FIXA' in first_cell:
-            # Avoid matching "Fundos de Renda Fixa" subsections
-            if 'FUNDOS' not in first_cell and 'FUNDO' not in first_cell:
-                return 'renda_fixa'
+            return 'renda_fixa'
         elif 'TESOURO' in first_cell or 'TESOURO DIRETO' in first_cell or '%|TESOURO' in first_cell or 'TESOURO DIRETO' in first_cell:
             return 'tesouro_direto'
         
@@ -140,42 +140,6 @@ class PortfolioExcelImportService:
                 return (sub_type_name, percentage)
             except (InvalidOperation, ValueError):
                 pass
-        
-        return None
-    
-    @staticmethod
-    def detect_fund_type_subsection(row: List) -> Optional[str]:
-        """Detect Investment Fund sub-section header (e.g., '0,54%|Fundos de Renda Fixa Pós-Fixado').
-        Returns fund type string or None."""
-        if not row or len(row) == 0:
-            return None
-        
-        first_cell = str(row[0]).strip() if row[0] else ''
-        
-        # Pattern: "{percentage}%|{fund-type}"
-        # Examples: "0,54%|Fundos de Renda Fixa Pós-Fixado"
-        pattern = r'[\d,]+\s*%\s*\|\s*(.+)'
-        match = re.search(pattern, first_cell, re.IGNORECASE)
-        
-        if match:
-            fund_type_str = match.group(1).strip()
-            fund_type_upper = fund_type_str.upper()
-            
-            # Determine fund type based on description
-            if 'PÓS-FIXADO' in fund_type_upper or 'POS-FIXADO' in fund_type_upper or 'PÓS FIXADO' in fund_type_upper:
-                return 'RF_POS'
-            elif 'PREFIXADO' in fund_type_upper or 'PRE-FIXADO' in fund_type_upper or 'PRÉ-FIXADO' in fund_type_upper:
-                return 'RF_PRE'
-            elif 'IPCA' in fund_type_upper or 'INFLAÇÃO' in fund_type_upper:
-                return 'RF_IPCA'
-            elif 'MULTIMERCADO' in fund_type_upper:
-                return 'MULTI'
-            elif 'AÇÕES' in fund_type_upper or 'ACOES' in fund_type_upper:
-                return 'ACOES'
-            elif 'CÂMBIO' in fund_type_upper or 'CAMBIO' in fund_type_upper:
-                return 'CAMBIO'
-            else:
-                return 'RF_POS'  # Default to Pós-Fixado for Renda Fixa funds
         
         return None
     
@@ -220,39 +184,48 @@ class PortfolioExcelImportService:
         
         asset_name = str(row[0]).strip() if row[0] else ''
         
-        # Skip entries that are not actual investments (proventos, dividendos, distribuições, etc.)
-        asset_name_upper = asset_name.upper()
-        excluded_keywords = [
-            'PROVENTOS', 'DIVIDENDOS', 'DISTRIBUIÇÕES', 'DISTRIBUICOES',
-            'RENDIMENTOS', 'JUROS', 'AMORTIZAÇÃO', 'AMORTIZACAO',
-            'RESGATE', 'LIQUIDAÇÃO', 'LIQUIDACAO'
-        ]
-        
-        if any(keyword in asset_name_upper for keyword in excluded_keywords):
-            return None
-        
         # Check if it's a CDB
         if 'CDB' not in asset_name.upper():
             return None
         
-        # CDB rows in Excel format:
-        # [Asset Name, Application Date, Grace Period End, Maturity Date, Rate, Quantity, Guarantee, Applied Value, Position Value, Net Value, ...]
+        # CDB rows in Excel format (XP Investimentos "Posição Consolidada"):
+        # [0] Asset Name (e.g., "CDB BANCO MASTER S/A - DEZ/2026")
+        # [1] Posição a mercado (Position Value)
+        # [2] % Alocação (Allocation %)
+        # [3] Valor aplicado (Applied Value)
+        # [4] Valor aplicado original (Original Applied Value)
+        # [5] Taxa a mercado (Rate)
+        # [6] Data aplicação (Application Date)
+        # [7] Data vencimento (Maturity Date)
+        # [8] Quantidade (Quantity)
+        # [9] Preço Unitário (Unit Price)
         
         try:
-            application_date = PortfolioExcelImportService.parse_date(row[1])
-            grace_period_end = PortfolioExcelImportService.parse_date(row[2]) if len(row) > 2 else None
-            maturity_date = PortfolioExcelImportService.parse_date(row[3]) if len(row) > 3 else None
+            # Parse values according to actual Excel column order
+            position_value = PortfolioExcelImportService.parse_currency(row[1]) if len(row) > 1 else Decimal('0.00')
+            applied_value = PortfolioExcelImportService.parse_currency(row[3]) if len(row) > 3 else Decimal('0.00')
+            rate = PortfolioExcelImportService.parse_percentage(row[5]) if len(row) > 5 else None
+            application_date = PortfolioExcelImportService.parse_date(row[6]) if len(row) > 6 else None
+            maturity_date = PortfolioExcelImportService.parse_date(row[7]) if len(row) > 7 else None
+            quantity = PortfolioExcelImportService.parse_quantity(row[8]) if len(row) > 8 else Decimal('0.00')
+            price = PortfolioExcelImportService.parse_currency(row[9]) if len(row) > 9 else Decimal('0.00')
             
             # If maturity_date is None, try to extract from asset_name (e.g., "CDB BANCO MASTER S/A - DEZ/2026")
             if not maturity_date:
                 maturity_date = PortfolioExcelImportService._extract_date_from_name(asset_name)
             
-            rate = PortfolioExcelImportService.parse_percentage(row[4]) if len(row) > 4 else None
-            quantity = PortfolioExcelImportService.parse_quantity(row[5]) if len(row) > 5 else Decimal('0.00')
-            guarantee_quantity = PortfolioExcelImportService.parse_quantity(row[6]) if len(row) > 6 else Decimal('0.00')
-            applied_value = PortfolioExcelImportService.parse_currency(row[7]) if len(row) > 7 else Decimal('0.00')
-            position_value = PortfolioExcelImportService.parse_currency(row[8]) if len(row) > 8 else Decimal('0.00')
-            net_value = PortfolioExcelImportService.parse_currency(row[9]) if len(row) > 9 else Decimal('0.00')
+            # Net value is typically the position value for CDBs
+            net_value = position_value
+            
+            # Debug: Log all parsed values for CDB rows
+            print(f"DEBUG CDB PARSE: {asset_name}")
+            print(f"  row[1] (position_value): {row[1] if len(row) > 1 else 'N/A'} -> {position_value}")
+            print(f"  row[3] (applied_value): {row[3] if len(row) > 3 else 'N/A'} -> {applied_value}")
+            print(f"  row[8] (quantity): {row[8] if len(row) > 8 else 'N/A'} -> {quantity}")
+            
+            # Detect liquidated positions
+            if quantity == Decimal('0.00') and position_value == Decimal('0.00'):
+                print(f"  *** LIQUIDATED POSITION DETECTED ***")
             
             # Extract asset code from asset_name or generate one
             asset_code = PortfolioExcelImportService._extract_asset_code(asset_name)
@@ -263,19 +236,21 @@ class PortfolioExcelImportService:
             income_tax = gross_yield - net_yield if gross_yield and net_yield else Decimal('0.00')
             
             if not application_date:
-                return None
+                # If no application_date from Excel, use current date
+                application_date = timezone.now().date()
             
             return {
                 'user_id': user_id,
                 'asset_name': asset_name,
                 'asset_code': asset_code,
                 'application_date': application_date.date() if isinstance(application_date, datetime) else application_date,
-                'grace_period_end': grace_period_end.date() if grace_period_end and isinstance(grace_period_end, datetime) else grace_period_end,
+                'grace_period_end': None,  # Not available in this Excel format
                 'maturity_date': maturity_date.date() if maturity_date and isinstance(maturity_date, datetime) else maturity_date,
                 'rate': rate,
+                'price': price,
                 'quantity': quantity,
-                'available_quantity': quantity,  # Assume same as quantity initially
-                'guarantee_quantity': guarantee_quantity,
+                'available_quantity': quantity,  # Assume same as quantity
+                'guarantee_quantity': Decimal('0.00'),  # Not available in this Excel format
                 'applied_value': applied_value,
                 'position_value': position_value,
                 'net_value': net_value,
@@ -472,123 +447,6 @@ class PortfolioExcelImportService:
             return None
     
     @staticmethod
-    def extract_investment_fund_from_row(row: List, user_id: str, fund_type: str = 'RF_POS') -> Optional[Dict]:
-        """Extract investment fund data from a row.
-        Supports two formats:
-        1. Old format: Fund Name | Data cota | Valor cota | Qtd. cotas | Em cotização | Posição | Valor líquido
-        2. New format (Posição Detalhada): Fund Name | Posição | % Alocação | Rent. Líquida | Rent. Bruta | Valor aplicado | Valor líquido
-        """
-        try:
-            if not row or len(row) < 7:
-                return None
-            
-            fund_name = str(row[0]).strip() if row[0] else None
-            if not fund_name or fund_name == '-':
-                return None
-            
-            # Skip if it looks like a header
-            header_keywords = ['DATA COTA', 'VALOR COTA', 'POSIÇÃO', 'FUNDO', 'TIPO', 'QTD', 'COTAS', 'ALOCAÇÃO', 'RENTABILIDADE', 'VALOR APLICADO', 'VALOR LÍQUIDO']
-            if any(keyword in fund_name.upper() for keyword in header_keywords):
-                return None
-            
-            # Skip entries that are not actual funds (proventos, dividendos, distribuições, etc.)
-            fund_name_upper = fund_name.upper()
-            excluded_keywords = [
-                'PROVENTOS',
-                'DIVIDENDOS',
-                'DISTRIBUIÇÕES',
-                'DISTRIBUICOES',
-                'RENDIMENTOS',
-                'JUROS',
-                'AMORTIZAÇÃO',
-                'AMORTIZACAO',
-                'RESGATE',
-                'LIQUIDAÇÃO',
-                'LIQUIDACAO'
-            ]
-            
-            for keyword in excluded_keywords:
-                if keyword in fund_name_upper:
-                    # Log that we're skipping this entry
-                    print(f"Skipping non-fund entry: '{fund_name}' (contains '{keyword}')")
-                    return None
-            
-            # Detect format by checking if row[1] looks like a date or a currency value
-            # If row[1] is a date, use old format; if it's currency (Posição), use new format
-            row1_str = str(row[1]).strip() if row[1] else ''
-            is_new_format = False
-            
-            # Check if row[1] looks like currency (starts with R$ or is a number)
-            if row1_str and ('R$' in row1_str or (row1_str.replace('.', '').replace(',', '').replace('-', '').strip().isdigit())):
-                is_new_format = True
-            
-            if is_new_format:
-                # New format: Fund Name | Posição | % Alocação | Rent. Líquida | Rent. Bruta | Valor aplicado | Valor líquido
-                quota_date = None  # Not available in new format
-                quota_value = None  # Not available in new format
-                quota_quantity = Decimal('0.00')  # Not available in new format
-                in_quotation = Decimal('0.00')  # Not available in new format
-                
-                # Parse position value (column 1)
-                position_value = PortfolioExcelImportService.parse_currency(str(row[1])) if row[1] else Decimal('0.00')
-                
-                # Parse applied value (column 5)
-                applied_value = PortfolioExcelImportService.parse_currency(str(row[5])) if len(row) > 5 and row[5] else Decimal('0.00')
-                
-                # Parse net value (column 6)
-                net_value = PortfolioExcelImportService.parse_currency(str(row[6])) if len(row) > 6 and row[6] else Decimal('0.00')
-            else:
-                # Old format: Fund Name | Data cota | Valor cota | Qtd. cotas | Em cotização | Posição | Valor líquido
-                # Parse quota date (column 1)
-                quota_date = PortfolioExcelImportService.parse_date(str(row[1])) if row[1] else None
-                
-                # Parse quota value (column 2)
-                quota_value = PortfolioExcelImportService.parse_currency(str(row[2])) if row[2] else Decimal('0.00')
-                
-                # Parse quota quantity (column 3)
-                quota_quantity = PortfolioExcelImportService.parse_quantity(str(row[3])) if row[3] else Decimal('0.00')
-                
-                # Parse in quotation (column 4)
-                in_quotation = PortfolioExcelImportService.parse_currency(str(row[4])) if row[4] else Decimal('0.00')
-                
-                # Parse position value (column 5)
-                position_value = PortfolioExcelImportService.parse_currency(str(row[5])) if row[5] else Decimal('0.00')
-                
-                # Parse net value (column 6)
-                net_value = PortfolioExcelImportService.parse_currency(str(row[6])) if row[6] else Decimal('0.00')
-                
-                # Calculate applied value (position - gain) for old format
-                applied_value = position_value  # Simplified - could be more accurate with historical data
-            
-            # Calculate returns (if we have applied value)
-            gross_return_percent = None
-            net_return_percent = None
-            if applied_value > 0 and net_value > 0:
-                net_return_percent = ((net_value - applied_value) / applied_value) * 100
-            
-            return {
-                'user_id': user_id,
-                'fund_name': fund_name,
-                'fund_type': fund_type,
-                'quota_date': quota_date,
-                'quota_value': quota_value,
-                'quota_quantity': quota_quantity,
-                'in_quotation': in_quotation,
-                'position_value': position_value,
-                'net_value': net_value,
-                'applied_value': applied_value,
-                'gross_return_percent': gross_return_percent,
-                'net_return_percent': net_return_percent,
-                'source': 'Excel Import',
-                'import_date': timezone.now(),
-            }
-        except Exception as e:
-            print(f"Error extracting Investment Fund from row: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-    
-    @staticmethod
     def extract_cash_balance(worksheet) -> Optional[Decimal]:
         """Extract Saldo Disponível (cash balance) from Excel.
         Looks for the value in row 4, column 3 (index 2) or row 61, column 1 (index 0)."""
@@ -645,7 +503,6 @@ class PortfolioExcelImportService:
             results['debug_info'].append(f"Worksheet: {worksheet.title}, Rows: {worksheet.max_row}, Cols: {worksheet.max_column}")
             
             current_section = None
-            current_fund_type = None  # Track current fund type for investment funds
             
             # Get or create Renda Fixa investment type
             renda_fixa_type, _ = InvestmentType.objects.get_or_create(
@@ -666,35 +523,6 @@ class PortfolioExcelImportService:
                 code='CDB_PREFIXADO',
                 defaults={'name': 'CDB Pré-fixado', 'display_order': 3, 'is_active': True}
             )
-            
-            # Get or create Investment Fund sub-types
-            fund_posfixado_subtype, _ = InvestmentSubType.objects.get_or_create(
-                investment_type=renda_fixa_type,
-                code='FUNDO_RF_POS',
-                defaults={'name': 'Fundos de Renda Fixa Pós-Fixado', 'display_order': 4, 'is_active': True}
-            )
-            fund_prefixado_subtype, _ = InvestmentSubType.objects.get_or_create(
-                investment_type=renda_fixa_type,
-                code='FUNDO_RF_PRE',
-                defaults={'name': 'Fundos de Renda Fixa Prefixado', 'display_order': 5, 'is_active': True}
-            )
-            fund_ipca_subtype, _ = InvestmentSubType.objects.get_or_create(
-                investment_type=renda_fixa_type,
-                code='FUNDO_RF_IPCA',
-                defaults={'name': 'Fundos de Renda Fixa IPCA+', 'display_order': 6, 'is_active': True}
-            )
-            
-            # Map fund_type to InvestmentType/InvestmentSubType
-            fund_type_map = {
-                'RF_POS': (renda_fixa_type, fund_posfixado_subtype),
-                'RF_PRE': (renda_fixa_type, fund_prefixado_subtype),
-                'RF_IPCA': (renda_fixa_type, fund_ipca_subtype),
-                # For other types, use Renda Fixa as default
-                'MULTI': (renda_fixa_type, fund_posfixado_subtype),
-                'ACOES': (renda_fixa_type, fund_posfixado_subtype),
-                'CAMBIO': (renda_fixa_type, fund_posfixado_subtype),
-                'OTHER': (renda_fixa_type, fund_posfixado_subtype),
-            }
             
             # Extract and create CAIXA position from Saldo Disponível
             cash_balance = PortfolioExcelImportService.extract_cash_balance(worksheet)
@@ -722,6 +550,18 @@ class PortfolioExcelImportService:
                         }
                     )
                     
+                    # CRITICAL: Delete ALL existing CAIXA positions for this user to prevent duplicates
+                    # CAIXA should be unique per user, regardless of application_date
+                    existing_caixa_positions = FixedIncomePosition.objects.filter(
+                        user_id=user_id,
+                        asset_code__startswith='CAIXA_'
+                    )
+                    duplicates_deleted = existing_caixa_positions.count()
+                    if duplicates_deleted > 0:
+                        existing_caixa_positions.delete()
+                        results['debug_info'].append(f"Deleted {duplicates_deleted} existing CAIXA position(s) before creating new one")
+                    
+                    # Now create/update the CAIXA position
                     caixa_position, created = FixedIncomePosition.objects.update_or_create(
                         user_id=user_id,
                         asset_code=caixa_asset_code,
@@ -756,6 +596,8 @@ class PortfolioExcelImportService:
                 except Exception as e:
                     results['errors'].append(f"Error creating CAIXA position: {str(e)}")
                     results['debug_info'].append(f"Failed to create CAIXA: {str(e)}")
+                    import traceback
+                    results['debug_info'].append(f"CAIXA error traceback: {traceback.format_exc()}")
             
             rows_processed = 0
             sections_found = []
@@ -794,22 +636,12 @@ class PortfolioExcelImportService:
                     sections_found.append(section)
                     current_tesouro_subsection = None
                     current_tesouro_subtype = None
-                    current_fund_type = None
                     results['debug_info'].append(f"Row {row_idx}: Found section '{section}' - {str(row[0])[:100]}")
                     continue
                 
-                # Detect Investment Fund sub-section (e.g., "0,54%|Fundos de Renda Fixa Pós-Fixado")
-                if current_section == 'fundos_investimento':
-                    fund_type = PortfolioExcelImportService.detect_fund_type_subsection(row)
-                    if fund_type:
-                        current_fund_type = fund_type
-                        results['debug_info'].append(f"Row {row_idx}: Found Fund sub-section '{fund_type}' - skipping header row")
-                        continue  # Skip this row as it's the sub-section header
-                
-                # Detect Tesouro Direto sub-section (e.g., "15,2% | Pós-Fixado" or "2,2% | Inflação")
+                # Detect Tesouro Direto sub-section (e.g., "15,2% | Pós-Fixado")
                 # Note: In Excel, the sub-section header row also contains column headers
-                # Also check in 'renda_fixa' section as Tesouro bonds can appear there
-                if current_section in ['tesouro_direto', 'renda_fixa']:
+                if current_section == 'tesouro_direto':
                     subsection_info = PortfolioExcelImportService.detect_tesouro_subsection(row)
                     if subsection_info:
                         sub_type_name, allocation_pct = subsection_info
@@ -822,7 +654,7 @@ class PortfolioExcelImportService:
                                 if key.lower() in sub_type_name.lower() or sub_type_name.lower() in key.lower():
                                     current_tesouro_subtype = subtype_obj
                                     break
-                        results['debug_info'].append(f"Row {row_idx}: Found Tesouro sub-section '{sub_type_name}' ({allocation_pct}%) in section '{current_section}' - skipping header row")
+                        results['debug_info'].append(f"Row {row_idx}: Found Tesouro sub-section '{sub_type_name}' ({allocation_pct}%) - skipping header row")
                         continue  # Skip this row as it's both sub-section header and column headers
                 
                 # Skip header rows
@@ -830,125 +662,117 @@ class PortfolioExcelImportService:
                     results['debug_info'].append(f"Row {row_idx}: Skipped header row")
                     continue
                 
-                # Process Renda Fixa entries (can be CDB or Tesouro Direto)
+                # Process CDB entries
                 if current_section == 'renda_fixa':
-                    # First, try to extract Tesouro Direto bonds (LTN, NTN-B, LFT, etc.)
-                    tesouro_data = PortfolioExcelImportService.extract_tesouro_from_row(
-                        row, user_id, current_tesouro_subsection
-                    )
-                    if tesouro_data:
+                    cdb_data = PortfolioExcelImportService.extract_cdb_from_row(row, user_id, current_section)
+                    if cdb_data:
                         try:
-                            titulo_name = tesouro_data.pop('titulo_name')
-                            vencimento = tesouro_data.pop('vencimento')
-                            sub_type_name = tesouro_data.pop('sub_type_name', None)
+                            # Check if this is a liquidated position (quantity=0 AND position_value=0)
+                            quantity = cdb_data.get('quantity', Decimal('0.00'))
+                            position_value = cdb_data.get('position_value', Decimal('0.00'))
+                            is_liquidated = (quantity == Decimal('0.00') and position_value == Decimal('0.00'))
                             
-                            # Use current sub-type if available, otherwise determine from bond
-                            investment_sub_type = current_tesouro_subtype
-                            if not investment_sub_type and sub_type_name:
-                                investment_sub_type = subtype_map.get(sub_type_name)
+                            # Debug: Log all CDB rows to understand Excel format
+                            print(f"DEBUG CDB ROW {row_idx}: asset={cdb_data.get('asset_name', 'N/A')[:50]}, "
+                                  f"quantity={quantity}, position_value={position_value}, "
+                                  f"row[5]={row[5] if len(row) > 5 else 'N/A'}, "
+                                  f"row[8]={row[8] if len(row) > 8 else 'N/A'}, "
+                                  f"is_liquidated={is_liquidated}")
                             
-                            # For Tesouro positions, use only user_id and asset_code to prevent duplicates
-                            existing_positions = FixedIncomePosition.objects.filter(
-                                user_id=tesouro_data['user_id'],
-                                asset_code=tesouro_data['asset_code']
-                            ).order_by('-created_at')
-                            
-                            if existing_positions.exists():
-                                position_list = list(existing_positions)
-                                existing_position = position_list[0]
-                                
-                                duplicates_count = len(position_list) - 1
-                                if duplicates_count > 0:
-                                    for dup_position in position_list[1:]:
-                                        try:
-                                            dup_position.tesourodiretoposition.delete()
-                                        except TesouroDiretoPosition.DoesNotExist:
-                                            pass
-                                        dup_position.delete()
-                                    results['debug_info'].append(f"Row {row_idx}: Removed {duplicates_count} duplicate(s) for {tesouro_data['asset_code']}")
-                                
-                                for key, value in tesouro_data.items():
-                                    setattr(existing_position, key, value)
-                                existing_position.investment_type = renda_fixa_type
-                                existing_position.investment_sub_type = investment_sub_type or tesouro_subtype
-                                existing_position.source = 'Excel Import'
-                                existing_position.import_date = timezone.now()
-                                existing_position.save()
-                                position = existing_position
-                                created = False
-                            else:
-                                position, created = FixedIncomePosition.objects.update_or_create(
-                                    user_id=tesouro_data['user_id'],
-                                    asset_code=tesouro_data['asset_code'],
-                                    defaults={
-                                        **tesouro_data,
-                                        'investment_type': renda_fixa_type,
-                                        'investment_sub_type': investment_sub_type or tesouro_subtype,
-                                    }
-                                )
-                            
-                            # Create or update TesouroDiretoPosition
-                            tesouro_pos, _ = TesouroDiretoPosition.objects.update_or_create(
-                                fixed_income_position=position,
-                                defaults={
-                                    'titulo_name': titulo_name,
-                                    'vencimento': vencimento,
-                                }
-                            )
-                            
-                            if created:
-                                results['created'] += 1
-                            else:
-                                results['updated'] += 1
-                            results['tesouro_count'] += 1
-                            results['debug_info'].append(f"Row {row_idx}: {'Created' if created else 'Updated'} Tesouro '{titulo_name[:50]}' in Renda Fixa section")
-                        except Exception as e:
-                            results['errors'].append(f"Row {row_idx}: {str(e)}")
-                            import traceback
-                            results['debug_info'].append(f"Row {row_idx}: Error details: {traceback.format_exc()}")
-                    else:
-                        # Skip rows that are proventos, dividendos, distribuições, etc.
-                        first_cell = str(row[0]).strip() if row[0] else ''
-                        first_cell_upper = first_cell.upper()
-                        excluded_keywords = [
-                            'PROVENTOS', 'DIVIDENDOS', 'DISTRIBUIÇÕES', 'DISTRIBUICOES',
-                            'RENDIMENTOS', 'JUROS', 'AMORTIZAÇÃO', 'AMORTIZACAO',
-                            'RESGATE', 'LIQUIDAÇÃO', 'LIQUIDACAO',
-                            'DIVIDENDOS, PROVENTOS', 'PROVENTOS E OUTRAS DISTRIBUIÇÕES'
-                        ]
-                        
-                        if any(keyword in first_cell_upper for keyword in excluded_keywords):
-                            results['debug_info'].append(f"Row {row_idx}: Skipped non-investment entry in Renda Fixa: '{first_cell[:50]}'")
-                            continue
-                        
-                        # If not Tesouro, try CDB
-                        cdb_data = PortfolioExcelImportService.extract_cdb_from_row(row, user_id, current_section)
-                        if cdb_data:
-                            try:
-                                position, created = FixedIncomePosition.objects.update_or_create(
+                            if is_liquidated:
+                                # Position is liquidated - update existing position if it exists, otherwise skip
+                                existing_positions = FixedIncomePosition.objects.filter(
                                     user_id=cdb_data['user_id'],
-                                    asset_code=cdb_data['asset_code'],
-                                    application_date=cdb_data['application_date'],
-                                    defaults={
-                                        **cdb_data,
-                                        'investment_type': renda_fixa_type,
-                                        'investment_sub_type': cdb_prefixado_subtype,  # Assign CDB_PREFIXADO sub-type
-                                    }
-                                )
+                                    asset_code=cdb_data['asset_code']
+                                ).exclude(
+                                    asset_code__startswith='CAIXA_'
+                                ).order_by('-created_at')
+                                
+                                if existing_positions.exists():
+                                    # Update existing position to mark as liquidated
+                                    position = existing_positions.first()
+                                    print(f"DEBUG LIQUIDATION: Updating existing position {cdb_data['asset_code']} to liquidated status")
+                                    
+                                    # Delete duplicates
+                                    duplicates_count = existing_positions.count() - 1
+                                    if duplicates_count > 0:
+                                        for dup_position in existing_positions[1:]:
+                                            dup_position.delete()
+                                        results['debug_info'].append(f"Row {row_idx}: Removed {duplicates_count} duplicate(s) for {cdb_data['asset_code']}")
+                                    
+                                    # Update with liquidated values
+                                    for key, value in cdb_data.items():
+                                        setattr(position, key, value)
+                                    position.investment_type = renda_fixa_type
+                                    position.investment_sub_type = cdb_prefixado_subtype
+                                    position.source = 'Excel Import'
+                                    position.import_date = timezone.now()
+                                    position.save()
+                                    
+                                    results['updated'] += 1
+                                    results['debug_info'].append(f"Row {row_idx}: Updated {cdb_data['asset_code']} to liquidated (quantity=0, position_value=0)")
+                                else:
+                                    # No existing position - skip creating liquidated positions
+                                    results['debug_info'].append(f"Row {row_idx}: Skipped liquidated position {cdb_data['asset_code']} (no existing position to update)")
+                                    print(f"DEBUG LIQUIDATION: Skipping new liquidated position {cdb_data['asset_code']}")
+                                results['cdb_count'] += 1
+                            else:
+                                # Normal (non-liquidated) position - import/update as usual
+                                existing_positions = FixedIncomePosition.objects.filter(
+                                    user_id=cdb_data['user_id'],
+                                    asset_code=cdb_data['asset_code']
+                                ).exclude(
+                                    asset_code__startswith='CAIXA_'  # Don't match CAIXA positions
+                                ).order_by('-created_at')
+                                
+                                if existing_positions.exists():
+                                    # Update the most recent existing position
+                                    position = existing_positions.first()
+                                    
+                                    # Delete any duplicates (keep only the most recent)
+                                    duplicates_count = existing_positions.count() - 1
+                                    if duplicates_count > 0:
+                                        for dup_position in existing_positions[1:]:
+                                            dup_position.delete()
+                                        results['debug_info'].append(f"Row {row_idx}: Removed {duplicates_count} duplicate(s) for {cdb_data['asset_code']}")
+                                    
+                                    # Update existing position with new data
+                                    for key, value in cdb_data.items():
+                                        setattr(position, key, value)
+                                    position.investment_type = renda_fixa_type
+                                    position.investment_sub_type = cdb_prefixado_subtype
+                                    position.source = 'Excel Import'
+                                    position.import_date = timezone.now()
+                                    position.save()
+                                    created = False
+                                else:
+                                    # No existing position found, create new one
+                                    position, created = FixedIncomePosition.objects.update_or_create(
+                                        user_id=cdb_data['user_id'],
+                                        asset_code=cdb_data['asset_code'],
+                                        application_date=cdb_data['application_date'],
+                                        defaults={
+                                            **cdb_data,
+                                            'investment_type': renda_fixa_type,
+                                            'investment_sub_type': cdb_prefixado_subtype,
+                                        }
+                                    )
                                 
                                 if created:
                                     results['created'] += 1
                                 else:
                                     results['updated'] += 1
                                 results['cdb_count'] += 1
-                            except Exception as e:
-                                results['errors'].append(f"Row {row_idx}: {str(e)}")
-                        else:
-                            # Log why extraction failed
-                            if row[0]:
-                                asset_name = str(row[0]).strip()
-                                if asset_name:
-                                    results['debug_info'].append(f"Row {row_idx}: Skipped (not CDB or Tesouro): {asset_name[:50]}")
+                        except Exception as e:
+                            results['errors'].append(f"Row {row_idx}: {str(e)}")
+                            import traceback
+                            results['debug_info'].append(f"Row {row_idx}: CDB import error: {traceback.format_exc()}")
+                    else:
+                        # Log why CDB extraction failed
+                        if row[0]:
+                            asset_name = str(row[0]).strip()
+                            if asset_name and 'CDB' not in asset_name.upper():
+                                results['debug_info'].append(f"Row {row_idx}: Skipped (not a CDB): {asset_name[:50]}")
                 
                 # Process Tesouro Direto entries
                 elif current_section == 'tesouro_direto':
@@ -1039,108 +863,6 @@ class PortfolioExcelImportService:
                             titulo_name = str(row[0]).strip()
                             if titulo_name and not any(bond_type in titulo_name.upper() for bond_type in ['LFT', 'NTNB', 'LTN', 'NTN-B', 'NTN B', 'TESOURO']):
                                 results['debug_info'].append(f"Row {row_idx}: Skipped (not Tesouro): {titulo_name[:50]}")
-                # Process Investment Funds entries
-                elif current_section == 'fundos_investimento':
-                    fund_type_code = current_fund_type or 'RF_POS'
-                    fund_data = PortfolioExcelImportService.extract_investment_fund_from_row(
-                        row, user_id, fund_type_code
-                    )
-                    if fund_data:
-                        # Additional validation: ensure it's a real fund
-                        fund_name = fund_data.get('fund_name', '')
-                        if not fund_name or len(fund_name.strip()) < 3:
-                            results['debug_info'].append(f"Row {row_idx}: Skipped fund (name too short or empty): '{fund_name}'")
-                            continue
-                        try:
-                            # Map fund_type to InvestmentType and InvestmentSubType
-                            investment_type, investment_sub_type = fund_type_map.get(
-                                fund_type_code, 
-                                (renda_fixa_type, fund_posfixado_subtype)
-                            )
-                            fund_data['investment_type'] = investment_type
-                            fund_data['investment_sub_type'] = investment_sub_type
-                            
-                            # Use only user_id and fund_name as unique key (not quota_date)
-                            # If fund exists, UPDATE values (replace, not aggregate) - same fund with different quota_date
-                            # When same fund appears with different quota_date, update: quota_value, position_value, net_value
-                            try:
-                                existing_fund = InvestmentFund.objects.get(
-                                    user_id=fund_data['user_id'],
-                                    fund_name=fund_data['fund_name']
-                                )
-                                
-                                # Always update quota_date and quota_value to the latest (newer date)
-                                if fund_data.get('quota_date'):
-                                    # Normalize dates to date objects for comparison
-                                    new_quota_date = fund_data['quota_date']
-                                    if isinstance(new_quota_date, datetime):
-                                        new_quota_date = new_quota_date.date()
-                                    elif not isinstance(new_quota_date, date):
-                                        # If it's not a date or datetime, skip
-                                        new_quota_date = None
-                                    
-                                    if new_quota_date:
-                                        existing_quota_date = existing_fund.quota_date
-                                        if isinstance(existing_quota_date, datetime):
-                                            existing_quota_date = existing_quota_date.date()
-                                        
-                                        # Update if no existing date or new date is >= existing date
-                                        if not existing_quota_date or new_quota_date >= existing_quota_date:
-                                            existing_fund.quota_date = new_quota_date
-                                            if fund_data.get('quota_value') is not None:
-                                                existing_fund.quota_value = fund_data.get('quota_value')
-                                
-                                # REPLACE these values with new ones (not sum) - they represent current state at the quota_date
-                                if fund_data.get('quota_quantity') is not None:
-                                    existing_fund.quota_quantity = fund_data.get('quota_quantity')
-                                if fund_data.get('in_quotation') is not None:
-                                    existing_fund.in_quotation = fund_data.get('in_quotation')
-                                if fund_data.get('position_value') is not None:
-                                    existing_fund.position_value = fund_data.get('position_value')
-                                if fund_data.get('net_value') is not None:
-                                    existing_fund.net_value = fund_data.get('net_value')
-                                if fund_data.get('applied_value') is not None:
-                                    existing_fund.applied_value = fund_data.get('applied_value')
-                                
-                                # Recalculate returns based on updated values
-                                if existing_fund.applied_value and existing_fund.applied_value > 0 and existing_fund.net_value and existing_fund.net_value > 0:
-                                    existing_fund.net_return_percent = ((existing_fund.net_value - existing_fund.applied_value) / existing_fund.applied_value) * 100
-                                
-                                # Update other fields from fund_data
-                                for key, value in fund_data.items():
-                                    if key not in ['user_id', 'fund_name', 'quota_quantity', 'in_quotation', 'position_value', 'net_value', 'applied_value', 'quota_date', 'quota_value', 'net_return_percent', 'gross_return_percent']:
-                                        if value is not None:
-                                            setattr(existing_fund, key, value)
-                                
-                                existing_fund.save()
-                                results['updated'] += 1
-                                results['debug_info'].append(f"Row {row_idx}: Updated fund '{fund_data['fund_name'][:50]}' (quota_date: {fund_data.get('quota_date')})")
-                                
-                            except InvestmentFund.DoesNotExist:
-                                # Create new fund
-                                fund = InvestmentFund.objects.create(**fund_data)
-                                results['created'] += 1
-                                results['debug_info'].append(f"Row {row_idx}: Created fund '{fund_data['fund_name'][:50]}'")
-                            
-                            # Track fund count
-                            if 'fund_count' not in results:
-                                results['fund_count'] = 0
-                            results['fund_count'] += 1
-                        except Exception as e:
-                            results['errors'].append(f"Row {row_idx}: {str(e)}")
-                    else:
-                        # Log why fund extraction failed
-                        if row[0]:
-                            fund_name = str(row[0]).strip()
-                            if fund_name and len(fund_name) > 3:
-                                # Check if it was skipped due to excluded keywords
-                                fund_name_upper = fund_name.upper()
-                                excluded_keywords = ['PROVENTOS', 'DIVIDENDOS', 'DISTRIBUIÇÕES', 'DISTRIBUICOES', 'RENDIMENTOS']
-                                if any(keyword in fund_name_upper for keyword in excluded_keywords):
-                                    results['debug_info'].append(f"Row {row_idx}: Skipped non-fund entry (proventos/dividendos): {fund_name[:50]}")
-                                else:
-                                    results['debug_info'].append(f"Row {row_idx}: Skipped fund row (extraction failed): {fund_name[:50]}")
-                
                 else:
                     # Log rows that don't match any section
                     if row[0] and current_section is None:
@@ -1152,7 +874,7 @@ class PortfolioExcelImportService:
             results['debug_info'].append(f"Sections found: {', '.join(sections_found) if sections_found else 'None'}")
             
             if not sections_found:
-                results['errors'].append("Nenhuma seção 'RENDA FIXA', 'TESOURO DIRETO' ou 'FUNDOS DE INVESTIMENTO' foi encontrada no arquivo. Verifique o formato do arquivo Excel.")
+                results['errors'].append("Nenhuma seção 'RENDA FIXA' ou 'TESOURO DIRETO' foi encontrada no arquivo. Verifique o formato do arquivo Excel.")
         
         except Exception as e:
             import traceback

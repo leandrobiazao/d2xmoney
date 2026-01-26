@@ -10,8 +10,8 @@ from rest_framework.views import APIView
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from .models import FixedIncomePosition, TesouroDiretoPosition, InvestmentFund
-from .serializers import FixedIncomePositionSerializer, FixedIncomePositionListSerializer, TesouroDiretoPositionSerializer, InvestmentFundSerializer
+from .models import FixedIncomePosition, TesouroDiretoPosition
+from .serializers import FixedIncomePositionSerializer, FixedIncomePositionListSerializer, TesouroDiretoPositionSerializer
 from .services import PortfolioExcelImportService
 
 
@@ -22,7 +22,10 @@ class FixedIncomePositionViewSet(viewsets.ModelViewSet):
     serializer_class = FixedIncomePositionSerializer
     
     def get_queryset(self):
-        """Filter by user_id if provided."""
+        """Filter by user_id if provided. Exclude liquidated positions (position_value=0 and quantity=0)."""
+        from django.db.models import Q
+        from decimal import Decimal
+        
         queryset = FixedIncomePosition.objects.select_related('investment_type', 'investment_sub_type').all()
         user_id = self.request.query_params.get('user_id', None)
         investment_type = self.request.query_params.get('investment_type', None)
@@ -32,6 +35,33 @@ class FixedIncomePositionViewSet(viewsets.ModelViewSet):
         
         if investment_type:
             queryset = queryset.filter(investment_type__code=investment_type)
+        
+        # Debug: Check liquidated positions before filtering
+        all_positions = queryset.all()
+        liquidated_before_filter = [
+            pos for pos in all_positions 
+            if pos.position_value == Decimal('0.00') and pos.quantity == Decimal('0.00')
+        ]
+        if liquidated_before_filter:
+            print(f"DEBUG FILTER: Found {len(liquidated_before_filter)} liquidated positions before filter:")
+            for pos in liquidated_before_filter[:5]:  # Show first 5
+                print(f"  - {pos.asset_code}: quantity={pos.quantity}, position_value={pos.position_value}")
+        
+        # Exclude liquidated positions: position_value = 0 AND quantity = 0
+        # Keep positions where position_value > 0 OR quantity > 0
+        # Use __gte=0.01 to handle potential precision issues, or check for exact 0
+        queryset = queryset.exclude(
+            Q(position_value=Decimal('0.00')) & Q(quantity=Decimal('0.00'))
+        )
+        
+        # Debug: Verify filtering worked
+        after_filter = queryset.all()
+        liquidated_after_filter = [
+            pos for pos in after_filter 
+            if pos.position_value == Decimal('0.00') and pos.quantity == Decimal('0.00')
+        ]
+        if liquidated_after_filter:
+            print(f"DEBUG FILTER WARNING: {len(liquidated_after_filter)} liquidated positions still in queryset after filter!")
         
         return queryset.order_by('-created_at')
     
@@ -107,70 +137,5 @@ class TesouroDiretoPositionViewSet(viewsets.ModelViewSet):
         return queryset.order_by('vencimento')
 
 
-class InvestmentFundViewSet(viewsets.ModelViewSet):
-    """ViewSet for Investment Funds."""
-    
-    queryset = InvestmentFund.objects.all()
-    serializer_class = InvestmentFundSerializer
-    
-    def get_queryset(self):
-        """Filter by user_id and fund_type if provided."""
-        queryset = InvestmentFund.objects.all()
-        user_id = self.request.query_params.get('user_id', None)
-        fund_type = self.request.query_params.get('fund_type', None)
-        
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        
-        if fund_type:
-            queryset = queryset.filter(fund_type=fund_type)
-        
-        return queryset.order_by('-created_at')
-    
-    @action(detail=False, methods=['get'], url_path='summary')
-    def summary(self, request):
-        """Get summary of investment funds by type for a user."""
-        user_id = request.query_params.get('user_id')
-        
-        if not user_id:
-            return Response(
-                {'error': 'user_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        funds = InvestmentFund.objects.filter(user_id=user_id)
-        
-        # Group by fund type
-        summary = {}
-        total_position = 0
-        
-        for fund in funds:
-            fund_type = fund.get_fund_type_display()
-            if fund_type not in summary:
-                summary[fund_type] = {
-                    'count': 0,
-                    'total_position': 0,
-                    'total_net_value': 0,
-                    'total_applied': 0,
-                }
-            
-            summary[fund_type]['count'] += 1
-            summary[fund_type]['total_position'] += float(fund.position_value)
-            summary[fund_type]['total_net_value'] += float(fund.net_value)
-            summary[fund_type]['total_applied'] += float(fund.applied_value)
-            total_position += float(fund.position_value)
-        
-        # Calculate allocation percentages
-        for fund_type in summary:
-            if total_position > 0:
-                summary[fund_type]['allocation_percent'] = (summary[fund_type]['total_position'] / total_position) * 100
-            else:
-                summary[fund_type]['allocation_percent'] = 0
-        
-        return Response({
-            'summary': summary,
-            'total_position': total_position,
-            'total_funds': funds.count(),
-        }, status=status.HTTP_200_OK)
-
+# InvestmentFundViewSet removed - InvestmentFund model was removed
 

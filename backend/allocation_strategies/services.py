@@ -169,14 +169,20 @@ class AllocationStrategyService:
                     # Create stock allocations if provided
                     stock_allocations = sub_alloc_data.get('stock_allocations', [])
                     if stock_allocations:
-                        stock_percentages = [
-                            Decimal(str(sa['target_percentage']))
-                            for sa in stock_allocations
-                        ]
-                        if not AllocationStrategyService.validate_percentage_sum(stock_percentages):
-                            raise ValidationError(
-                                f"Stock allocations must sum to 100%"
-                            )
+                        # Check if this is ETF Renda Fixa subtype (single ETF, uses subtype percentage)
+                        sub_type = sub_type_allocation.sub_type
+                        is_etf_renda_fixa = sub_type and sub_type.code == 'ETF_RENDA_FIXA'
+                        
+                        if not is_etf_renda_fixa:
+                            # For non-ETF Renda Fixa, stock allocations must sum to 100%
+                            stock_percentages = [
+                                Decimal(str(sa['target_percentage']))
+                                for sa in stock_allocations
+                            ]
+                            if not AllocationStrategyService.validate_percentage_sum(stock_percentages):
+                                raise ValidationError(
+                                    f"Stock allocations must sum to 100%"
+                                )
                         
                         for stock_alloc_data in stock_allocations:
                             StockAllocation.objects.create(
@@ -210,11 +216,14 @@ class AllocationStrategyService:
         """
         # Get user's portfolio positions
         positions = PortfolioPosition.objects.filter(user_id=str(user.id))
+        positions_count = positions.count()
+        print(f"DEBUG: get_current_allocation for user {user.id}: Found {positions_count} portfolio positions")
         
         # Get user's allocation strategy
         try:
             strategy = UserAllocationStrategy.objects.get(user=user)
         except UserAllocationStrategy.DoesNotExist:
+            print(f"DEBUG: No allocation strategy found for user {user.id}")
             return {
                 'investment_types': [],
                 'total_value': Decimal('0'),
@@ -227,6 +236,7 @@ class AllocationStrategyService:
         stock_total_value = Decimal('0')
         stock_position_current_values = {}  # Cache: ticker -> current_value for grouping later
         
+        positions_processed = 0
         for pos in positions:
             if pos.quantidade > 0:
                 # Try to get price from Stock catalog first (if recently updated)
@@ -265,9 +275,12 @@ class AllocationStrategyService:
                 price = Decimal(str(current_price)) if current_price else pos.preco_medio
                 position_current_value = Decimal(str(pos.quantidade)) * price
                 stock_total_value += position_current_value
+                positions_processed += 1
                 
                 # Store position current value for later grouping by type/subtype
                 stock_position_current_values[pos.ticker] = position_current_value
+        
+        print(f"DEBUG: Processed {positions_processed} positions with quantidade > 0, stock_total_value = {stock_total_value}")
         
         # Get CAIXA positions (cash) - these are part of RENDA_FIXA
         caixa_positions = FixedIncomePosition.objects.filter(
@@ -342,17 +355,11 @@ class AllocationStrategyService:
                 price = current_price if current_price else Decimal(str(crypto_pos.average_price))
                 crypto_total_value += Decimal(str(crypto_pos.quantity)) * price
         
-        # Get Investment Funds (Fundos de Investimento) - part of RENDA_FIXA
-        from fixed_income.models import InvestmentFund
-        investment_funds = InvestmentFund.objects.filter(user_id=str(user.id))
+        # Investment Funds (Fundos de Investimento) removed - InvestmentFund model was removed
         
-        investment_funds_total_value = sum(
-            Decimal(str(fund.position_value)) if fund.position_value > 0 else Decimal(str(fund.net_value))
-            for fund in investment_funds
-        )
-        
-        # Total portfolio value = stocks + fixed income (including CAIXA) + crypto + investment funds
-        total_value = stock_total_value + renda_fixa_total_value + crypto_total_value + investment_funds_total_value
+        # Total portfolio value = stocks + fixed income (including CAIXA) + crypto
+        total_value = stock_total_value + renda_fixa_total_value + crypto_total_value
+        print(f"DEBUG: Total portfolio value breakdown - Stocks: {stock_total_value}, Renda Fixa: {renda_fixa_total_value}, Crypto: {crypto_total_value}, Total: {total_value}")
         
         # Get FII investment type to check if we should group by ticker instead of subtype
         fii_type = None
@@ -484,23 +491,7 @@ class AllocationStrategyService:
             
             type_values[type_id]['current_value'] += renda_fixa_total_value
             
-            # Add Investment Funds to RENDA_FIXA, grouped by subtype
-            for fund in investment_funds:
-                if fund.investment_type and fund.investment_type.id == type_id:
-                    subtype = fund.investment_sub_type
-                    subtype_id = subtype.id if subtype else None
-                    subtype_name = subtype.name if subtype else 'Fundos de Investimento'
-                    
-                    if subtype_id not in type_values[type_id]['sub_types']:
-                        type_values[type_id]['sub_types'][subtype_id] = {
-                            'sub_type_id': subtype_id,
-                            'sub_type_name': subtype_name,
-                            'current_value': Decimal('0')
-                        }
-                    
-                    fund_value = Decimal(str(fund.position_value)) if fund.position_value > 0 else Decimal(str(fund.net_value))
-                    type_values[type_id]['sub_types'][subtype_id]['current_value'] += fund_value
-                    type_values[type_id]['current_value'] += fund_value
+            # Investment Funds removed - InvestmentFund model was removed
         
         # Add crypto positions to "Renda Variável em Dólares"
         if renda_var_dolares_type and crypto_positions.exists():
