@@ -114,10 +114,10 @@ class RebalancingService:
             target_value = total_value * target_percentage / 100
             current_value = total_value * current_percentage / 100
             
-            # For "Renda Variável em Dólares", ensure current_value includes ALL subtypes (BDRs + Bitcoin + others)
-            # The target_value should be based on the type percentage, not subtype percentage
-            if type_alloc.investment_type.code == 'RENDA_VARIAVEL_DOLARES' or 'Dólares' in investment_type_name:
-                # Calculate current value by summing ALL subtypes (BDRs + Bitcoin + others)
+            # For investment types with subtypes, calculate current_value by summing subtypes
+            # This ensures type-level total matches the sum of subtype values displayed
+            if type_alloc.investment_type.code in ['RENDA_VARIAVEL_DOLARES', 'RENDA_FIXA'] or 'Dólares' in investment_type_name or 'Renda Fixa' in investment_type_name:
+                # Calculate current value by summing ALL subtypes
                 # Find current subtype data for this investment type
                 for type_data in current_allocation['investment_types']:
                     if type_data['investment_type_id'] == type_alloc.investment_type.id:

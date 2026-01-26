@@ -813,6 +813,85 @@
   margin-left: 0.5rem;
 }
 
+/* Sales Limit Cards - Matching Documentation Design */
+.sales-limit-cards {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.sales-limit-card {
+  flex: 1;
+  max-width: 280px;
+  padding: 1rem;
+  background: #f8f9fa;
+  border: 1px solid var(--border, #e5e5e7);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sales-limit-card-label {
+  font-size: 0.8125rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.sales-limit-card-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.sales-limit-card-value.warning {
+  color: #ff9500;
+}
+
+.sales-limit-card-value.highlight {
+  color: #007bff;
+}
+
+/* Legacy sales-limit-summary (kept for backwards compatibility) */
+.sales-limit-summary {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+}
+
+.sales-limit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+}
+
+.sales-limit-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sales-limit-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.sales-limit-value.warning {
+  color: #ff9500;
+}
+
+.sales-limit-value.highlight {
+  color: #007bff;
+}
+
 .warning-banner {
   background: #fff5f5;
   border: 1px solid #ffebee;

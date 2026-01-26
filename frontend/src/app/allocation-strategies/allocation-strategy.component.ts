@@ -2119,6 +2119,20 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return totalValue * (percentage / 100);
   }
 
+  getTargetTypeValueByCode(typeCode: string): number {
+    if (!this.strategy?.type_allocations) {
+      return 0;
+    }
+    const typeAlloc = this.strategy.type_allocations.find(
+      (ta: any) => ta.investment_type?.code === typeCode || 
+                   (typeCode === 'RENDA_VARIAVEL_REAIS' && ta.investment_type?.name?.includes('Reais'))
+    );
+    if (!typeAlloc) {
+      return 0;
+    }
+    return this.getTargetTypeValue(typeAlloc);
+  }
+
   getTargetSubTypeValue(typeAlloc: any, subTypeId: number): number {
     const totalValue = this.getTotalPortfolioValue();
     const subAlloc = typeAlloc.sub_type_allocations?.find(

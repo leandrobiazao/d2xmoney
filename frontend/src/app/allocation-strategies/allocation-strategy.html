@@ -729,137 +729,218 @@
               <!-- Ações em Reais Section -->
               @if (getAcoesReaisSellActions().length > 0 || getAcoesReaisBuyActions().length > 0 || getAcoesReaisRebalanceActions().length > 0) {
                 <section class="rebalancing-section">
-                  <h4>Ações em Reais - Rebalanceamento</h4>
+                  <h4>Renda Variável em Reais - Rebalanceamento</h4>
+                  
+                  <!-- Type-Level Summary Table -->
+                  <div class="type-action-group">
+                    <table class="actions-table">
+                      <thead>
+                        <tr>
+                          <th>Tipo</th>
+                          <th>Valor Atual</th>
+                          <th>Valor Alvo</th>
+                          <th>Diferença</th>
+                          <th>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td><strong>Renda Variável em Reais</strong></td>
+                          <td>R$ {{ (getRendaVarReaisTotal()?.value || 0) | number:'1.2-2' }}</td>
+                          <td>R$ {{ getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') | number:'1.2-2' }}</td>
+                          <td [class.positive]="(getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) > 0" 
+                              [class.negative]="(getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) < 0">
+                            R$ {{ (getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) | number:'1.2-2' }}
+                          </td>
+                          <td>
+                            @if ((getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) > 100) {
+                              <span class="badge badge-buy">Aumentar</span>
+                            } @else if ((getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) < -100) {
+                              <span class="badge badge-sell">Reduzir</span>
+                            } @else {
+                              <span class="badge badge-maintain">Manter</span>
+                            }
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    
+                    <!-- Sales Limit Summary Cards -->
+                    <div class="sales-limit-cards">
+                      <div class="sales-limit-card">
+                        <span class="sales-limit-card-label">Vendas Já Realizadas no Mês</span>
+                        <span class="sales-limit-card-value">R$ {{ currentRecommendation.previous_sales_this_month | number:'1.2-2' }}</span>
+                      </div>
+                      <div class="sales-limit-card">
+                        <span class="sales-limit-card-label">Limite Disponível para Vendas</span>
+                        <span class="sales-limit-card-value" [class.warning]="(19000 - currentRecommendation.previous_sales_this_month) < 5000">
+                          R$ {{ (19000 - currentRecommendation.previous_sales_this_month) | number:'1.2-2' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
                   @if (currentRecommendation.sales_limit_reached) {
                     <div class="warning-banner">
                       <strong>Atenção:</strong> O limite de vendas de R$ 19.000 foi atingido. Algumas ações não puderam ser vendidas.
                     </div>
                   }
                   
-                  <!-- Stocks to Sell -->
-                  @if (getAcoesReaisSellActions().length > 0) {
-                    <div class="action-group">
-                      <h5>Ações para Vender</h5>
-                      <table class="actions-table">
-                        <thead>
-                          <tr>
-                            <th>Ranking</th>
-                            <th>Ticker</th>
-                            <th>Nome</th>
-                            <th>Valor Atual</th>
-                            <th>Quantidade</th>
-                            <th>Motivo</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          @for (action of getAcoesReaisSellActions(); track action.id) {
+                  <!-- SubType-Level Summary -->
+                  <div class="subtype-level-summary">
+                    <!-- Stocks to Sell (Complete Sales) -->
+                    @if (getAcoesReaisSellActions().length > 0) {
+                      <div class="action-group">
+                        <h5>Ações em Reais - Vender</h5>
+                        <table class="actions-table">
+                          <thead>
                             <tr>
-                              <td>
-                                @if (action.display_order && action.display_order < 9999) {
-                                  {{ action.display_order }}
-                                } @else {
-                                  -
-                                }
-                              </td>
-                              <td><strong>{{ action.stock?.ticker }}</strong></td>
-                              <td>{{ action.stock?.name }}</td>
-                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                              <td>{{ action.quantity_to_sell }}</td>
-                              <td>
-                                <span class="badge">
-                                  @if (action.reason) {
-                                    {{ action.reason }}
+                              <th>Rank</th>
+                              <th>Ticker</th>
+                              <th>Nome</th>
+                              <th>Valor Atual</th>
+                              <th>Quant.</th>
+                              <th>Motivo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (action of getAcoesReaisSellActions(); track action.id) {
+                              <tr>
+                                <td>
+                                  @if (action.display_order && action.display_order < 9999) {
+                                    {{ action.display_order }}
                                   } @else {
-                                    @if (action.display_order && action.display_order < 9999) {
-                                      Rank {{ action.display_order }} > 30
-                                    } @else {
-                                      Não está no AMBB 2.0
-                                    }
+                                    -
                                   }
-                                </span>
-                              </td>
-                            </tr>
-                          }
-                        </tbody>
-                      </table>
-                    </div>
-                  }
+                                </td>
+                                <td><strong>{{ action.stock?.ticker }}</strong></td>
+                                <td>{{ action.stock?.name }}</td>
+                                <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                <td>{{ action.quantity_to_sell }}</td>
+                                <td>
+                                  <span class="badge badge-sell">
+                                    @if (action.reason) {
+                                      {{ action.reason }}
+                                    } @else {
+                                      @if (action.display_order && action.display_order < 9999) {
+                                        Rank {{ action.display_order }} > 30
+                                      } @else {
+                                        Não está no AMBB 2.0
+                                      }
+                                    }
+                                  </span>
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                        
+                        <!-- Sales Summary Cards after Vender table -->
+                        <div class="sales-limit-cards">
+                          <div class="sales-limit-card">
+                            <span class="sales-limit-card-label">Total Vendas - Liquidadas</span>
+                            <span class="sales-limit-card-value">R$ {{ currentRecommendation.total_complete_sales_value | number:'1.2-2' }}</span>
+                          </div>
+                          <div class="sales-limit-card">
+                            <span class="sales-limit-card-label">Limite para Vendas Parciais</span>
+                            <span class="sales-limit-card-value" [class.warning]="(19000 - currentRecommendation.previous_sales_this_month - currentRecommendation.total_complete_sales_value) < 2000">
+                              R$ {{ (19000 - currentRecommendation.previous_sales_this_month - currentRecommendation.total_complete_sales_value) | number:'1.2-2' }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    }
 
-                  <!-- Stocks to Buy -->
-                  @if (getAcoesReaisBuyActions().length > 0) {
-                    <div class="action-group">
-                      <h5>Ações para Comprar</h5>
-                      <table class="actions-table">
-                        <thead>
-                          <tr>
-                            <th>Ranking</th>
-                            <th>Ticker</th>
-                            <th>Nome</th>
-                            <th>Valor Alvo</th>
-                            <th>Quantidade</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          @for (action of getAcoesReaisBuyActions(); track action.id) {
+                    <!-- Stocks to Buy -->
+                    @if (getAcoesReaisBuyActions().length > 0) {
+                      <div class="action-group">
+                        <h5>Ações em Reais - Comprar</h5>
+                        <table class="actions-table">
+                          <thead>
                             <tr>
-                              <td>{{ action.display_order }}</td>
-                              <td><strong>{{ action.stock?.ticker }}</strong></td>
-                              <td>{{ action.stock?.name }}</td>
-                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                              <td>{{ action.quantity_to_buy }}</td>
+                              <th>Rank</th>
+                              <th>Ticker</th>
+                              <th>Nome</th>
+                              <th>Valor Alvo</th>
+                              <th>Quant.</th>
                             </tr>
-                          }
-                        </tbody>
-                      </table>
-                    </div>
-                  }
+                          </thead>
+                          <tbody>
+                            @for (action of getAcoesReaisBuyActions(); track action.id) {
+                              <tr>
+                                <td>{{ action.display_order }}</td>
+                                <td><strong>{{ action.stock?.ticker }}</strong></td>
+                                <td>{{ action.stock?.name }}</td>
+                                <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                <td>{{ action.quantity_to_buy }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
 
-                  <!-- Stocks to Balance -->
-                  @if (getAcoesReaisRebalanceActions().length > 0) {
-                    <div class="action-group">
-                      <h5>Ações para Rebalancear</h5>
-                      <table class="actions-table">
-                        <thead>
-                          <tr>
-                            <th>Ranking</th>
-                            <th>Ticker</th>
-                            <th>Nome</th>
-                            <th>Valor Atual</th>
-                            <th>Valor Alvo</th>
-                            <th>Diferença</th>
-                            <th>Ação</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          @for (action of getAcoesReaisRebalanceActions(); track action.id) {
+                    <!-- Stocks to Rebalance -->
+                    @if (getAcoesReaisRebalanceActions().length > 0) {
+                      <div class="action-group">
+                        <h5>Ações em Reais - Rebalancear</h5>
+                        <table class="actions-table">
+                          <thead>
                             <tr>
-                              <td>{{ action.display_order }}</td>
-                              <td><strong>{{ action.stock?.ticker }}</strong></td>
-                              <td>{{ action.stock?.name }}</td>
-                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
-                              <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                R$ {{ action.difference | number:'1.2-2' }}
-                              </td>
-                              <td>
-                                @if (action.quantity_to_buy) {
-                                  <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
-                                } @else if (action.quantity_to_sell) {
-                                  <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
-                                } @else if (action.difference > 0) {
-                                  <span class="badge badge-buy">Aumentar</span>
-                                } @else if (action.difference < 0) {
-                                  <span class="badge badge-sell">Reduzir</span>
-                                } @else {
-                                  <span class="badge badge-maintain">Manter</span>
-                                }
-                              </td>
+                              <th>Rank</th>
+                              <th>Ticker</th>
+                              <th>Nome</th>
+                              <th>Valor Atual</th>
+                              <th>Valor Alvo</th>
+                              <th>Dif.</th>
+                              <th>Ação</th>
                             </tr>
-                          }
-                        </tbody>
-                      </table>
-                    </div>
-                  }
+                          </thead>
+                          <tbody>
+                            @for (action of getAcoesReaisRebalanceActions(); track action.id) {
+                              <tr>
+                                <td>{{ action.display_order }}</td>
+                                <td><strong>{{ action.stock?.ticker }}</strong></td>
+                                <td>{{ action.stock?.name }}</td>
+                                <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                  R$ {{ action.difference | number:'1.2-2' }}
+                                </td>
+                                <td>
+                                  @if (action.quantity_to_buy) {
+                                    <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
+                                  } @else if (action.quantity_to_sell) {
+                                    <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
+                                  } @else if (action.difference > 0) {
+                                    <span class="badge badge-buy">Aumentar</span>
+                                  } @else if (action.difference < 0) {
+                                    <span class="badge badge-sell">Reduzir</span>
+                                  } @else {
+                                    <span class="badge badge-maintain">Manter</span>
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                        
+                        <!-- Partial Sales Summary Cards after Rebalancear table -->
+                        <div class="sales-limit-cards">
+                          <div class="sales-limit-card">
+                            <span class="sales-limit-card-label">Vendas Parciais</span>
+                            <span class="sales-limit-card-value">R$ {{ currentRecommendation.total_partial_sales_value | number:'1.2-2' }}</span>
+                          </div>
+                          <div class="sales-limit-card">
+                            <span class="sales-limit-card-label">Limite de Vendas Restante</span>
+                            <span class="sales-limit-card-value" [class.warning]="currentRecommendation.sales_limit_remaining < 2000">
+                              R$ {{ currentRecommendation.sales_limit_remaining | number:'1.2-2' }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    }
+                  </div>
                 </section>
               }
 

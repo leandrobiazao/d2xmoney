@@ -125,10 +125,18 @@ class AMBBStrategyService:
             try:
                 stock = Stock.objects.get(ticker=ticker, is_active=True)
                 if stock.investment_type == acoes_reais_type:
+                    position = portfolio_tickers[ticker]
+                    # Use current market value (quantity × current_price) for rebalancing
+                    # Fall back to valor_total_investido if current_price is not available
+                    if stock.current_price and stock.current_price > 0:
+                        current_value = Decimal(str(position.quantidade)) * stock.current_price
+                    else:
+                        current_value = Decimal(str(position.valor_total_investido))
+                    
                     portfolio_stocks[ticker] = {
                         'stock': stock,
-                        'position': portfolio_tickers[ticker],
-                        'current_value': Decimal(str(portfolio_tickers[ticker].valor_total_investido)),
+                        'position': position,
+                        'current_value': current_value,
                         'current_price': stock.current_price
                     }
             except Stock.DoesNotExist:
