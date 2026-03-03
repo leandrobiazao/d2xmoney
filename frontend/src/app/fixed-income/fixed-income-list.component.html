@@ -143,7 +143,12 @@
               </div>
             }
           } @else {
-            <!-- Other fixed income (CDB, etc.) -->
+            <!-- Other fixed income (CDB, etc.) and ETF Renda Fixa (ex.: AUPO11) -->
+            @if (group.type === 'etf_renda_fixa') {
+              <div class="subtype-header">
+                <h4>{{ group.percentage.toFixed(1) }}% | {{ group.typeName }} (ex.: AUPO11)</h4>
+              </div>
+            }
             <div class="positions-table">
               <table>
                 <thead>
@@ -176,17 +181,22 @@
                             <td>{{ formatCurrency(position.net_value) }}</td>
                             <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           } @else {
-                            <!-- Regular positions: Show all columns -->
+                            <!-- Regular positions and ETF Renda Fixa: Valor Aplicado = invested; Posição/Valor Líquido = current (qty × price when available) -->
                             <td>{{ formatDate(position.application_date) }}</td>
                             <td>{{ formatDate(position.maturity_date) }}</td>
                             <td>{{ position.rate || '-' }}</td>
                             <td>{{ position.quantity }}</td>
                             <td>{{ formatCurrency(position.applied_value) }}</td>
-                            <td>{{ formatCurrency(position.position_value) }}</td>
-                            <td>{{ formatCurrency(position.net_value) }}</td>
+                            <td>{{ formatCurrency(getDisplayPositionValue(position)) }}</td>
+                            <td>{{ formatCurrency(getDisplayNetValue(position)) }}</td>
                             <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           }
                         </tr>
+                  }
+                  @if (group.type === 'etf_renda_fixa' && group.positions.length === 0) {
+                    <tr class="etf-renda-fixa-empty">
+                      <td colspan="10">Nenhuma posição em ETF Renda Fixa (ex.: AUPO11).</td>
+                    </tr>
                   }
                 </tbody>
               </table>

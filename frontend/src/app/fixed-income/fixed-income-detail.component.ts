@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition } from './fixed-income.models';
 import { ConfigurationService, InvestmentType, InvestmentSubType } from '../configuration/configuration.service';
+import { PortfolioService } from '../portfolio/portfolio.service';
 
 @Component({
   selector: 'app-fixed-income-detail',
@@ -23,6 +24,10 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
   editedAppliedValue: number = 0;
   isSaving = false;
   
+  /** Current market price fetched from API (e.g. Google Finance) when position has a ticker. */
+  currentPrice: number | null = null;
+  currentPriceLoading = false;
+  
   // Investment type and subtype configuration
   investmentTypes: InvestmentType[] = [];
   investmentSubTypes: InvestmentSubType[] = [];
@@ -32,7 +37,8 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
 
   constructor(
     private fixedIncomeService: FixedIncomeService,
-    private configurationService: ConfigurationService
+    private configurationService: ConfigurationService,
+    private portfolioService: PortfolioService
   ) {}
 
   ngOnInit(): void {
@@ -40,6 +46,7 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
       this.loadPosition();
     } else if (this.position) {
       this.initializeInvestmentConfig();
+      this.fetchCurrentPriceIfTicker();
     }
     this.loadInvestmentTypes();
     this.loadInvestmentSubTypes();
@@ -48,9 +55,65 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
   ngOnChanges(): void {
     if (this.position) {
       this.initializeInvestmentConfig();
+      this.fetchCurrentPriceIfTicker();
     }
   }
   
+  /** Returns true if this position has a ticker we can fetch price for (e.g. ETF like AUPO11). */
+  private isTickerPosition(): boolean {
+    if (!this.position?.asset_code) return false;
+    const code = this.position.asset_code.trim().toUpperCase();
+    if (code.length < 4 || code.length > 10) return false;
+    // B3 tickers are typically 4–6 alphanumeric (e.g. PETR4, AUPO11)
+    return /^[A-Z0-9]+$/.test(code);
+  }
+  
+  /** Fetch current market price when position has a ticker (ETF Renda Fixa, etc.). */
+  private fetchCurrentPriceIfTicker(): void {
+    this.currentPrice = null;
+    if (!this.isTickerPosition()) return;
+    const ticker = this.position!.asset_code.trim().toUpperCase();
+    this.currentPriceLoading = true;
+    this.portfolioService.fetchCurrentPrices([ticker], 'B3').subscribe({
+      next: (priceMap) => {
+        const price = priceMap.get(ticker);
+        this.currentPrice = price != null && price > 0 ? price : null;
+        this.currentPriceLoading = false;
+      },
+      error: () => {
+        this.currentPriceLoading = false;
+      }
+    });
+  }
+  
+  /** Display price: current API price if available, else position.price. */
+  getDisplayPrice(): number | undefined | null {
+    if (this.currentPrice != null && this.currentPrice > 0) return this.currentPrice;
+    return this.position?.price;
+  }
+
+  /** Posição to show: when we have current price (e.g. ETF), quantity × price; else position.position_value. */
+  getDisplayPositionValue(): number {
+    if (!this.position) return 0;
+    if (this.currentPrice != null && this.currentPrice > 0) {
+      const qty = typeof this.position.quantity === 'number' ? this.position.quantity : parseInt(String(this.position.quantity), 10) || 0;
+      return qty * this.currentPrice;
+    }
+    const v = this.position.position_value;
+    return typeof v === 'string' ? parseFloat(v) || 0 : (v ?? 0);
+  }
+
+  /** Valor líquido to show: when we have current price (e.g. ETF), quantity × price; else position.net_value. */
+  getDisplayNetValue(): number {
+    if (!this.position) return 0;
+    if (this.currentPrice != null && this.currentPrice > 0) {
+      const qty = typeof this.position.quantity === 'number' ? this.position.quantity : parseInt(String(this.position.quantity), 10) || 0;
+      return qty * this.currentPrice;
+    }
+    const v = this.position.net_value;
+    return typeof v === 'string' ? parseFloat(v) || 0 : (v ?? 0);
+  }
+
   initializeInvestmentConfig(): void {
     if (this.position) {
       this.selectedInvestmentTypeId = this.position.investment_type || null;
@@ -140,6 +203,7 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
       next: (position) => {
         this.position = position;
         this.initializeInvestmentConfig();
+        this.fetchCurrentPriceIfTicker();
         this.isLoading = false;
       },
       error: (error) => {
@@ -223,16 +287,14 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
 
   calculateGrossYield(): number {
     if (!this.position) return 0;
-    const appliedValue = this.position.applied_value || 0;
-    const positionValue = this.position.position_value || 0;
-    return positionValue - appliedValue;
+    const appliedValue = typeof this.position.applied_value === 'string' ? parseFloat(this.position.applied_value) || 0 : (this.position.applied_value ?? 0);
+    return this.getDisplayPositionValue() - appliedValue;
   }
 
   calculateNetYield(): number {
     if (!this.position) return 0;
-    const appliedValue = this.position.applied_value || 0;
-    const netValue = this.position.net_value || 0;
-    return netValue - appliedValue;
+    const appliedValue = typeof this.position.applied_value === 'string' ? parseFloat(this.position.applied_value) || 0 : (this.position.applied_value ?? 0);
+    return this.getDisplayNetValue() - appliedValue;
   }
 
   parseCurrencyInput(value: string): number {

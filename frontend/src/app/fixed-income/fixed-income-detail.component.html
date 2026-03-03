@@ -77,11 +77,11 @@
       </div>
       <div class="header-cell">
         <span class="label">Posição</span>
-        <span class="value">{{ formatCurrency(position.position_value) }}</span>
+        <span class="value">{{ formatCurrency(getDisplayPositionValue()) }}</span>
       </div>
       <div class="header-cell">
         <span class="label">Valor líquido</span>
-        <span class="value">{{ formatCurrency(position.net_value) }}</span>
+        <span class="value">{{ formatCurrency(getDisplayNetValue()) }}</span>
       </div>
     </div>
 
@@ -99,7 +99,11 @@
         </div>
         <div class="detail-item">
           <span class="detail-label">Preço</span>
-          <span class="detail-value">{{ formatCurrency(position.price) }}</span>
+          @if (currentPriceLoading) {
+            <span class="detail-value">Carregando...</span>
+          } @else {
+            <span class="detail-value">{{ formatCurrency(getDisplayPrice()) }}</span>
+          }
         </div>
         <div class="detail-item">
           <span class="detail-label">Ativo</span>
@@ -131,7 +135,7 @@
         </div>
         <div class="detail-item">
           <span class="detail-label">Valor líquido</span>
-          <span class="detail-value">{{ formatCurrency(position.net_value) }}</span>
+          <span class="detail-value">{{ formatCurrency(getDisplayNetValue()) }}</span>
         </div>
         <div class="detail-item">
           <span class="detail-label">Rendimento bruto</span>
@@ -165,17 +169,15 @@
         <div class="chart-container">
           @if (activeTab === 'evolucao') {
             <div class="chart-placeholder">
-              <p>Gráfico de Evolução</p>
-              <p>Posição: {{ formatCurrency(position.position_value) }}</p>
-              <p>Valor Aplicado: {{ formatCurrency(position.applied_value) }}</p>
-              <p class="note">Chart.js integration pending</p>
+              <p class="placeholder-title">Evolução</p>
+              <p>Posição atual: {{ formatCurrency(getDisplayPositionValue()) }}</p>
+              <p>Valor aplicado: {{ formatCurrency(position.applied_value) }}</p>
             </div>
           } @else {
             <div class="chart-placeholder">
-              <p>Gráfico de Rendimento</p>
-              <p>Rendimento Bruto: {{ formatCurrency(calculateGrossYield()) }}</p>
-              <p>Rendimento Líquido: {{ formatCurrency(calculateNetYield()) }}</p>
-              <p class="note">Chart.js integration pending</p>
+              <p class="placeholder-title">Rendimento</p>
+              <p>Rendimento bruto: {{ formatCurrency(calculateGrossYield()) }}</p>
+              <p>Rendimento líquido: {{ formatCurrency(calculateNetYield()) }}</p>
             </div>
           }
         </div>

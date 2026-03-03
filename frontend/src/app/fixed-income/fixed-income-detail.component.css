@@ -143,10 +143,10 @@
   margin: 0.5rem 0;
 }
 
-.chart-placeholder .note {
-  font-size: 0.75rem;
-  font-style: italic;
-  margin-top: 1rem;
+.chart-placeholder .placeholder-title {
+  font-weight: 600;
+  color: inherit;
+  margin-bottom: 0.75rem;
 }
 
 /* Responsive */

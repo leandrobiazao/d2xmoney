@@ -1,9 +1,11 @@
 import { Component, Input, OnInit, OnChanges, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition, ImportResult } from './fixed-income.models';
 import { FixedIncomeDetailComponent } from './fixed-income-detail.component';
+import { PortfolioService } from '../portfolio/portfolio.service';
 
 interface GroupedPositions {
   type: string;
@@ -38,6 +40,10 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
   
   positions: FixedIncomePosition[] = [];
+  /** ETF Renda Fixa positions (e.g. AUPO11) from portfolio, shown as Renda Fixa options. */
+  etfRendaFixaPositions: FixedIncomePosition[] = [];
+  /** Current prices for ETF tickers (asset_code -> price) used to compute Valor Líquido / Posição. */
+  etfCurrentPrices = new Map<string, number>();
   groupedPositions: GroupedPositions[] = [];
   filteredPositions: FixedIncomePosition[] = [];
   selectedPosition: FixedIncomePosition | null = null;
@@ -49,7 +55,10 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   importResult: ImportResult | null = null;
   importErrorMessage: string | null = null;
 
-  constructor(private fixedIncomeService: FixedIncomeService) {}
+  constructor(
+    private fixedIncomeService: FixedIncomeService,
+    private portfolioService: PortfolioService
+  ) {}
 
   ngOnInit(): void {
     if (this.userId) {
@@ -62,6 +71,8 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     if (changes['userId'] && this.userId) {
       // Clear previous data immediately
       this.positions = [];
+      this.etfRendaFixaPositions = [];
+      this.etfCurrentPrices.clear();
       this.groupedPositions = [];
       this.filteredPositions = [];
       this.selectedPosition = null;
@@ -72,6 +83,8 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     } else if (changes['userId'] && !this.userId) {
       // Clear data if userId is removed
       this.positions = [];
+      this.etfRendaFixaPositions = [];
+      this.etfCurrentPrices.clear();
       this.groupedPositions = [];
       this.filteredPositions = [];
       this.selectedPosition = null;
@@ -79,12 +92,21 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   }
 
   loadPositions(): void {
+    if (!this.userId) {
+      this.isLoading = false;
+      return;
+    }
     this.isLoading = true;
-    this.fixedIncomeService.getPositions(this.userId).subscribe({
-      next: (positions) => {
+    forkJoin({
+      positions: this.fixedIncomeService.getPositions(this.userId),
+      etfRendaFixa: this.fixedIncomeService.getEtfRendaFixaPositions(this.userId)
+    }).subscribe({
+      next: ({ positions, etfRendaFixa }) => {
         this.positions = positions;
+        this.etfRendaFixaPositions = etfRendaFixa || [];
         this.groupPositions();
         this.isLoading = false;
+        this.fetchEtfCurrentPrices();
       },
       error: (error) => {
         this.errorMessage = 'Erro ao carregar posições de Renda Fixa';
@@ -125,10 +147,13 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       }
     });
 
-    // Calculate total portfolio value using position_value
+    // Calculate total portfolio value using position_value (fixed income + ETF Renda Fixa)
     this.positions.forEach(pos => {
       const positionValue = getPositionValue(pos.position_value);
       totalPortfolioValue += positionValue;
+    });
+    this.etfRendaFixaPositions.forEach(pos => {
+      totalPortfolioValue += getPositionValue(pos.position_value);
     });
 
     // Group non-Tesouro positions by investment type
@@ -208,6 +233,23 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       groups.set('tesouro_direto', tesouroGroup);
     }
 
+    // ETF Renda Fixa group (e.g. AUPO11) - always show so it appears as a Renda Fixa option
+    const etfRendaFixaTotalValue = this.etfRendaFixaPositions.reduce(
+      (sum, pos) => sum + getPositionValue(pos.position_value),
+      0
+    );
+    const etfRendaFixaGroup: GroupedPositions = {
+      type: 'etf_renda_fixa',
+      typeName: 'ETF Renda Fixa',
+      percentage: totalPortfolioValue > 0 ? (etfRendaFixaTotalValue / totalPortfolioValue) * 100 : 0,
+      totalValue: etfRendaFixaTotalValue,
+      positions: [...this.etfRendaFixaPositions].sort((a, b) =>
+        getNetValue(b.net_value) - getNetValue(a.net_value)
+      ),
+      isTesouroDireto: false
+    };
+    groups.set('etf_renda_fixa', etfRendaFixaGroup);
+
     // Calculate percentages based on position_value totals and sort positions by net_value
     groups.forEach(group => {
       if (!group.isTesouroDireto) {
@@ -223,40 +265,90 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       }
     });
 
-    // Sort: Tesouro Direto first, then others by value
+    // Sort: Tesouro Direto first, then ETF Renda Fixa (so AUPO11 etc. always visible), then others by value
     this.groupedPositions = Array.from(groups.values()).sort((a, b) => {
       if (a.isTesouroDireto && !b.isTesouroDireto) return -1;
       if (!a.isTesouroDireto && b.isTesouroDireto) return 1;
+      if (a.type === 'etf_renda_fixa' && b.type !== 'etf_renda_fixa') return -1;
+      if (a.type !== 'etf_renda_fixa' && b.type === 'etf_renda_fixa') return 1;
       return b.totalValue - a.totalValue;
     });
   }
 
   getTotalInvestido(): number {
-    // Sum all applied_value (Total Aplicado) from all positions
-    return this.positions.reduce((sum, pos) => {
+    // Sum all applied_value (fixed income + ETF Renda Fixa)
+    const fromPositions = this.positions.reduce((sum, pos) => {
       const appliedValue = this.getPositionValue(pos.applied_value);
       return sum + appliedValue;
     }, 0);
+    const fromEtf = this.etfRendaFixaPositions.reduce((sum, pos) => {
+      return sum + this.getPositionValue(pos.applied_value);
+    }, 0);
+    return fromPositions + fromEtf;
+  }
+
+  /** Fetch current prices for ETF Renda Fixa tickers so Posição / Valor Líquido can differ from Valor Aplicado. */
+  private fetchEtfCurrentPrices(): void {
+    if (this.etfRendaFixaPositions.length === 0) return;
+    const tickers = [...new Set(this.etfRendaFixaPositions.map(p => (p.asset_code || '').trim().toUpperCase()).filter(Boolean))];
+    if (tickers.length === 0) return;
+    this.portfolioService.fetchCurrentPrices(tickers, 'B3').subscribe({
+      next: (priceMap) => {
+        this.etfCurrentPrices.clear();
+        priceMap.forEach((price, ticker) => {
+          if (price > 0) this.etfCurrentPrices.set(ticker, price);
+        });
+      }
+    });
+  }
+
+  /** True if position is ETF Renda Fixa (from portfolio) and we can use current price for display. */
+  private isEtfRendaFixaPosition(position: FixedIncomePosition): boolean {
+    return position.source === 'portfolio' || position.investment_sub_type_name === 'ETF Renda Fixa';
+  }
+
+  /** Posição to show: for ETF with current price = quantity × price; else position.position_value. */
+  getDisplayPositionValue(position: FixedIncomePosition): number {
+    if (!this.isEtfRendaFixaPosition(position) || !position.asset_code) return this.getPositionValue(position.position_value);
+    const price = this.etfCurrentPrices.get((position.asset_code || '').trim().toUpperCase());
+    if (price == null || price <= 0) return this.getPositionValue(position.position_value);
+    const qty = typeof position.quantity === 'number' ? position.quantity : parseInt(String(position.quantity), 10) || 0;
+    return qty * price;
+  }
+
+  /** Valor Líquido to show: for ETF with current price = quantity × price; else position.net_value. */
+  getDisplayNetValue(position: FixedIncomePosition): number {
+    if (!this.isEtfRendaFixaPosition(position) || !position.asset_code) return this.getPositionValue(position.net_value);
+    const price = this.etfCurrentPrices.get((position.asset_code || '').trim().toUpperCase());
+    if (price == null || price <= 0) return this.getPositionValue(position.net_value);
+    const qty = typeof position.quantity === 'number' ? position.quantity : parseInt(String(position.quantity), 10) || 0;
+    return qty * price;
   }
 
   getValorAtual(): number {
-    // Sum all position_value (Posição atual) from all positions
-    return this.groupedPositions.reduce((sum, group) => sum + group.totalValue, 0);
+    return this.groupedPositions.reduce((sum, group) => {
+      if (group.type === 'etf_renda_fixa' && this.etfCurrentPrices.size > 0) {
+        return sum + group.positions.reduce((s, p) => s + this.getDisplayPositionValue(p), 0);
+      }
+      return sum + group.totalValue;
+    }, 0);
   }
 
   getActivePositionsCount(): number {
-    // Count positions with position_value > 0 (active positions)
-    return this.positions.filter(pos => {
+    const fromPositions = this.positions.filter(pos => {
       const positionValue = this.getPositionValue(pos.position_value);
       return positionValue > 0;
     }).length;
+    const fromEtf = this.etfRendaFixaPositions.filter(pos => {
+      return this.getPositionValue(pos.position_value) > 0;
+    }).length;
+    return fromPositions + fromEtf;
   }
 
   getSubtypePercentage(position: FixedIncomePosition): number {
-    // Calculate percentage of this position's value relative to total Valor Atual
     const totalValorAtual = this.getValorAtual();
     if (totalValorAtual === 0) return 0;
-    const positionValue = this.getPositionValue(position.position_value);
+    const positionValue = this.getDisplayPositionValue(position);
     return (positionValue / totalValorAtual) * 100;
   }
 

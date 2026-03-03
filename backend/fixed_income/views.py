@@ -13,6 +13,8 @@ from django.utils.decorators import method_decorator
 from .models import FixedIncomePosition, TesouroDiretoPosition
 from .serializers import FixedIncomePositionSerializer, FixedIncomePositionListSerializer, TesouroDiretoPositionSerializer
 from .services import PortfolioExcelImportService
+from portfolio_operations.models import PortfolioPosition
+from stocks.models import Stock
 
 
 class FixedIncomePositionViewSet(viewsets.ModelViewSet):
@@ -118,6 +120,48 @@ class FixedIncomePositionViewSet(viewsets.ModelViewSet):
                 {'error': f'Import failed: {str(e)}', 'details': error_details},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=False, methods=['get'], url_path='etf-renda-fixa-positions')
+    def etf_renda_fixa_positions(self, request):
+        """
+        Return portfolio positions that are ETF Renda Fixa (e.g. AUPO11).
+        Used by the Renda Fixa view to show these as a Renda Fixa option.
+        """
+        user_id = request.query_params.get('user_id')
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        etf_stocks = Stock.objects.filter(
+            investment_subtype__code='ETF_RENDA_FIXA',
+            is_active=True
+        ).select_related('investment_subtype')
+        etf_tickers = list(etf_stocks.values_list('ticker', flat=True))
+        if not etf_tickers:
+            return Response([], status=status.HTTP_200_OK)
+        positions = PortfolioPosition.objects.filter(
+            user_id=user_id,
+            ticker__in=etf_tickers
+        ).order_by('ticker')
+        stock_by_ticker = {s.ticker: s for s in etf_stocks}
+        result = []
+        for pos in positions:
+            stock = stock_by_ticker.get(pos.ticker)
+            result.append({
+                'id': f'etf-rf-{pos.ticker}-{user_id}',
+                'user_id': user_id,
+                'asset_name': stock.name if stock else pos.ticker,
+                'asset_code': pos.ticker,
+                'quantity': pos.quantidade,
+                'applied_value': float(pos.valor_total_investido),
+                'position_value': float(pos.valor_total_investido),
+                'net_value': float(pos.valor_total_investido),
+                'investment_type_name': 'Renda Fixa',
+                'investment_sub_type_name': 'ETF Renda Fixa',
+                'source': 'portfolio',
+            })
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class TesouroDiretoPositionViewSet(viewsets.ModelViewSet):

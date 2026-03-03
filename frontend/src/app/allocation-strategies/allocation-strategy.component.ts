@@ -64,6 +64,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   
   // ETF Renda Fixa catalog
   etfRendaFixaStocks: any[] = [];
+  // ETF Crypto (Cripto Moéda) catalog - Renda Variável em Dólares, e.g. BITH11
+  etfCryptoStocks: any[] = [];
+  /** Selected direct crypto symbol per crypto subtype: key = typeIndex_subTypeId, value = symbol or '' for total */
+  selectedDirectCrypto: { [key: string]: string } = {};
   
   // Tab management
   activeTab: 'configuration' | 'rebalancing' = 'configuration';
@@ -310,6 +314,27 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
             };
           }
         });
+        // Sync type % with sum of subtypes (incl. Cripto Moéda direct + ETF %) so totals are correct
+        this.draftTypeAllocations.forEach((typeAlloc) => {
+          const hasSubtypes = (typeAlloc.sub_type_allocations?.length ?? 0) > 0 && !this.isFIIInvestmentType(typeAlloc);
+          if (hasSubtypes) {
+            typeAlloc.target_percentage = this.getSubTypeTotal(typeAlloc);
+          }
+        });
+        // Restore Criptomoedas dropdown selection (e.g. "BTC - Bitcoin") from localStorage
+        this.draftTypeAllocations.forEach((typeAlloc, typeIndex) => {
+          (typeAlloc.sub_type_allocations || []).forEach((subAlloc) => {
+            const subTypeId = subAlloc.sub_type_id;
+            if (subTypeId == null) return;
+            const subType = this.investmentSubTypes.find(s => s.id === subTypeId);
+            if (subType && this.isETFCryptoSubType(subType, (typeAlloc as any).investment_type?.code)) {
+              const saved = this.getStoredDirectCryptoSelection(subTypeId);
+              if (saved !== null) {
+                this.selectedDirectCrypto[`${typeIndex}_${subTypeId}`] = saved;
+              }
+            }
+          });
+        });
       },
       error: (error) => {
         console.error('Error loading investment types:', error);
@@ -340,12 +365,27 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return Math.abs(this.typeAllocationTotal - 100) < 0.01;
   }
 
+  /** Sum of subtype percentages. For Cripto Moéda includes direct % + ETF % (soma). */
   getSubTypeTotal(typeAlloc: DraftTypeAllocation): number {
+    const typeIndex = this.draftTypeAllocations.indexOf(typeAlloc);
+    if (typeIndex < 0) {
+      return (typeAlloc.sub_type_allocations || []).reduce(
+        (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
+        0
+      );
+    }
     const total = (typeAlloc.sub_type_allocations || []).reduce(
-      (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
+      (sum, subAlloc) => {
+        const subTypeId = subAlloc.sub_type_id;
+        const subType = subTypeId != null ? this.investmentSubTypes.find(s => s.id === subTypeId) : undefined;
+        const isCrypto = subType && this.isETFCryptoSubType(subType, (typeAlloc as any).investment_type?.code);
+        const pct = isCrypto && subTypeId != null
+          ? this.getCryptoSubTypeTotalPercentage(typeIndex, subTypeId)
+          : Number(subAlloc.target_percentage || 0);
+        return sum + pct;
+      },
       0
     );
-    // Round to 1 decimal place to avoid floating-point precision issues (e.g., 40.099999 -> 40.1)
     return Math.round(total * 10) / 10;
   }
 
@@ -420,13 +460,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     
     if (subAlloc) {
       subAlloc.target_percentage = numericValue;
-      // Update the parent type percentage to match the exact sum of subtypes (without rounding)
-      // This ensures consistency when saving
-      const exactSubTotal = (typeAlloc.sub_type_allocations || []).reduce(
-        (sum, sub) => sum + Number(sub.target_percentage || 0),
-        0
-      );
-      typeAlloc.target_percentage = exactSubTotal;
+      // Keep type % in sync with sum of subtypes (incl. Cripto Moéda direct + ETF %)
+      typeAlloc.target_percentage = this.getSubTypeTotal(typeAlloc);
     }
   }
 
@@ -434,8 +469,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     this.configurationService.getInvestmentSubTypes(undefined, true).subscribe({
       next: (subTypes) => {
         this.investmentSubTypes = subTypes.filter(s => s.is_active).sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-        // Reload ETF Renda Fixa stocks now that we have subtype IDs
         this.loadETFRendaFixaStocks();
+        this.loadETFCryptoStocks();
       },
       error: (error) => {
         console.error('Error loading investment subtypes:', error);
@@ -486,16 +521,44 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return subType?.code === 'ETF_RENDA_FIXA';
   }
 
+  /** Cripto Moéda under Renda Variável em Dólares: allow selecting one ETF (e.g. BITH11) to balance. */
+  isETFCryptoSubType(subType: InvestmentSubType, typeCode?: string): boolean {
+    if (!subType) return false;
+    const code = (subType as any).code;
+    const name = (subType as any).name || '';
+    const isCriptoSubtype = code === 'BITCOIN' || name.includes('Cripto');
+    if (!isCriptoSubtype) return false;
+    const typeId = (subType as any).investment_type;
+    const parentCode = typeof typeId === 'object' && typeId != null ? (typeId as any).code : null;
+    return typeCode === 'RENDA_VARIAVEL_DOLARES' || parentCode === 'RENDA_VARIAVEL_DOLARES';
+  }
+
+  loadETFCryptoStocks(): void {
+    // Prefer subtype named "Cripto Moéda" (ETF crypto), else BITCOIN
+    const cryptoSubType = this.investmentSubTypes.find(s => ((s as any).name || '').includes('Cripto'))
+      || this.investmentSubTypes.find(s => (s as any).code === 'BITCOIN');
+    const subtypeId = cryptoSubType?.id;
+    if (!subtypeId) {
+      this.etfCryptoStocks = [];
+      return;
+    }
+    const url = `/api/stocks/stocks/?stock_class=ETF&investment_subtype_id=${subtypeId}&exclude_fiis=false&active_only=true`;
+    this.http.get<any[]>(url).subscribe({
+      next: (stocks) => {
+        this.etfCryptoStocks = (stocks || []).sort((a, b) => (a.ticker || '').localeCompare(b.ticker || ''));
+      },
+      error: () => { this.etfCryptoStocks = []; }
+    });
+  }
+
   getSelectedETFForSubType(typeIndex: number, subTypeId: number): any | null {
     const typeAlloc = this.draftTypeAllocations[typeIndex];
     if (!typeAlloc?.sub_type_allocations) {
       return null;
     }
     const subAlloc = typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
-    // Check if there's a stock_allocation for this subtype
     if (subAlloc && (subAlloc as any).stock_allocations && (subAlloc as any).stock_allocations.length > 0) {
       const stockAlloc = (subAlloc as any).stock_allocations[0];
-      // Handle both formats: stock_id (from local changes) or stock.id (from backend)
       return {
         ...stockAlloc,
         stock_id: stockAlloc.stock_id || stockAlloc.stock?.id
@@ -504,17 +567,75 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return null;
   }
 
+  /** ETF row percentage (e.g. ETF Crypto): separate from subtype row % (direct crypto). */
+  getETFPercentageForSubType(typeIndex: number, subTypeId: number): number {
+    const sel = this.getSelectedETFForSubType(typeIndex, subTypeId);
+    if (!sel) return 0;
+    const pct = (sel as any).target_percentage;
+    return typeof pct === 'number' ? pct : (parseFloat(String(pct)) || 0);
+  }
+
+  /** Crypto subtype (soma) row: total % = direct crypto % + ETF %. */
+  getCryptoSubTypeTotalPercentage(typeIndex: number, subTypeId: number): number {
+    const direct = this.getSubTypeAllocation(typeIndex, subTypeId)?.target_percentage;
+    const directPct = typeof direct === 'number' ? direct : (parseFloat(String(direct)) || 0);
+    const etfPct = this.getETFPercentageForSubType(typeIndex, subTypeId);
+    return directPct + etfPct;
+  }
+
+  /** Crypto subtype (soma) row: current value = direct crypto + ETF current. */
+  getCryptoSubTypeCurrentValueSum(typeId: number, typeIndex: number, subTypeId: number): number {
+    return this.getDirectCryptoValue(typeId, subTypeId) + this.getETFCurrentValue(typeIndex, subTypeId);
+  }
+
+  /** Crypto subtype (soma) row: target value = direct crypto target + ETF target. */
+  getCryptoSubTypeTargetValueSum(typeAlloc: any, typeIndex: number, subTypeId: number): number {
+    return this.getTargetSubTypeValue(typeAlloc, subTypeId) + this.getTargetETFValueForSubType(typeIndex, subTypeId);
+  }
+
+  onETFPercentageChange(typeIndex: number, subTypeId: number, value: number): void {
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc?.sub_type_allocations) return;
+    const subAlloc = typeAlloc.sub_type_allocations.find(s => s.sub_type_id === subTypeId);
+    if (!subAlloc || !(subAlloc as any).stock_allocations?.length) return;
+    const pct = typeof value === 'number' && !isNaN(value) ? Math.max(0, Math.min(100, value)) : 0;
+    (subAlloc as any).stock_allocations[0].target_percentage = pct;
+    // Keep type % in sync with sum of subtypes (incl. ETF %)
+    typeAlloc.target_percentage = this.getSubTypeTotal(typeAlloc);
+  }
+
   getETFCurrentValue(typeIndex: number, subTypeId: number): number {
-    // Get the investment type id from the type allocation
     const typeAlloc = this.draftTypeAllocations[typeIndex];
     if (!typeAlloc) {
       return 0;
     }
-    
-    // ETF Renda Fixa value = current value of that subtype from portfolio (quantity × price for the selected ETF)
-    // Pass subtype name so we can match by "ETF Renda Fixa" if backend uses different id format
     const subType = this.investmentSubTypes.find(s => s.id === subTypeId);
     const subTypeName = subType?.name || 'ETF Renda Fixa';
+    const typeCode = (typeAlloc as any).investment_type?.code ?? null;
+
+    // ETF Crypto row: show selected ETF (BITH11/HASH11) value only, not whole Cripto Moéda (Bitcoin) value
+    if (subType && this.isETFCryptoSubType(subType, typeCode)) {
+      const selected = this.getSelectedETFForSubType(typeIndex, subTypeId);
+      const ticker = selected?.stock?.ticker || (selected as any)?.ticker;
+      if (ticker && this.currentAllocation?.current?.investment_types) {
+        const typeData = this.currentAllocation.current.investment_types.find(
+          (t: any) => t.investment_type_id == typeAlloc.investment_type_id
+        );
+        const subTypeData = typeData?.sub_types?.find(
+          (st: any) => st.sub_type_id != null && st.sub_type_id == subTypeId
+        );
+        const stockValues = subTypeData?.stock_values;
+        if (stockValues && typeof stockValues[ticker] === 'number') {
+          return stockValues[ticker];
+        }
+        if (stockValues && stockValues[ticker] != null) {
+          return Number(stockValues[ticker]);
+        }
+      }
+      return 0;
+    }
+
+    // ETF Renda Fixa: current value of that subtype from portfolio
     return this.getCurrentSubTypeValue(typeAlloc.investment_type_id, subTypeId, subTypeName);
   }
 
@@ -552,10 +673,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       }
       
       if (numericStockId) {
-        // Find the stock from etfRendaFixaStocks
-        const stock = this.etfRendaFixaStocks.find(s => s.id === numericStockId);
+        const stock = this.etfRendaFixaStocks.find(s => s.id === numericStockId)
+          || this.etfCryptoStocks.find(s => s.id === numericStockId);
         if (stock) {
-          // Replace any existing stock allocation with the new one (max 1 ETF)
+          const existingPct = (subAlloc as any).stock_allocations[0]?.target_percentage;
           (subAlloc as any).stock_allocations = [{
             stock_id: numericStockId,
             stock: {
@@ -563,7 +684,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
               ticker: stock.ticker,
               name: stock.name
             },
-            target_percentage: subAlloc.target_percentage
+            target_percentage: existingPct != null ? existingPct : 0
           }];
         }
       } else {
@@ -1072,12 +1193,12 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
         };
       } else {
         // Handle subtype allocations (normal behavior)
-        const exactSubTotal = (typeAlloc.sub_type_allocations || []).reduce(
-          (sum, subAlloc) => sum + Number(subAlloc.target_percentage || 0),
-          0
-        );
+        // Use getSubTypeTotal so Cripto Moéda counts direct % + ETF % (soma)
+        const exactSubTotal = (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0)
+          ? this.getSubTypeTotal(typeAlloc)
+          : 0;
         
-        // Use exact sum if subtypes exist, otherwise use the type allocation percentage
+        // When subtypes exist, type % = sum of subtypes (so totals are never inconsistent)
         const finalTargetPercentage = (typeAlloc.sub_type_allocations && typeAlloc.sub_type_allocations.length > 0)
           ? exactSubTotal
           : Number(typeAlloc.target_percentage);
@@ -1089,6 +1210,7 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
           sub_type_allocations: (typeAlloc.sub_type_allocations || []).map((subAlloc, subIndex) => {
             const subType = this.investmentSubTypes.find(s => s.id === subAlloc.sub_type_id);
             const isETFRendaFixa = subType?.code === 'ETF_RENDA_FIXA';
+            const isETFCrypto = subType && this.isETFCryptoSubType(subType, (typeAlloc as any).investment_type?.code);
             
             const baseAlloc: any = {
               sub_type_id: subAlloc.sub_type_id,
@@ -1102,6 +1224,13 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
               baseAlloc.stock_allocations = ((subAlloc as any).stock_allocations || []).map((stockAlloc: any) => ({
                 stock_id: stockAlloc.stock_id || stockAlloc.stock?.id,
                 target_percentage: Number(subAlloc.target_percentage) // Use subtype percentage
+              }));
+            }
+            // Include stock_allocations for ETF Crypto (Cripto Moéda / BITH11) subtype
+            if (isETFCrypto && (subAlloc as any).stock_allocations?.length) {
+              baseAlloc.stock_allocations = ((subAlloc as any).stock_allocations || []).map((stockAlloc: any) => ({
+                stock_id: stockAlloc.stock_id || stockAlloc.stock?.id,
+                target_percentage: Number(stockAlloc.target_percentage ?? 0) // ETF % (separate from direct crypto %)
               }));
             }
             
@@ -1861,39 +1990,22 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       }
     }
     
-    // Group individual actions by subtype
-    const grouped: { [key: string]: RebalancingAction[] } = {};
-    for (const action of individualActions) {
-      const subtypeName = action.investment_subtype?.name || 'Crypto';
-      if (!grouped[subtypeName]) {
-        grouped[subtypeName] = [];
-      }
-      grouped[subtypeName].push(action);
-    }
-    
-    // Return grouped structure: aggregated actions first, then individual actions grouped by subtype
-    const result: { subtypeName: string; subtypeActions: RebalancingAction[] }[] = [];
-    
-    // Add aggregated subtype actions (like "Cryptocurrency" overall)
+    // Merge into a single map by subtype name so we don't show two "Cripto Moéda" headers
+    // (one for aggregated + one for individual): one header per subtype, all actions under it
+    const merged: { [key: string]: RebalancingAction[] } = {};
+    const add = (action: RebalancingAction, name: string) => {
+      if (!merged[name]) merged[name] = [];
+      merged[name].push(action);
+    };
     for (const action of aggregatedActions) {
-      const subtypeName = action.investment_subtype?.name || 'Cryptocurrency';
-      result.push({
-        subtypeName: subtypeName,
-        subtypeActions: [action]
-      });
+      add(action, action.investment_subtype?.name || 'Cryptocurrency');
     }
-    
-    // Add individual actions grouped by subtype
-    for (const [subtypeName, actions] of Object.entries(grouped)) {
-      if (actions.length > 0) {
-        result.push({
-          subtypeName: subtypeName,
-          subtypeActions: actions
-        });
-      }
+    for (const action of individualActions) {
+      add(action, action.investment_subtype?.name || 'Crypto');
     }
-    
-    return result;
+    return Object.entries(merged)
+      .filter(([, actions]) => actions.length > 0)
+      .map(([subtypeName, subtypeActions]) => ({ subtypeName, subtypeActions }));
   }
 
   isCryptoSymbol(subtypeName: string | null | undefined): boolean {
@@ -2136,13 +2248,92 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return subTypeData ? Number(subTypeData.current_value || 0) : 0;
   }
 
+  /** Current value of direct crypto only (Criptomoedas tab), for crypto subtype. */
+  getDirectCryptoValue(typeId: number, subTypeId: number): number {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return 0;
+    }
+    const typeData = this.currentAllocation.current.investment_types.find(
+      (t: any) => t.investment_type_id == typeId
+    );
+    const subTypeData = typeData?.sub_types?.find(
+      (st: any) => st.sub_type_id != null && st.sub_type_id == subTypeId
+    );
+    const v = subTypeData?.direct_crypto_value;
+    return v != null ? Number(v) : 0;
+  }
+
+  /** Per-symbol breakdown for direct crypto (Criptomoedas tab). Returns list for dropdown. */
+  getDirectCryptoBreakdown(typeId: number, subTypeId: number): { symbol: string; value: number; name?: string }[] {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return [];
+    }
+    const typeData = this.currentAllocation.current.investment_types.find(
+      (t: any) => t.investment_type_id == typeId
+    );
+    const subTypeData = typeData?.sub_types?.find(
+      (st: any) => st.sub_type_id != null && st.sub_type_id == subTypeId
+    );
+    const breakdown = subTypeData?.direct_crypto_breakdown;
+    if (!breakdown || typeof breakdown !== 'object') {
+      return [];
+    }
+    return Object.entries(breakdown)
+      .map(([symbol, raw]) => {
+        const value = typeof raw === 'object' && raw != null && 'value' in raw
+          ? Number((raw as any).value)
+          : Number(raw);
+        const name = typeof raw === 'object' && raw != null && (raw as any).name != null
+          ? (raw as any).name
+          : symbol;
+        return { symbol, value, name };
+      })
+      .filter(entry => entry.value > 0)
+      .sort((a, b) => a.symbol.localeCompare(b.symbol));
+  }
+
+  /** Value for selected direct crypto (single symbol or total when symbol is empty). */
+  getDirectCryptoValueForSelection(typeId: number, subTypeId: number, typeIndex: number): number {
+    const key = `${typeIndex}_${subTypeId}`;
+    const symbol = this.selectedDirectCrypto[key];
+    if (!symbol) {
+      return this.getDirectCryptoValue(typeId, subTypeId);
+    }
+    const list = this.getDirectCryptoBreakdown(typeId, subTypeId);
+    const entry = list.find(e => e.symbol === symbol);
+    return entry ? entry.value : 0;
+  }
+
+  private readonly DIRECT_CRYPTO_STORAGE_KEY = 'allocation-direct-crypto';
+
+  onDirectCryptoSelectionChange(typeIndex: number, subTypeId: number, symbol: string): void {
+    const value = symbol || '';
+    this.selectedDirectCrypto[`${typeIndex}_${subTypeId}`] = value;
+    if (this.selectedUser?.id) {
+      try {
+        localStorage.setItem(`${this.DIRECT_CRYPTO_STORAGE_KEY}-${this.selectedUser.id}-${subTypeId}`, value);
+      } catch (_) {}
+    }
+  }
+
+  private getStoredDirectCryptoSelection(subTypeId: number): string | null {
+    if (!this.selectedUser?.id) return null;
+    try {
+      return localStorage.getItem(`${this.DIRECT_CRYPTO_STORAGE_KEY}-${this.selectedUser.id}-${subTypeId}`);
+    } catch {
+      return null;
+    }
+  }
+
   getTotalPortfolioValue(): number {
     return this.currentAllocation?.current?.total_value || 0;
   }
 
   getTargetTypeValue(typeAlloc: any): number {
     const totalValue = this.getTotalPortfolioValue();
-    const percentage = Number(typeAlloc.target_percentage || 0);
+    // When type has subtypes, use sum of subtype % so type row Valor Alvo matches subtipos
+    const hasSubtypes = (typeAlloc.sub_type_allocations?.length > 0) && !this.isFIIInvestmentType(typeAlloc);
+    const percentage = hasSubtypes ? this.getSubTypeTotal(typeAlloc) : Number(typeAlloc.target_percentage || 0);
     return totalValue * (percentage / 100);
   }
 
@@ -2170,6 +2361,15 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     }
     const percentage = Number(subAlloc.target_percentage || 0);
     return totalValue * (percentage / 100);
+  }
+
+  /** Target value for ETF row only (ETF % of total). Used for Cripto Moéda ETF row. */
+  getTargetETFValueForSubType(typeIndex: number, subTypeId: number): number {
+    const typeAlloc = this.draftTypeAllocations[typeIndex];
+    if (!typeAlloc) return 0;
+    const totalValue = this.getTotalPortfolioValue();
+    const pct = this.getETFPercentageForSubType(typeIndex, subTypeId);
+    return totalValue * (pct / 100);
   }
 
   // Helper methods for Summary Card portfolio totals

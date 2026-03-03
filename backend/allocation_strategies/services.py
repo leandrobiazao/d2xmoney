@@ -146,11 +146,22 @@ class AllocationStrategyService:
             # Validate and create sub-type allocations (skip for FIIs)
             sub_type_allocations = type_alloc_data.get('sub_type_allocations', [])
             if sub_type_allocations and not is_fii_type:
-                sub_percentages = [
-                    Decimal(str(sta['target_percentage']))
-                    for sta in sub_type_allocations
-                ]
-                # Subtypes should sum to the parent type's target_percentage, not 100%
+                # For Cripto Moéda, subtype % = direct crypto, stock_alloc % = ETF; both count toward type total
+                sub_percentages = []
+                for sta in sub_type_allocations:
+                    pct = Decimal(str(sta['target_percentage']))
+                    stock_allocs = sta.get('stock_allocations') or []
+                    if stock_allocs:
+                        sub_type_id = sta.get('sub_type_id')
+                        try:
+                            from configuration.models import InvestmentSubType
+                            st = InvestmentSubType.objects.get(pk=sub_type_id)
+                            if st.code == 'BITCOIN' or (st.name and 'Cripto' in st.name):
+                                for sa in stock_allocs:
+                                    pct += Decimal(str(sa.get('target_percentage', 0)))
+                        except (InvestmentSubType.DoesNotExist, TypeError):
+                            pass
+                    sub_percentages.append(pct)
                 expected_sum = Decimal(str(type_alloc_data['target_percentage']))
                 if not AllocationStrategyService.validate_percentage_sum(sub_percentages, expected_sum):
                     raise ValidationError(
@@ -169,11 +180,23 @@ class AllocationStrategyService:
                     # Create stock allocations if provided
                     stock_allocations = sub_alloc_data.get('stock_allocations', [])
                     if stock_allocations:
-                        # Check if this is ETF Renda Fixa subtype (single ETF, uses subtype percentage)
+                        # Single-ETF subtypes: no 100% sum required (ETF Renda Fixa, ETF Crypto / Cripto Moéda)
                         sub_type = sub_type_allocation.sub_type
                         is_etf_renda_fixa = sub_type and sub_type.code == 'ETF_RENDA_FIXA'
-                        
-                        if not is_etf_renda_fixa:
+                        is_etf_crypto = (
+                            sub_type
+                            and sub_type.investment_type_id
+                            and (sub_type.code == 'BITCOIN' or 'Cripto' in (sub_type.name or ''))
+                        )
+                        if sub_type and sub_type.investment_type_id:
+                            try:
+                                it = InvestmentType.objects.get(pk=sub_type.investment_type_id)
+                                if it.code == 'RENDA_VARIAVEL_DOLARES':
+                                    is_etf_crypto = is_etf_crypto or (sub_type.code == 'BITCOIN' or 'Cripto' in (sub_type.name or ''))
+                            except InvestmentType.DoesNotExist:
+                                pass
+                        is_single_etf_subtype = is_etf_renda_fixa or is_etf_crypto
+                        if not is_single_etf_subtype:
                             # For non-ETF Renda Fixa, stock allocations must sum to 100%
                             stock_percentages = [
                                 Decimal(str(sa['target_percentage']))
@@ -433,6 +456,19 @@ class AllocationStrategyService:
                                 'current_value': Decimal('0')
                             }
                         type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_current_value
+                        # Per-ticker breakdown for crypto subtype (ETF row shows selected ETF value, not Bitcoin total)
+                        is_crypto_subtype = (
+                            investment_type.code == 'RENDA_VARIAVEL_DOLARES'
+                            and investment_subtype
+                            and (investment_subtype.code == 'BITCOIN' or (investment_subtype.name and 'Cripto' in investment_subtype.name))
+                        )
+                        if is_crypto_subtype:
+                            if 'stock_values' not in type_values[type_id]['sub_types'][subtype_id]:
+                                type_values[type_id]['sub_types'][subtype_id]['stock_values'] = {}
+                            ticker = position.ticker
+                            type_values[type_id]['sub_types'][subtype_id]['stock_values'][ticker] = (
+                                type_values[type_id]['sub_types'][subtype_id]['stock_values'].get(ticker, Decimal('0')) + position_current_value
+                            )
                     
                     type_values[type_id]['current_value'] += position_current_value
             except Stock.DoesNotExist:
@@ -525,11 +561,30 @@ class AllocationStrategyService:
                     type_values[type_id]['sub_types'][subtype_id] = {
                         'sub_type_id': subtype_id,
                         'sub_type_name': subtype_name,
-                        'current_value': Decimal('0')
+                        'current_value': Decimal('0'),
+                        'direct_crypto_value': Decimal('0'),
+                        'direct_crypto_breakdown': {},
                     }
-                
-                type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
+                subtype_data = type_values[type_id]['sub_types'][subtype_id]
+                subtype_data['current_value'] += position_value
+                subtype_data['direct_crypto_value'] = subtype_data.get('direct_crypto_value', Decimal('0')) + position_value
+                symbol = (crypto_currency.symbol or '?').upper()
+                name = (crypto_currency.name or symbol).strip() or symbol
+                if 'direct_crypto_breakdown' not in subtype_data:
+                    subtype_data['direct_crypto_breakdown'] = {}
+                if symbol not in subtype_data['direct_crypto_breakdown']:
+                    subtype_data['direct_crypto_breakdown'][symbol] = {'value': Decimal('0'), 'name': name}
+                subtype_data['direct_crypto_breakdown'][symbol]['value'] += position_value
+                subtype_data['direct_crypto_breakdown'][symbol]['name'] = name
                 type_values[type_id]['current_value'] += position_value
+        
+        # Ensure subtype has direct_crypto_value and direct_crypto_breakdown when created only from stocks
+        for type_id, type_data in type_values.items():
+            for subtype_id, subtype_data in type_data['sub_types'].items():
+                if 'direct_crypto_value' not in subtype_data:
+                    subtype_data['direct_crypto_value'] = Decimal('0')
+                if 'direct_crypto_breakdown' not in subtype_data:
+                    subtype_data['direct_crypto_breakdown'] = {}
         
         # Ensure Renda Fixa type includes ETF_RENDA_FIXA subtype (so UI can show Valor Atual even when 0)
         try:
@@ -567,6 +622,21 @@ class AllocationStrategyService:
                 )
                 # Round to 1 decimal place to avoid floating-point precision issues
                 subtype_data['current_percentage'] = subtype_percentage.quantize(Decimal('0.1'))
+                # Serialize stock_values (Decimal -> float) for JSON and frontend ETF crypto row
+                if 'stock_values' in subtype_data:
+                    subtype_data['stock_values'] = {
+                        k: float(v) for k, v in subtype_data['stock_values'].items()
+                    }
+                if 'direct_crypto_value' in subtype_data:
+                    subtype_data['direct_crypto_value'] = float(subtype_data['direct_crypto_value'])
+                if 'direct_crypto_breakdown' in subtype_data:
+                    result = {}
+                    for k, v in subtype_data['direct_crypto_breakdown'].items():
+                        if isinstance(v, dict) and 'value' in v:
+                            result[k] = {'value': float(v['value']), 'name': v.get('name') or k}
+                        else:
+                            result[k] = {'value': float(v), 'name': k}
+                    subtype_data['direct_crypto_breakdown'] = result
                 sub_types_list.append(subtype_data)
             
             type_data['sub_types'] = sub_types_list

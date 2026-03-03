@@ -115,7 +115,7 @@
                                   class="readonly-input"
                                 />
                               } @else if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0) {
-                                <!-- Has subtypes: show subtype total as readonly -->
+                                <!-- Type with subtypes: show sum of subtypes (readonly) so total is never wrong -->
                                 <input
                                   type="number"
                                   min="0"
@@ -127,7 +127,7 @@
                                   class="readonly-input"
                                 />
                               } @else {
-                                <!-- No subtypes or FIIs: editable input -->
+                                <!-- Type without subtypes: editable -->
                                 <input
                                   type="number"
                                   min="0"
@@ -160,7 +160,13 @@
                           @for (subType of getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code); track subType.id; let subIndex = $index) {
                             <div class="allocation-table-row">
                               <div class="allocation-name-col">
-                                <span class="subtype-name">{{ subType.name }}</span>
+                                <span class="subtype-name">
+                                  @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                                    Cripto Moéda (soma)
+                                  } @else {
+                                    {{ subType.name }}
+                                  }
+                                </span>
                               </div>
                               <div class="allocation-values-grid">
                                 <div class="value-column">
@@ -173,6 +179,18 @@
                                         max="100"
                                         step="0.1"
                                         [value]="getSubTypeAllocation(typeIndex, subType.id)?.target_percentage || 0"
+                                        readonly
+                                        disabled
+                                        class="readonly-input"
+                                      />
+                                    } @else if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                                      <!-- Cripto Moéda (soma): readonly = direct % + ETF % -->
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.1"
+                                        [value]="getCryptoSubTypeTotalPercentage(typeIndex, subType.id)"
                                         readonly
                                         disabled
                                         class="readonly-input"
@@ -192,10 +210,18 @@
                                   </div>
                                 </div>
                                 <div class="value-column">
-                                  <span class="value-text current-value">R$ {{ getCurrentSubTypeValue(typeAlloc.investment_type_id, subType.id) | number:'1.2-2' }}</span>
+                                  @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                                    <span class="value-text current-value">R$ {{ getCryptoSubTypeCurrentValueSum(typeAlloc.investment_type_id, typeIndex, subType.id) | number:'1.2-2' }}</span>
+                                  } @else {
+                                    <span class="value-text current-value">R$ {{ getCurrentSubTypeValue(typeAlloc.investment_type_id, subType.id) | number:'1.2-2' }}</span>
+                                  }
                                 </div>
                                 <div class="value-column">
-                                  <span class="value-text target-value">R$ {{ getTargetSubTypeValue(typeAlloc, subType.id) | number:'1.2-2' }}</span>
+                                  @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                                    <span class="value-text target-value">R$ {{ getCryptoSubTypeTargetValueSum(typeAlloc, typeIndex, subType.id) | number:'1.2-2' }}</span>
+                                  } @else {
+                                    <span class="value-text target-value">R$ {{ getTargetSubTypeValue(typeAlloc, subType.id) | number:'1.2-2' }}</span>
+                                  }
                                 </div>
                               </div>
                             </div>
@@ -218,7 +244,6 @@
                                   </div>
                                   <div class="allocation-values-grid">
                                     <div class="value-column">
-                                      <!-- Editable percentage for ETF -->
                                       <div class="percentage-input">
                                         <input
                                           type="number"
@@ -236,6 +261,83 @@
                                     </div>
                                     <div class="value-column">
                                       <span class="value-text target-value">R$ {{ getTargetSubTypeValue(typeAlloc, subType.id) | number:'1.2-2' }}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            }
+                            <!-- Cripto Moéda: sum row (above) + Criptomoedas (tab) row + ETF (stocks) row. -->
+                            @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                              <div class="etf-allocations etf-crypto-allocations">
+                                <!-- Row: Criptomoedas (select BTC/other + % to allocate; value from Criptomoedas tab) -->
+                                <div class="allocation-table-row crypto-direct-row">
+                                  <div class="allocation-name-col">
+                                    <select
+                                      class="etf-select"
+                                      [ngModel]="selectedDirectCrypto[typeIndex + '_' + subType.id] || ''"
+                                      (ngModelChange)="onDirectCryptoSelectionChange(typeIndex, subType.id, $event)">
+                                      <option value="">Todos (soma direta)</option>
+                                      @for (item of getDirectCryptoBreakdown(typeAlloc.investment_type_id, subType.id); track item.symbol) {
+                                        <option [ngValue]="item.symbol">{{ item.symbol }} - {{ item.name || item.symbol }}</option>
+                                      }
+                                    </select>
+                                  </div>
+                                  <div class="allocation-values-grid">
+                                    <div class="value-column">
+                                      <div class="percentage-input">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          [ngModel]="getSubTypeAllocation(typeIndex, subType.id)?.target_percentage || 0"
+                                          (ngModelChange)="onSubTypePercentageChange(typeIndex, subIndex, $event, subType.id)"
+                                        />
+                                        <span>%</span>
+                                      </div>
+                                    </div>
+                                    <div class="value-column">
+                                      <span class="value-text current-value">R$ {{ getDirectCryptoValueForSelection(typeAlloc.investment_type_id, subType.id, typeIndex) | number:'1.2-2' }}</span>
+                                    </div>
+                                    <div class="value-column">
+                                      <span class="value-text target-value">R$ {{ getTargetSubTypeValue(typeAlloc, subType.id) | number:'1.2-2' }}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <!-- Row: ETF (value from stocks, e.g. BITH11/HASH11) -->
+                                <div class="allocation-table-row etf-row">
+                                  <div class="allocation-name-col">
+                                    <select 
+                                      class="etf-select"
+                                      [ngModel]="getSelectedETFForSubType(typeIndex, subType.id)?.stock_id || ''"
+                                      (ngModelChange)="onETFSelectChange(typeIndex, subType.id, $event)">
+                                      <option value="">Selecione um ETF (ex.: BITH11)</option>
+                                      @for (stock of etfCryptoStocks; track stock.id) {
+                                        <option [ngValue]="stock.id">
+                                          {{ stock.ticker }} - {{ stock.name }}
+                                        </option>
+                                      }
+                                    </select>
+                                  </div>
+                                  <div class="allocation-values-grid">
+                                    <div class="value-column">
+                                      <div class="percentage-input">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.1"
+                                          [ngModel]="getETFPercentageForSubType(typeIndex, subType.id)"
+                                          (ngModelChange)="onETFPercentageChange(typeIndex, subType.id, $event)"
+                                        />
+                                        <span>%</span>
+                                      </div>
+                                    </div>
+                                    <div class="value-column">
+                                      <span class="value-text current-value">R$ {{ getETFCurrentValue(typeIndex, subType.id) | number:'1.2-2' }}</span>
+                                    </div>
+                                    <div class="value-column">
+                                      <span class="value-text target-value">R$ {{ getTargetETFValueForSubType(typeIndex, subType.id) | number:'1.2-2' }}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -685,8 +787,32 @@
                                 </thead>
                                 <tbody>
                                   @for (action of subtypeGroup.subtypeActions; track action.id) {
-                                    <!-- Only show individual crypto actions (with crypto symbol like "BTC") -->
-                                    @if (isCryptoSymbol(action.subtype_name)) {
+                                    @if (action.stock) {
+                                      <!-- ETF (e.g. BITH11) selected in balanceamento -->
+                                      <tr>
+                                        <td><strong>{{ action.stock.ticker }}</strong></td>
+                                        <td>{{ action.stock.name }}</td>
+                                        <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                        <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                        <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                          R$ {{ action.difference | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                          @if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+                                            <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }} {{ action.stock.ticker }}</span>
+                                          } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+                                            <span class="badge badge-sell">Vender {{ action.quantity_to_sell }} {{ action.stock.ticker }}</span>
+                                          } @else if (action.difference > 0) {
+                                            <span class="badge badge-buy">Aumentar {{ action.stock.ticker }}</span>
+                                          } @else if (action.difference < 0) {
+                                            <span class="badge badge-sell">Reduzir {{ action.stock.ticker }}</span>
+                                          } @else {
+                                            <span class="badge badge-maintain">Manter</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                    } @else if (isCryptoSymbol(action.subtype_name)) {
+                                      <!-- Individual crypto (BTC, ETH, etc.) -->
                                       <tr>
                                         <td><strong>{{ action.subtype_name || action.crypto_currency_symbol || '-' }}</strong></td>
                                         <td>{{ getCryptoDisplayName(action.crypto_currency_name) }}</td>
@@ -708,6 +834,30 @@
                                             <span class="badge badge-buy">Comprar {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
                                           } @else if (action.difference < 0) {
                                             <span class="badge badge-sell">Vender {{ action.crypto_currency_symbol || action.subtype_name || 'BTC' }}</span>
+                                          } @else {
+                                            <span class="badge badge-maintain">Manter</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                    } @else {
+                                      <!-- Aggregated subtype row (e.g. Cripto total) -->
+                                      <tr>
+                                        <td><strong>{{ action.investment_subtype?.name || 'Criptomoedas' }}</strong></td>
+                                        <td>—</td>
+                                        <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                        <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
+                                        <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
+                                          R$ {{ action.difference | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                          @if (action.quantity_to_buy) {
+                                            <span class="badge badge-buy">Aumentar</span>
+                                          } @else if (action.quantity_to_sell) {
+                                            <span class="badge badge-sell">Reduzir</span>
+                                          } @else if (action.difference > 0) {
+                                            <span class="badge badge-buy">Aumentar</span>
+                                          } @else if (action.difference < 0) {
+                                            <span class="badge badge-sell">Reduzir</span>
                                           } @else {
                                             <span class="badge badge-maintain">Manter</span>
                                           }

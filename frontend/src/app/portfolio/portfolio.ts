@@ -672,19 +672,24 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
 
   getGroupedPositionsArray(): Array<{ key: string; name: string; positions: Position[] }> {
     const result: Array<{ key: string; name: string; positions: Position[] }> = [];
-    
+    const rendaFixaNameLower = 'renda fixa';
+
     this.groupedPositions.forEach((positions, key) => {
       const name = this.investmentTypeNames.get(key) || 'Não Classificado';
+      // Exclude Renda Fixa (and ETF Renda Fixa e.g. AUPO11) from Ações tab; they belong in Renda Fixa tab
+      if (name.toLowerCase().includes(rendaFixaNameLower)) {
+        return;
+      }
       result.push({ key, name, positions });
     });
-    
+
     // Sort by investment type name (except "Não Classificado" which goes last)
     result.sort((a, b) => {
       if (a.name === 'Não Classificado') return 1;
       if (b.name === 'Não Classificado') return -1;
       return a.name.localeCompare(b.name);
     });
-    
+
     return result;
   }
 

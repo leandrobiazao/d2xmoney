@@ -176,13 +176,23 @@ export class OperationsModalComponent implements OnInit, OnDestroy {
       investmentTypeMap.set(type.name, type);
       investmentTypeMap.set(type.code, type); // Also map by code for convenience
     });
+    // Synthetic type for ETF Renda Fixa (subtype of Renda Fixa) so operations show as "ETF Renda Fixa" not "Não Classificado"
+    const rendaFixaType = this.investmentTypes.find(t => t.code === 'RENDA_FIXA' || t.name === 'Renda Fixa');
+    const etfRendaFixaDisplayOrder = rendaFixaType?.display_order ?? 2;
+    investmentTypeMap.set('ETF Renda Fixa', {
+      id: 0,
+      name: 'ETF Renda Fixa',
+      code: 'ETF_RENDA_FIXA',
+      display_order: etfRendaFixaDisplayOrder,
+      is_active: true
+    } as InvestmentType);
 
     // Group operations by investment type
     const groupedMap = new Map<string | null, Operation[]>();
 
-    // Include investment types: "Renda Variável em Reais", "Renda Variável em Dólares", and "Fundos Imobiliários"
-    const validInvestmentTypeNames = ['Renda Variável em Reais', 'Renda Variável em Dólares', 'Fundos Imobiliários'];
-    const validInvestmentTypeCodes = ['RENDA_VARIAVEL_REAIS', 'RENDA_VARIAVEL_DOLARES', 'FIIS'];
+    // Valid types: Renda Variável (Reais/Dólares), FIIs, and Renda Fixa (including ETF Renda Fixa)
+    const validInvestmentTypeNames = ['Renda Variável em Reais', 'Renda Variável em Dólares', 'Fundos Imobiliários', 'Renda Fixa'];
+    const validInvestmentTypeCodes = ['RENDA_VARIAVEL_REAIS', 'RENDA_VARIAVEL_DOLARES', 'FIIS', 'RENDA_FIXA'];
     
     // Debug: Log valid investment types
     this.debug.log(`📋 Valid investment types:`, {
@@ -225,18 +235,26 @@ export class OperationsModalComponent implements OnInit, OnDestroy {
         
         if (isFII) {
           // For FIIs, use "Fundos Imobiliários" as the investment type name
-          // Find the FII investment type from the configuration
           const fiiType = this.investmentTypes.find(t => t.code === 'FIIS' || t.name === 'Fundos Imobiliários');
           if (fiiType) {
             investmentType = fiiType;
             this.debug.log(`✅ Matched ${ticker} to FII investment type: ${fiiType.name}`);
           } else {
-            // If FII type not found in config, still group as FIIs
             investmentType = { id: 0, name: 'Fundos Imobiliários', code: 'FIIS', display_order: 3, is_active: true } as InvestmentType;
             this.debug.log(`✅ Matched ${ticker} to FII (using default type)`);
           }
+        } else if (typeCode === 'RENDA_FIXA' && stock.investment_subtype?.code === 'ETF_RENDA_FIXA') {
+          // ETF Renda Fixa (e.g. AUPO11): show as "ETF Renda Fixa" not "Não Classificado"
+          investmentType = investmentTypeMap.get('ETF Renda Fixa') ?? {
+            id: 0,
+            name: 'ETF Renda Fixa',
+            code: 'ETF_RENDA_FIXA',
+            display_order: etfRendaFixaDisplayOrder,
+            is_active: true
+          } as InvestmentType;
+          this.debug.log(`✅ Matched ${ticker} to ETF Renda Fixa (subtype: ${stock.investment_subtype.name})`);
         } else if (validInvestmentTypeNames.includes(typeName) || validInvestmentTypeCodes.includes(typeCode)) {
-          // Valid investment type (Renda Variável em Reais or Renda Variável em Dólares)
+          // Valid investment type (Renda Variável, Fundos Imobiliários, or Renda Fixa)
           investmentType = stock.investment_type;
           this.debug.log(`✅ Matched ${ticker} to investment type: ${typeName} (code: ${typeCode})`);
           if (ticker === 'HASH11') {

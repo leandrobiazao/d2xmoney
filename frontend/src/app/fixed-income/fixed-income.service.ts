@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { FixedIncomePosition, TesouroDiretoPosition, ImportResult } from './fixed-income.models';
 import { InvestmentFund, InvestmentFundSummary } from './investment-fund.models';
 
@@ -21,6 +21,18 @@ export class FixedIncomeService {
       params = params.set('investment_type', investmentType);
     }
     return this.http.get<FixedIncomePosition[]>(`${this.apiUrl}/positions/`, { params });
+  }
+
+  /** ETF Renda Fixa positions (e.g. AUPO11) from portfolio, shown as Renda Fixa options. */
+  getEtfRendaFixaPositions(userId?: string): Observable<FixedIncomePosition[]> {
+    if (!userId) {
+      return of([]);
+    }
+    const params = new HttpParams().set('user_id', userId);
+    return this.http.get<FixedIncomePosition[]>(
+      `${this.apiUrl}/positions/etf-renda-fixa-positions/`,
+      { params }
+    );
   }
 
   getPositionById(id: number): Observable<FixedIncomePosition> {

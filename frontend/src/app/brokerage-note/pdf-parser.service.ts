@@ -435,8 +435,8 @@ export class PdfParserService {
     const allLines = normalizedText.split('\n');
     let expectedOperationsCount: number | null = null;
     
-    // Count lines that match the B3 operation pattern (1-BOVESPA)
-    const bovespaLinePattern = /1-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}/i;
+    // Count lines that match the B3 operation pattern (N-BOVESPA: 1-BOVESPA, 7-BOVESPA, etc.)
+    const bovespaLinePattern = /\d+-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}/i;
     const matchingLines = allLines
       .map((line, idx) => ({ line: line.trim(), index: idx + 1 }))
       .filter(item => bovespaLinePattern.test(item.line));
@@ -513,8 +513,8 @@ export class PdfParserService {
       
       // First, try pattern that captures company name and classification as one field
       // More flexible pattern: capture everything between market type and quantity
-      // 1-BOVESPA [C/V] [MARKET] [NAME.....] [#] [QTD] [PRICE] [VALUE] [D/C]
-      let bovespaPattern = /1-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}(.+?)\s{2,}[#@]?\d*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+      // N-BOVESPA [C/V] [MARKET] [NAME.....] [#] [QTD] [PRICE] [VALUE] [D/C] (N = 1, 7, etc.)
+      let bovespaPattern = /\d+-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}(.+?)\s{2,}[#@]?\d*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
       let bovespaMatch = line.match(bovespaPattern);
       
       let nomeAcaoCompleto = '';
@@ -528,8 +528,8 @@ export class PdfParserService {
         this.debug.log(`📄 Line ${i + 1} matched (flexible pattern). Captured: "${nomeAcaoCompleto}"`);
       } else {
         // Fallback to stricter pattern if flexible fails (unlikely but safe)
-        // Pattern: 1-BOVESPA   C/V   TIPO   COMPANY_NAME    CLASSIFICATION   @   QTD   PRECO   VALOR   D/C
-        bovespaPattern = /1-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\.\-\s]+?)\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))\s+[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+        // Pattern: N-BOVESPA   C/V   TIPO   COMPANY_NAME    CLASSIFICATION   @   QTD   PRECO   VALOR   D/C
+        bovespaPattern = /\d+-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\.\-\s]+?)\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))\s+[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
         bovespaMatch = line.match(bovespaPattern);
         
         if (bovespaMatch && bovespaMatch.length >= 9) {
@@ -651,7 +651,7 @@ export class PdfParserService {
       unmatchedLines.forEach(item => {
         this.debug.error(`❌ Line ${item.index}: "${item.line.substring(0, 150)}"`);
         // Try to extract what might be the company name from this line
-        const nameMatch = item.line.match(/1-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}([A-Z0-9\.\-\s]+?)(?:\s{2,}|$)/i);
+        const nameMatch = item.line.match(/\d+-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}([A-Z0-9\.\-\s]+?)(?:\s{2,}|$)/i);
         if (nameMatch && nameMatch[1]) {
           this.debug.error(`   → Possible company name field: "${nameMatch[1].trim()}"`);
         }

@@ -29,7 +29,9 @@ class RebalancingService:
         - Fixed income rebalancing
         """
         try:
-            strategy = UserAllocationStrategy.objects.get(user=user)
+            strategy = UserAllocationStrategy.objects.prefetch_related(
+                'type_allocations__sub_type_allocations__stock_allocations__stock'
+            ).get(user=user)
         except UserAllocationStrategy.DoesNotExist:
             raise ValueError("User does not have an allocation strategy")
         
@@ -318,6 +320,43 @@ class RebalancingService:
                                             display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 100 + crypto_index
                                         )
                                     crypto_index += 1
+                            # Also create rebalancing action for selected ETF (e.g. BITH11) if configured
+                            for stock_alloc in subtype_alloc.stock_allocations.select_related('stock').all():
+                                etf_stock = stock_alloc.stock
+                                if not etf_stock or not etf_stock.is_active:
+                                    continue
+                                etf_pct = stock_alloc.target_percentage or Decimal('0')
+                                etf_target_value = total_value * (etf_pct / 100)
+                                etf_position = PortfolioPosition.objects.filter(
+                                    user_id=str(user.id),
+                                    ticker=etf_stock.ticker
+                                ).first()
+                                etf_current_value = Decimal('0')
+                                if etf_position:
+                                    etf_current_value = Decimal(str(etf_position.valor_total_investido or 0))
+                                etf_difference = etf_target_value - etf_current_value
+                                etf_current_price = etf_stock.current_price or Decimal('0')
+                                quantity_to_buy = None
+                                quantity_to_sell = None
+                                if etf_current_price and etf_current_price > 0 and abs(etf_difference) > Decimal('1.00'):
+                                    if etf_difference > 0:
+                                        quantity_to_buy = int(etf_difference / etf_current_price)
+                                    else:
+                                        quantity_to_sell = int(abs(etf_difference) / etf_current_price)
+                                action_type = 'buy' if etf_current_value == 0 else 'rebalance'
+                                if etf_current_value > 0 or etf_target_value > 0:
+                                    RebalancingAction.objects.create(
+                                        recommendation=recommendation,
+                                        action_type=action_type,
+                                        stock=etf_stock,
+                                        investment_subtype=subtype,
+                                        current_value=etf_current_value,
+                                        target_value=etf_target_value,
+                                        difference=etf_difference,
+                                        quantity_to_buy=quantity_to_buy,
+                                        quantity_to_sell=quantity_to_sell,
+                                        display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 100 + 50
+                                    )
                         except Exception as e:
                             import traceback
                             print(f"Error creating individual crypto actions: {e}")
@@ -479,6 +518,50 @@ class RebalancingService:
                                         quantity_to_buy=quantity_to_buy,
                                         quantity_to_sell=quantity_to_sell,
                                         display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 10 + 1
+                                    )
+                        # Check for ETF Crypto (Cripto Moéda) stock allocations - same pattern as ETF Renda Fixa
+                        is_etf_crypto_subtype = (
+                            subtype
+                            and type_alloc.investment_type.code == 'RENDA_VARIAVEL_DOLARES'
+                            and (subtype.code == 'BITCOIN' or (subtype.name and 'Cripto' in subtype.name))
+                        )
+                        if is_etf_crypto_subtype:
+                            for stock_alloc in subtype_alloc.stock_allocations.select_related('stock').all():
+                                etf_stock = stock_alloc.stock
+                                if not etf_stock or not etf_stock.is_active:
+                                    continue
+                                # ETF % is separate from direct crypto %: use stock_alloc.target_percentage
+                                etf_pct = stock_alloc.target_percentage or Decimal('0')
+                                etf_target_value = total_value * (etf_pct / 100)
+                                etf_position = PortfolioPosition.objects.filter(
+                                    user_id=str(user.id),
+                                    ticker=etf_stock.ticker
+                                ).first()
+                                etf_current_value = Decimal('0')
+                                if etf_position:
+                                    etf_current_value = Decimal(str(etf_position.valor_total_investido or 0))
+                                etf_difference = etf_target_value - etf_current_value
+                                etf_current_price = etf_stock.current_price or Decimal('0')
+                                quantity_to_buy = None
+                                quantity_to_sell = None
+                                if etf_current_price > 0 and abs(etf_difference) > Decimal('1.00'):
+                                    if etf_difference > 0:
+                                        quantity_to_buy = int(etf_difference / etf_current_price)
+                                    else:
+                                        quantity_to_sell = int(abs(etf_difference) / etf_current_price)
+                                action_type = 'buy' if etf_current_value == 0 else 'rebalance'
+                                if etf_current_value > 0 or etf_target_value > 0:
+                                    RebalancingAction.objects.create(
+                                        recommendation=recommendation,
+                                        action_type=action_type,
+                                        stock=etf_stock,
+                                        investment_subtype=subtype,
+                                        current_value=etf_current_value,
+                                        target_value=etf_target_value,
+                                        difference=etf_difference,
+                                        quantity_to_buy=quantity_to_buy,
+                                        quantity_to_sell=quantity_to_sell,
+                                        display_order=type_alloc.display_order * 1000 + subtype_alloc.display_order * 10 + 2
                                     )
         
         # Generate AMBB strategy recommendations for "Ações em Reais"
