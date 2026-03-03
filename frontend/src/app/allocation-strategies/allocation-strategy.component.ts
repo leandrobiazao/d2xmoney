@@ -251,8 +251,8 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
             };
           }
           
-          // Get available subtypes for this investment type
-          const availableSubtypes = this.getSubTypesForInvestmentType(type.id);
+          // Get available subtypes for this investment type (pass type.code so ETF Renda Fixa is included for Renda Fixa)
+          const availableSubtypes = this.getSubTypesForInvestmentType(type.id, type.code);
           
           if (availableSubtypes.length > 0 && !isFIIType) {
             // Always show subtypes if they exist for this investment type
@@ -505,20 +505,17 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   getETFCurrentValue(typeIndex: number, subTypeId: number): number {
-    // Get selected ETF stock for this subtype
-    const selectedETF = this.getSelectedETFForSubType(typeIndex, subTypeId);
-    if (!selectedETF?.stock_id) {
-      return 0;
-    }
-    
     // Get the investment type id from the type allocation
     const typeAlloc = this.draftTypeAllocations[typeIndex];
     if (!typeAlloc) {
       return 0;
     }
     
-    // Use the subtype's current value (ETF is the only stock in this subtype)
-    return this.getCurrentSubTypeValue(typeAlloc.investment_type_id, subTypeId);
+    // ETF Renda Fixa value = current value of that subtype from portfolio (quantity × price for the selected ETF)
+    // Pass subtype name so we can match by "ETF Renda Fixa" if backend uses different id format
+    const subType = this.investmentSubTypes.find(s => s.id === subTypeId);
+    const subTypeName = subType?.name || 'ETF Renda Fixa';
+    return this.getCurrentSubTypeValue(typeAlloc.investment_type_id, subTypeId, subTypeName);
   }
 
   onETFSelectChange(typeIndex: number, subTypeId: number, stockId: string): void {
@@ -576,8 +573,30 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     }
   }
 
-  getSubTypesForInvestmentType(investmentTypeId: number): InvestmentSubType[] {
-    return this.investmentSubTypes.filter(s => s.investment_type === investmentTypeId);
+  getSubTypesForInvestmentType(investmentTypeId: number, typeCode?: string): InvestmentSubType[] {
+    // Handle investment_type as number (API) or object { id } (nested responses)
+    const match = (s: InvestmentSubType) => {
+      const raw = (s as any).investment_type;
+      const typeId = raw != null && typeof raw === 'object' && !Array.isArray(raw)
+        ? (raw as { id: number }).id
+        : raw;
+      return typeId == investmentTypeId; // eslint-disable-line eqeqeq -- allow string/number match
+    };
+    let result = this.investmentSubTypes.filter(s => match(s));
+    // Ensure ETF Renda Fixa is shown under Renda Fixa even if FK or loading order is wrong
+    const isRendaFixa = typeCode === 'RENDA_FIXA';
+    if (isRendaFixa && investmentTypeId != null) {
+      const etfRendaFixa = this.investmentSubTypes.find(s => (s as any).code === 'ETF_RENDA_FIXA');
+      if (etfRendaFixa && !result.some(s => s.id === etfRendaFixa.id)) {
+        const etfTypeId = (etfRendaFixa as any).investment_type != null && typeof (etfRendaFixa as any).investment_type === 'object'
+          ? ((etfRendaFixa as any).investment_type as { id: number }).id
+          : (etfRendaFixa as any).investment_type;
+        if (etfTypeId == investmentTypeId || etfTypeId == null) {
+          result = [...result, etfRendaFixa].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        }
+      }
+    }
+    return result;
   }
 
   isFIIInvestmentType(typeAlloc: DraftTypeAllocation): boolean {
@@ -2093,19 +2112,27 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return typeData ? Number(typeData.current_value || 0) : 0;
   }
 
-  getCurrentSubTypeValue(typeId: number, subTypeId: number): number {
+  getCurrentSubTypeValue(typeId: number, subTypeId: number, subTypeName?: string): number {
     if (!this.currentAllocation?.current?.investment_types) {
       return 0;
     }
     const typeData = this.currentAllocation.current.investment_types.find(
-      (type: any) => type.investment_type_id === typeId
+      (type: any) => type.investment_type_id == typeId
     );
     if (!typeData?.sub_types) {
       return 0;
     }
-    const subTypeData = typeData.sub_types.find(
-      (st: any) => st.sub_type_id === subTypeId
+    // Match by sub_type_id (loose equality for string/number from API)
+    let subTypeData = typeData.sub_types.find(
+      (st: any) => st.sub_type_id != null && st.sub_type_id == subTypeId
     );
+    // Fallback: match by sub_type_name when id mismatch or missing (e.g. ETF Renda Fixa)
+    if (!subTypeData && subTypeName) {
+      const nameLower = subTypeName.toLowerCase();
+      subTypeData = typeData.sub_types.find(
+        (st: any) => (st.sub_type_name || '').toLowerCase() === nameLower
+      );
+    }
     return subTypeData ? Number(subTypeData.current_value || 0) : 0;
   }
 

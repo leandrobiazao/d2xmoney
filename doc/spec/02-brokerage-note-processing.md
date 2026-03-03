@@ -317,25 +317,37 @@ All financial summary fields are optional and nullable to support existing notes
 - Resumo Financeiro: `clearing`, `valor_liquido_operacoes`, `taxa_liquidacao`, `taxa_registro`, `total_cblc`, `bolsa`, `emolumentos`, `taxa_transferencia_ativos`, `total_bovespa`
 - Custos Operacionais: `taxa_operacional`, `execucao`, `taxa_custodia`, `impostos`, `irrf_operacoes`, `irrf_base`, `outros_custos`, `total_custos_despesas`, `liquido`, `liquido_data`
 
+## Multi-note PDF support
+
+A single PDF file may contain **more than one brokerage note** (e.g. note A on pages 1–3, note B on page 4). The system treats each “Nr. nota” header as the start of a new note:
+
+- **Parser:** `PdfParserService.parsePdf()` scans each page for “Nr. nota” and “Data pregão”. When a new “Nr. nota” appears on a page, that page starts a new note. The parser returns `{ notes: NoteParseResult[]; accountNumber?: string }`, where each `NoteParseResult` has `operations`, `expectedOperationsCount`, `financialSummary`, `noteNumber`, and `noteDate` for that note’s page range. Operations and financial summary are parsed **per note** (each note’s pages only; financial summary from that note’s last page).
+- **Upload:** Emits one `operationsAdded` event with `notes: NoteParseResult[]` (single-note PDFs produce an array of length 1).
+- **Portfolio:** Saves one backend `BrokerageNote` per parsed note (one POST per note). Success messages can refer to multiple notes (e.g. “Notas 12345678 e 87654321 importadas com sucesso”).
+- **Backend:** Unchanged: one note per POST; duplicate rule `(user_id, note_number, note_date)` applies per note.
+
+See the plan/spec for “Multi-Note PDF Support” for full details. E2e fixture: `frontend/e2e/fixtures/README-multi-note.md`.
+
 ## Data Flow
 
 1. User uploads PDF file via UploadPdfComponent
-2. PdfParserService extracts text from **all pages** for operations parsing
-3. PdfParserService extracts text from **last page only** for financial summary parsing
-4. Parser searches for operation lines matching B3 format (from all pages)
-5. Parser extracts financial summary sections (from last page only)
-6. For each operation line:
+2. PdfParserService **detects note boundaries** (page-based: each “Nr. nota” starts a new note)
+3. For **each note** (page range):
+   - Extracts text from that note’s pages for operations parsing
+   - Extracts financial summary from **that note’s last page** only
+   - Parses operation lines and financial summary for that note
+4. Parser returns **array of note results** `{ notes, accountNumber }`; single-note PDFs yield one element
+5. For each operation line (within each note’s text):
    - Extract nomeAcaoCompleto as a single field (e.g., "3TENTOS ON NM")
    - Preserve the complete field including classification code
-7. For each operation, TickerMappingService tries to find ticker using nomeAcaoCompleto (complete field)
-8. If ticker not found, TickerDialogComponent prompts user for input
+6. For each operation, TickerMappingService tries to find ticker using nomeAcaoCompleto (complete field)
+7. If ticker not found, TickerDialogComponent prompts user for input
    - Dialog shows the complete field (e.g., "3TENTOS ON NM")
    - User provides ticker for the complete field
-9. Ticker mapping is saved using the complete field (company name + classification code)
-10. Operations are created with all required fields
-11. Financial summary is extracted from last page text
-12. Operations and financial summary are emitted via operationsAdded event
-13. Parent component receives operations and financial summary and saves them
+8. Ticker mapping is saved using the complete field (company name + classification code)
+9. Operations are created with all required fields per note
+10. Upload emits **one** `operationsAdded` event with `notes: NoteParseResult[]`
+11. Parent component receives the notes array and **saves one backend note per parsed note**
 
 ## Integration
 

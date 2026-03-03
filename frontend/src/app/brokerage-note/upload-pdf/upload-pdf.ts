@@ -1,18 +1,16 @@
 import { Component, EventEmitter, Input, Output, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { PdfParserService } from '../pdf-parser.service';
+import { PdfParserService, NoteParseResult } from '../pdf-parser.service';
 import { Operation } from '../operation.model';
-import { FinancialSummary } from '../financial-summary.model';
 import { TickerDialogComponent } from '../ticker-dialog/ticker-dialog';
 import { TickerMappingService } from '../../portfolio/ticker-mapping/ticker-mapping.service';
 import { DebugService } from '../../shared/services/debug.service';
 
 export interface OperationsAddedEvent {
-  operations: Operation[];
-  expectedOperationsCount?: number | null;
-  financialSummary?: FinancialSummary;
-  fileName?: string; // Original file name
-  accountNumber?: string; // Account number extracted from PDF
+  /** One note per item; single-note PDFs produce an array of length 1. */
+  notes: NoteParseResult[];
+  fileName?: string;
+  accountNumber?: string;
 }
 
 @Component({
@@ -113,11 +111,10 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         });
       };
       
-      let parseResult: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string } = { operations: [] };
+      let parseResult: { notes: NoteParseResult[]; accountNumber?: string };
       try {
         parseResult = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
       } catch (parseError) {
-        // If parsing fails, the error message is already set by the parser
         const errorMsg = parseError instanceof Error ? parseError.message : 'Erro desconhecido ao processar PDF';
         this.errorMessage = errorMsg;
         this.isProcessing = false;
@@ -125,24 +122,22 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
         return;
       }
 
-      if (parseResult.operations.length === 0) {
+      const hasAnyOperations = parseResult.notes.some(n => n.operations.length > 0);
+      if (!hasAnyOperations || parseResult.notes.length === 0) {
         this.errorMessage = 'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3.';
         this.isProcessing = false;
         return;
       }
 
-      const operationsWithClientId = parseResult.operations.map(op => ({
-        ...op,
-        clientId: this.clientId
+      const notesWithClientId: NoteParseResult[] = parseResult.notes.map(n => ({
+        ...n,
+        operations: n.operations.map(op => ({ ...op, clientId: this.clientId }))
       }));
 
-      // Emit operations and financial summary - success/error will be handled by parent component
       this.operationsAdded.emit({
-        operations: operationsWithClientId,
-        expectedOperationsCount: parseResult.expectedOperationsCount,
-        financialSummary: parseResult.financialSummary,
-        fileName: this.selectedFile.name, // Pass the real file name
-        accountNumber: parseResult.accountNumber // Pass extracted account number
+        notes: notesWithClientId,
+        fileName: this.selectedFile.name,
+        accountNumber: parseResult.accountNumber
       });
 
       this.selectedFile = null;

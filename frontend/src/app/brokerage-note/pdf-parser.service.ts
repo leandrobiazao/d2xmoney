@@ -6,6 +6,23 @@ import { FinancialSummary } from './financial-summary.model';
 import { TickerMappingService } from '../portfolio/ticker-mapping/ticker-mapping.service';
 import { DebugService } from '../shared/services/debug.service';
 
+/** Result for one brokerage note within a PDF. A single PDF may contain multiple notes. */
+export interface NoteParseResult {
+  operations: Operation[];
+  expectedOperationsCount?: number | null;
+  financialSummary?: FinancialSummary;
+  noteNumber?: string;
+  noteDate?: string;
+}
+
+/** Boundary of one note in a multi-note PDF: page range and header fields. */
+interface NoteBoundary {
+  noteNumber: string;
+  noteDate: string;
+  pageStart: number;
+  pageEnd: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -20,7 +37,11 @@ export class PdfParserService {
     }
   }
 
-  async parsePdf(file: File, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string }> {
+  /**
+   * Parses a PDF that may contain one or more brokerage notes.
+   * Returns an array of note results; single-note PDFs produce an array of length 1.
+   */
+  async parsePdf(file: File, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ notes: NoteParseResult[]; accountNumber?: string }> {
     try {
       const arrayBuffer = await file.arrayBuffer();
       
@@ -34,59 +55,37 @@ export class PdfParserService {
       });
       
       const pdf = await loadingTask.promise;
-      let fullText = '';
-      
-      // Extrair texto de todas as páginas para operações
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        try {
-          const page = await pdf.getPage(pageNum);
-          const textContent = await page.getTextContent();
-          
-          const pageText = textContent.items
-            .map((item: any) => {
-              if (item.hasEOL) {
-                return item.str + '\n';
-              }
-              return item.str;
-            })
-            .join(' ');
-          fullText += pageText + '\n';
-        } catch (pageError) {
-          this.debug.warn(`Erro ao processar página ${pageNum}:`, pageError);
+
+      // Detect note boundaries (page-based: each "Nr. nota" starts a new note)
+      const boundaries = await this.detectNoteBoundaries(pdf);
+      this.debug.log(`📑 Detected ${boundaries.length} note boundary(ies):`, boundaries);
+
+      // Account number from first pages of the document
+      const firstPagesText = await this.extractPagesText(pdf, 1, Math.min(3, pdf.numPages));
+      const accountNumber = this.extractAccountNumber(firstPagesText);
+
+      const notes: NoteParseResult[] = [];
+      for (const b of boundaries) {
+        const sectionText = await this.extractPagesText(pdf, b.pageStart, b.pageEnd);
+        const parseResult = await this.parseOperationsFromText(sectionText, onTickerRequired);
+        const lastPageOfNote = await this.extractPageText(pdf, b.pageEnd);
+        const financialSummary = this.extractFinancialSummary(lastPageOfNote);
+
+        const noteResult: NoteParseResult = {
+          operations: parseResult.operations,
+          noteNumber: b.noteNumber || undefined,
+          noteDate: b.noteDate || undefined,
+        };
+        if (parseResult.expectedOperationsCount !== null && parseResult.expectedOperationsCount !== undefined) {
+          noteResult.expectedOperationsCount = parseResult.expectedOperationsCount;
         }
+        if (financialSummary) {
+          noteResult.financialSummary = financialSummary;
+        }
+        notes.push(noteResult);
       }
 
-      // Extract last page text separately for financial summary
-      const lastPageText = await this.extractLastPageText(pdf);
-      
-      // Extract account number from PDF text (usually in header/first page)
-      const accountNumber = this.extractAccountNumber(fullText);
-
-      // Parsear operações do texto completo de todas as páginas
-      const parseResult = await this.parseOperationsFromText(fullText, onTickerRequired);
-      const operations = parseResult.operations;
-      const expectedOperationsCount = parseResult.expectedOperationsCount;
-      
-      // Extract financial summary from last page only
-      const financialSummary = this.extractFinancialSummary(lastPageText);
-      
-      const result: { operations: Operation[]; expectedOperationsCount?: number | null; financialSummary?: FinancialSummary; accountNumber?: string } = {
-        operations
-      };
-      
-      if (expectedOperationsCount !== null && expectedOperationsCount !== undefined) {
-        result.expectedOperationsCount = expectedOperationsCount;
-      }
-      
-      if (financialSummary) {
-        result.financialSummary = financialSummary;
-      }
-      
-      if (accountNumber) {
-        result.accountNumber = accountNumber;
-      }
-      
-      return result;
+      return { notes, accountNumber: accountNumber || undefined };
     } catch (error) {
       this.debug.error('Error parsing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -130,18 +129,17 @@ export class PdfParserService {
     return null;
   }
 
-  private async extractLastPageText(pdf: PDFDocumentProxy): Promise<string> {
+  /**
+   * Extracts text from a single page with spatial sorting (for financial summary / header).
+   */
+  private async extractPageText(pdf: PDFDocumentProxy, pageNum: number): Promise<string> {
     try {
-      const totalPages = pdf.numPages;
-      if (totalPages === 0) {
+      if (pageNum < 1 || pageNum > pdf.numPages) {
         return '';
       }
-      
-      const lastPage = await pdf.getPage(totalPages);
-      const textContent = await lastPage.getTextContent();
-      
-      // Implement robust spatial sorting to handle columnar layouts correctly
-      // Sort by Y (descending) to group lines, then X (ascending) to order within lines
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+
       const items = textContent.items.map((item: any) => ({
         str: item.str,
         x: item.transform[4],
@@ -151,52 +149,107 @@ export class PdfParserService {
         hasEOL: item.hasEOL
       }));
 
-      // Sort primarily by Y (descending), secondarily by X (ascending)
-      // Use a tolerance for Y to group items on the "same line" even if slightly misaligned
       items.sort((a, b) => {
         const yDiff = Math.abs(a.y - b.y);
-        if (yDiff < 5) { // Tolerance of 5 units for same line
+        if (yDiff < 5) {
           return a.x - b.x;
         }
-        return b.y - a.y; // Higher Y is higher on page
+        return b.y - a.y;
       });
 
-      // Group into lines
-      let lastPageText = '';
+      let text = '';
       let currentY = -1;
       let currentLineItems: any[] = [];
 
       items.forEach(item => {
         if (currentY === -1 || Math.abs(item.y - currentY) < 5) {
-          // Same line
           currentLineItems.push(item);
           if (currentY === -1) currentY = item.y;
         } else {
-          // New line
-          // Sort current line items by X to ensure correct reading order
           currentLineItems.sort((a, b) => a.x - b.x);
-          
-          // Join with spaces
-          lastPageText += currentLineItems.map(i => i.str).join(' ') + '\n';
-          
-          // Start new line
+          text += currentLineItems.map(i => i.str).join(' ') + '\n';
           currentLineItems = [item];
           currentY = item.y;
         }
       });
 
-      // Flush last line
       if (currentLineItems.length > 0) {
         currentLineItems.sort((a, b) => a.x - b.x);
-        lastPageText += currentLineItems.map(i => i.str).join(' ') + '\n';
+        text += currentLineItems.map(i => i.str).join(' ') + '\n';
       }
-      
-      this.debug.log(`✅ Extracted text from last page (page ${totalPages}) with spatial sorting`);
-      return lastPageText;
+      return text;
     } catch (error) {
-      this.debug.error('Error extracting last page text:', error);
+      this.debug.warn(`Error extracting text from page ${pageNum}:`, error);
       return '';
     }
+  }
+
+  /**
+   * Concatenates text from pages start..end (1-based). Used for per-note operation parsing.
+   */
+  private async extractPagesText(pdf: PDFDocumentProxy, start: number, end: number): Promise<string> {
+    let fullText = '';
+    for (let p = start; p <= end; p++) {
+      const page = await pdf.getPage(p);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => (item.hasEOL ? item.str + '\n' : item.str))
+        .join(' ');
+      fullText += pageText + '\n';
+    }
+    return fullText;
+  }
+
+  /**
+   * Scans each page for "Nr. nota" and "Data pregão". When a new "Nr. nota" is found, that page starts a new note.
+   * Returns one boundary per note; if none found, returns a single boundary for the whole document.
+   */
+  private async detectNoteBoundaries(pdf: PDFDocumentProxy): Promise<NoteBoundary[]> {
+    const totalPages = pdf.numPages;
+    if (totalPages === 0) {
+      return [];
+    }
+
+    const nrNotaPattern = /Nr\.?\s*nota\s*:?\s*(\d{8,})/i;
+    const dataPregaoPattern = /Data pregão\s+(\d{2}\/\d{2}\/\d{4})/i;
+
+    const headers: Array<{ pageNum: number; noteNumber: string; noteDate: string }> = [];
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const pageText = await this.extractPageText(pdf, pageNum);
+      const notaMatch = pageText.match(nrNotaPattern);
+      const dateMatch = pageText.match(dataPregaoPattern);
+      if (notaMatch && notaMatch[1]) {
+        const noteNumber = notaMatch[1];
+        const noteDate = dateMatch && dateMatch[1] ? dateMatch[1] : '';
+        headers.push({ pageNum, noteNumber, noteDate });
+      }
+    }
+
+    if (headers.length === 0) {
+      // No "Nr. nota" found: treat whole document as one note
+      const fullText = await this.extractPagesText(pdf, 1, totalPages);
+      const dateMatch = fullText.match(dataPregaoPattern);
+      const notaMatch = fullText.match(nrNotaPattern);
+      return [{
+        noteNumber: notaMatch && notaMatch[1] ? notaMatch[1] : '',
+        noteDate: dateMatch && dateMatch[1] ? dateMatch[1] : '',
+        pageStart: 1,
+        pageEnd: totalPages
+      }];
+    }
+
+    const boundaries: NoteBoundary[] = [];
+    for (let i = 0; i < headers.length; i++) {
+      const pageStart = headers[i].pageNum;
+      const pageEnd = i + 1 < headers.length ? headers[i + 1].pageNum - 1 : totalPages;
+      boundaries.push({
+        noteNumber: headers[i].noteNumber,
+        noteDate: headers[i].noteDate,
+        pageStart,
+        pageEnd
+      });
+    }
+    return boundaries;
   }
 
   private extractFinancialSummary(lastPageText: string): FinancialSummary | null {

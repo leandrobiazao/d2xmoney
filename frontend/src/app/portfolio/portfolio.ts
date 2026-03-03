@@ -390,57 +390,118 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onOperationsAdded(event: OperationsAddedEvent): void {
-    const { operations, expectedOperationsCount, financialSummary, fileName, accountNumber } = event;
-    
-    // Debug: Log financial summary to check if it's being extracted
-    this.debug.log('📊 Financial Summary received:', financialSummary);
-    this.debug.log('📊 total_custos_despesas:', financialSummary?.total_custos_despesas);
+    const { notes, fileName, accountNumber } = event;
+
+    this.debug.log('📊 Notes received:', notes.length, notes);
     this.debug.log('📊 Account Number from PDF:', accountNumber);
-    
-    if (!this.userId || operations.length === 0) {
+
+    if (!this.userId || !notes || notes.length === 0) {
       return;
     }
-    
-    // Validate account number if available
+
+    const hasAnyOperations = notes.some(n => n.operations.length > 0);
+    if (!hasAnyOperations) {
+      return;
+    }
+
+    const doSave = (): void => {
+      this.saveMultipleNotes(notes, fileName);
+    };
+
     if (accountNumber && accountNumber.trim().length > 0) {
       this.userService.getUserById(this.userId).subscribe({
         next: (user) => {
           this.debug.log(`🔍 Validating account number: PDF has "${accountNumber}", User has "${user.account_number}"`);
-          
-          // Normalize account numbers (remove spaces, hyphens, etc.)
+
           const pdfAccountNormalized = accountNumber.trim().replace(/[-\s]/g, '');
           const userAccountNormalized = user.account_number.trim().replace(/[-\s]/g, '');
-          
+
           if (pdfAccountNormalized !== userAccountNormalized) {
             const errorMsg = `❌ Erro de validação: O número da conta no PDF (${accountNumber}) não corresponde à conta do usuário selecionado (${user.account_number}).\n\nPor favor, verifique se você está fazendo upload da nota correta para o usuário correto.\n\nOperações não serão salvas.`;
             this.debug.error(errorMsg);
             alert(errorMsg);
             return;
           }
-          
-          // Account number matches, proceed with validation and saving
-          this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+          doSave();
         },
         error: (error) => {
           this.debug.error('❌ Error loading user for account validation:', error);
-          // If we can't load user, warn but allow (in case account_number is not critical)
           this.debug.warn('⚠️ Could not validate account number, proceeding anyway');
-          this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+          doSave();
         }
       });
     } else {
-      // No account number extracted - warn but allow (some PDFs might not have it clearly visible)
       this.debug.warn('⚠️ No account number found in PDF, skipping account validation');
-      this.proceedWithNoteSave(operations, expectedOperationsCount ?? null, financialSummary, fileName);
+      doSave();
     }
   }
-  
-  private proceedWithNoteSave(operations: Operation[], expectedOperationsCount: number | null, financialSummary: FinancialSummary | undefined, fileName: string | undefined): void {
+
+  private saveMultipleNotes(notes: OperationsAddedEvent['notes'], fileName: string | undefined): void {
+    const notesToSave = notes.filter(n => n.operations.length > 0);
+    const total = notesToSave.length;
+    const savedNoteNumbers: string[] = [];
+    let hadError = false;
+
+    const saveNext = (index: number): void => {
+      if (index >= total) {
+        if (hadError) {
+          alert('Uma ou mais notas não puderam ser importadas.');
+          return;
+        }
+        this.loadData();
+        setTimeout(() => {
+          if (this.historyListComponent) {
+            this.historyListComponent.loadHistory();
+          }
+        }, 100);
+        if (savedNoteNumbers.length === 1) {
+          this.debug.log('✅ Nota importada:', savedNoteNumbers[0]);
+        } else if (savedNoteNumbers.length > 1) {
+          this.debug.log('✅ Notas importadas:', savedNoteNumbers.join(', '));
+          alert(`Notas ${savedNoteNumbers.join(' e ')} importadas com sucesso.`);
+        }
+        return;
+      }
+
+      const noteResult = notesToSave[index];
+      this.proceedWithNoteSave(
+        noteResult.operations,
+        noteResult.expectedOperationsCount ?? null,
+        noteResult.financialSummary,
+        fileName,
+        (savedNote) => {
+          if (savedNote?.note_number) savedNoteNumbers.push(savedNote.note_number);
+          saveNext(index + 1);
+        },
+        (err: unknown) => {
+          hadError = true;
+          const e = err as { status?: number; error?: { message?: string }; message?: string };
+          const msg = e?.error?.message || e?.message || 'Erro ao salvar nota.';
+          alert(`⚠️ ${msg}\n\nAs demais notas serão processadas.`);
+          saveNext(index + 1);
+        }
+      );
+    };
+
+    saveNext(0);
+  }
+
+  private proceedWithNoteSave(
+    operations: Operation[],
+    expectedOperationsCount: number | null,
+    financialSummary: FinancialSummary | undefined,
+    fileName: string | undefined,
+    onSuccess?: (savedNote: BrokerageNote) => void,
+    onError?: (err: unknown) => void
+  ): void {
     // Validate operations count if expected count is available
     if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
       const errorMsg = `Validação falhou: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${operations.length} foram processadas. Operações não serão salvas.`;
       this.debug.error(`❌ ${errorMsg}`);
       alert(errorMsg);
+      if (onError) {
+        onError(new Error(errorMsg));
+      }
       return;
     }
 
@@ -508,59 +569,62 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     this.historyService.addNote(note).subscribe({
       next: (savedNote) => {
         this.debug.log('✅ Brokerage note saved successfully:', savedNote);
-        
-        // Validate operations count after saving (double-check)
+
         if (expectedOperationsCount !== null && savedNote.operations_count !== expectedOperationsCount) {
           const errorMsg = `Validação falhou após salvar: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${savedNote.operations_count} foram salvas. A nota será removida.`;
           this.debug.error(`❌ ${errorMsg}`);
-          
-          // Rollback: Delete the note that was just saved
           if (savedNote.id) {
             this.historyService.deleteNote(savedNote.id).subscribe({
               next: () => {
                 this.debug.log('✅ Note deleted due to validation failure');
-                alert(errorMsg);
+                if (!onError) alert(errorMsg);
+                else onError(new Error(errorMsg));
               },
               error: (deleteError) => {
                 this.debug.error('❌ Error deleting note during rollback:', deleteError);
-                alert(`${errorMsg}\n\nErro ao remover a nota. Por favor, remova manualmente a nota ${savedNote.note_number} de ${savedNote.note_date}.`);
+                if (!onError) alert(`${errorMsg}\n\nErro ao remover a nota. Por favor, remova manualmente a nota ${savedNote.note_number} de ${savedNote.note_date}.`);
+                else onError(deleteError);
               }
             });
           } else {
-            alert(errorMsg);
+            if (!onError) alert(errorMsg);
+            else onError(new Error(errorMsg));
           }
-          
-          // Don't reload data or history if validation failed
           return;
         }
-        
-        this.loadData();
-        // Reload history list to show the new note
-        // Use setTimeout to ensure ViewChild is available (if tab is active)
-        setTimeout(() => {
-          if (this.historyListComponent) {
-            this.debug.log('🔄 Reloading history list after note addition');
-            this.historyListComponent.loadHistory();
-          } else {
-            this.debug.warn('⚠️ HistoryListComponent not available - list will refresh on next tab switch');
-          }
-        }, 100);
+
+        if (onSuccess) {
+          onSuccess(savedNote);
+        } else {
+          this.loadData();
+          setTimeout(() => {
+            if (this.historyListComponent) {
+              this.debug.log('🔄 Reloading history list after note addition');
+              this.historyListComponent.loadHistory();
+            } else {
+              this.debug.warn('⚠️ HistoryListComponent not available - list will refresh on next tab switch');
+            }
+          }, 100);
+        }
       },
       error: (error) => {
         this.debug.error('❌ Error saving brokerage note:', error);
-
-        if (error.status === 409) {
-          const errorMessage = error.error?.message || 'This brokerage note has already been processed.';
-          alert(`⚠️ ${errorMessage}\n\nOperations were NOT added to portfolio.`);
-        } else if (error.status === 400) {
-          const validationErrors = error.error?.details || error.error || {};
-          const errorDetails = typeof validationErrors === 'string'
-            ? validationErrors
-            : JSON.stringify(validationErrors, null, 2);
-          alert(`❌ Validation error:\n\n${errorDetails}\n\nOperations were NOT added to portfolio.`);
+        if (onError) {
+          onError(error);
         } else {
-          const errorMsg = error.error?.error || error.error?.message || error.message || 'Unknown error';
-          alert(`❌ Error saving note: ${errorMsg}\n\nOperations were NOT added to portfolio.\n\nMake sure the Django server is running on port 8000.`);
+          if (error?.status === 409) {
+            const errorMessage = error?.error?.message || 'This brokerage note has already been processed.';
+            alert(`⚠️ ${errorMessage}\n\nOperations were NOT added to portfolio.`);
+          } else if (error?.status === 400) {
+            const validationErrors = error?.error?.details || error?.error || {};
+            const errorDetails = typeof validationErrors === 'string'
+              ? validationErrors
+              : JSON.stringify(validationErrors, null, 2);
+            alert(`❌ Validation error:\n\n${errorDetails}\n\nOperations were NOT added to portfolio.`);
+          } else {
+            const errorMsg = error?.error?.error || error?.error?.message || error?.message || 'Unknown error';
+            alert(`❌ Error saving note: ${errorMsg}\n\nOperations were NOT added to portfolio.\n\nMake sure the Django server is running on port 8000.`);
+          }
         }
       }
     });

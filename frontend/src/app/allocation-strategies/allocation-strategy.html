@@ -114,7 +114,7 @@
                                   disabled
                                   class="readonly-input"
                                 />
-                              } @else if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0) {
+                              } @else if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0) {
                                 <!-- Has subtypes: show subtype total as readonly -->
                                 <input
                                   type="number"
@@ -149,7 +149,7 @@
                         </div>
                       </div>
 
-                      @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id).length > 0 && !isFIIInvestmentType(typeAlloc)) {
+                      @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0 && !isFIIInvestmentType(typeAlloc)) {
                         <div class="sub-allocations">
                           @if (!isSubTypeTotalValid(typeAlloc)) {
                             <div class="validation-banner small invalid">
@@ -157,7 +157,7 @@
                               <span>Os subtipos precisam somar {{ typeAlloc.target_percentage | number:'1.0-2' }}% (mesmo valor do tipo)</span>
                             </div>
                           }
-                          @for (subType of getSubTypesForInvestmentType(typeAlloc.investment_type_id); track subType.id; let subIndex = $index) {
+                          @for (subType of getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code); track subType.id; let subIndex = $index) {
                             <div class="allocation-table-row">
                               <div class="allocation-name-col">
                                 <span class="subtype-name">{{ subType.name }}</span>

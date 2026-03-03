@@ -531,6 +531,23 @@ class AllocationStrategyService:
                 type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
                 type_values[type_id]['current_value'] += position_value
         
+        # Ensure Renda Fixa type includes ETF_RENDA_FIXA subtype (so UI can show Valor Atual even when 0)
+        try:
+            from configuration.models import InvestmentSubType
+            etf_renda_fixa = InvestmentSubType.objects.filter(
+                code='ETF_RENDA_FIXA', is_active=True
+            ).select_related('investment_type').first()
+            if etf_renda_fixa and renda_fixa_type and renda_fixa_type.id in type_values:
+                sid = etf_renda_fixa.id
+                if sid not in type_values[renda_fixa_type.id]['sub_types']:
+                    type_values[renda_fixa_type.id]['sub_types'][sid] = {
+                        'sub_type_id': sid,
+                        'sub_type_name': etf_renda_fixa.name,
+                        'current_value': Decimal('0'),
+                    }
+        except Exception:
+            pass
+
         # Calculate percentages for types and subtypes
         investment_types = []
         for type_id, type_data in type_values.items():

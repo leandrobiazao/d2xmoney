@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
+import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * TC-006, TC-007: Brokerage Note Processing Tests
+ * Multi-note: TC-multi-note when e2e/fixtures/multi-note.pdf exists
  */
 
 /**
@@ -172,6 +175,37 @@ test.describe('Brokerage Note Processing', () => {
       // Component may not be visible initially, but should exist
       // In real scenario, would trigger it via PDF upload with unknown ticker
     }
+  });
+
+  test('Multi-note PDF: when fixture exists, two notes are created', async ({ page }) => {
+    const fixturePath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'multi-note.pdf');
+    test.skip(!fs.existsSync(fixturePath), `Fixture not found: e2e/fixtures/multi-note.pdf. See e2e/fixtures/README-multi-note.md.`);
+
+    await page.waitForSelector('app-user-list', { state: 'visible' });
+    const userItems = page.locator('app-user-item');
+    const userCount = await userItems.count();
+    if (userCount === 0) {
+      test.skip(true, 'Requires at least one user');
+      return;
+    }
+    await userItems.first().click();
+    await expect(page.locator('app-portfolio')).toBeVisible();
+
+    await page.locator('button.tab-button:has-text("Histórico de Notas")').click();
+    await expect(page.locator('app-history-list')).toBeVisible();
+    await page.waitForTimeout(1500);
+    const beforeRows = page.locator('app-history-list tbody tr');
+    const countBefore = await beforeRows.count();
+
+    const fileInput = page.locator('app-upload-pdf input[type="file"]').first();
+    await expect(fileInput).toHaveCount(1);
+    page.once('dialog', d => d.accept());
+    await fileInput.setInputFiles(fixturePath);
+    await page.waitForTimeout(5000);
+
+    const afterRows = page.locator('app-history-list tbody tr');
+    const countAfter = await afterRows.count();
+    expect(countAfter).toBeGreaterThanOrEqual(countBefore + 2);
   });
 });
 
