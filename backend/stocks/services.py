@@ -1,8 +1,8 @@
 """
 Service for managing stock catalog.
 """
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import List, Dict, Optional, Iterable
+from datetime import datetime, timedelta
 import time
 import requests
 import yfinance as yf
@@ -124,6 +124,54 @@ class StockService:
             'total': stocks.count(),
             'errors': errors
         }
+    
+    # Cache window: skip fetching if price was updated within this many minutes
+    REFRESH_CACHE_MINUTES = 15
+    
+    @staticmethod
+    def refresh_prices_for_tickers(
+        tickers: Iterable[str],
+        market: str = 'B3',
+        skip_if_updated_within_minutes: Optional[int] = None
+    ) -> Dict[str, int]:
+        """
+        Fetch current price from yfinance and update Stock.current_price for each ticker.
+        Used before generating rebalancing recommendations so quantities use up-to-date prices.
+        
+        Args:
+            tickers: Ticker symbols to refresh.
+            market: Financial market (default 'B3' for Brazilian stocks).
+            skip_if_updated_within_minutes: If set (e.g. 15), skip fetch for tickers whose
+                Stock.last_updated is within this many minutes to avoid redundant API calls.
+        
+        Returns:
+            Summary dict with keys: updated, skipped, failed.
+        """
+        if skip_if_updated_within_minutes is None:
+            skip_if_updated_within_minutes = StockService.REFRESH_CACHE_MINUTES
+        summary = {'updated': 0, 'skipped': 0, 'failed': 0}
+        time_threshold = timezone.now() - timedelta(minutes=skip_if_updated_within_minutes)
+        
+        for ticker in tickers:
+            if not ticker:
+                continue
+            try:
+                stock = StockService.get_stock_by_ticker(ticker)
+                if stock and stock.last_updated and stock.last_updated >= time_threshold:
+                    summary['skipped'] += 1
+                    continue
+                price = StockService.fetch_price_from_google_finance(ticker, market)
+                if price is not None and price > 0:
+                    if StockService.update_stock_price(ticker, price):
+                        summary['updated'] += 1
+                    else:
+                        summary['failed'] += 1
+                else:
+                    summary['failed'] += 1
+            except Exception as e:
+                print(f"Error refreshing price for {ticker}: {e}")
+                summary['failed'] += 1
+        return summary
     
     @staticmethod
     def fetch_stock_info_from_yfinance(ticker: str, market: str = 'B3') -> Optional[Dict]:

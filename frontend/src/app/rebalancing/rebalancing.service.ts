@@ -10,6 +10,7 @@ export interface RebalancingAction {
     ticker: string;
     name: string;
     stock_class?: string;
+    current_price?: number;
     investment_type?: {
       id: number;
       name: string;

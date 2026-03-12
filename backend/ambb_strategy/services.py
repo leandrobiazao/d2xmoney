@@ -119,6 +119,11 @@ class AMBBStrategyService:
         positions = PortfolioPosition.objects.filter(user_id=str(user.id))
         portfolio_tickers = {pos.ticker: pos for pos in positions if pos.quantidade > 0}
         
+        # Refresh current prices from yfinance for all tickers involved (portfolio + AMBB candidates)
+        # so recommended quantities use up-to-date prices
+        all_tickers = set(portfolio_tickers.keys()) | {s['codigo'] for s in ambb_reais_stocks}
+        StockService.refresh_prices_for_tickers(all_tickers, 'B3')
+        
         # Filter portfolio stocks to only "Ações em Reais" type
         portfolio_stocks = {}
         for ticker in portfolio_tickers.keys():
@@ -642,6 +647,112 @@ class AMBBStrategyService:
                 total_partial_sales += sale_value
         
         total_all_sales = total_sales_value + total_partial_sales
+        
+        # Cap buy recommendations by type-level buy budget (so total buys <= target - value_after_sales)
+        current_acoes_reais_value = sum(
+            portfolio_stocks[ticker]['current_value']
+            for ticker in portfolio_stocks
+        )
+        value_after_sales = current_acoes_reais_value - total_all_sales
+        buy_budget = max(Decimal('0'), acoes_reais_target_total - value_after_sales)
+        
+        total_recommended_buys = Decimal('0')
+        for b in formatted_buys:
+            total_recommended_buys += Decimal(str(b['target_value']))
+        for balance_item in stocks_to_balance:
+            qty = balance_item.get('quantity_to_adjust', 0) or 0
+            if qty > 0:
+                price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
+                total_recommended_buys += Decimal(str(qty)) * price
+        
+        if buy_budget <= 0:
+            # Zero out all buys
+            formatted_buys.clear()
+            for balance_item in stocks_to_balance:
+                cv = balance_item.get('current_value', 0)
+                qty = balance_item.get('quantity_to_adjust', 0) or 0
+                is_new = cv is None or (isinstance(cv, (int, float)) and cv <= 0.01)
+                if is_new or qty > 0:
+                    balance_item['quantity_to_adjust'] = 0
+                    if is_new:
+                        balance_item['target_value'] = 0.0
+                        balance_item['difference'] = 0.0
+        elif total_recommended_buys > buy_budget and buy_budget > 0:
+            # Step 1: Distribute buy_budget to Comprar (new stocks) only
+            N_new = len(formatted_buys)
+            if N_new > 0:
+                slice_new = buy_budget / N_new
+                total_spent_on_new = Decimal('0')
+                for b in formatted_buys:
+                    price = Decimal(str(b['current_price'])) if b.get('current_price') else Decimal('0')
+                    qty = int(slice_new / price) if price > 0 else 0
+                    b['target_value'] = float(slice_new)
+                    b['target_quantity'] = qty
+                    total_spent_on_new += Decimal(str(qty)) * price
+                
+                # Sync stocks_to_balance entries for new stocks (current_value == 0)
+                formatted_buys_by_ticker = {b['ticker']: b for b in formatted_buys}
+                for balance_item in stocks_to_balance:
+                    if balance_item.get('current_value', 0) == 0 or (isinstance(balance_item.get('current_value'), (int, float)) and balance_item['current_value'] <= 0.01):
+                        ticker = balance_item.get('ticker')
+                        if ticker in formatted_buys_by_ticker:
+                            fb = formatted_buys_by_ticker[ticker]
+                            balance_item['target_value'] = fb['target_value']
+                            balance_item['difference'] = fb['target_value']
+                            balance_item['quantity_to_adjust'] = fb['target_quantity']
+                
+                # Step 2: Remaining budget for Rebalancear (buy more for existing stocks)
+                remaining_budget = buy_budget - total_spent_on_new
+                keep_buy_more = [
+                    (i, balance_item) for i, balance_item in enumerate(stocks_to_balance)
+                    if (balance_item.get('current_value') or 0) > 0.01 and (balance_item.get('quantity_to_adjust') or 0) > 0
+                ]
+                if remaining_budget > 0 and keep_buy_more:
+                    # Distribute remaining_budget equally among keep stocks that need buy more
+                    n_keep = len(keep_buy_more)
+                    slice_keep = remaining_budget / n_keep
+                    for i, balance_item in keep_buy_more:
+                        price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
+                        if price <= 0:
+                            stocks_to_balance[i]['quantity_to_adjust'] = 0
+                            continue
+                        qty = int(slice_keep / price)
+                        if qty <= 0:
+                            stocks_to_balance[i]['quantity_to_adjust'] = 0
+                            continue
+                        buy_amount = Decimal(str(qty)) * price
+                        current_val = Decimal(str(balance_item['current_value']))
+                        new_target = current_val + buy_amount
+                        stocks_to_balance[i]['target_value'] = float(new_target)
+                        stocks_to_balance[i]['difference'] = float(buy_amount)
+                        stocks_to_balance[i]['quantity_to_adjust'] = qty
+                elif keep_buy_more:
+                    for i, balance_item in keep_buy_more:
+                        stocks_to_balance[i]['quantity_to_adjust'] = 0
+            else:
+                # No new stocks: distribute full buy_budget to Rebalancear buy-more
+                keep_buy_more = [
+                    (i, balance_item) for i, balance_item in enumerate(stocks_to_balance)
+                    if (balance_item.get('current_value') or 0) > 0.01 and (balance_item.get('quantity_to_adjust') or 0) > 0
+                ]
+                if keep_buy_more:
+                    n_keep = len(keep_buy_more)
+                    slice_keep = buy_budget / n_keep
+                    for i, balance_item in keep_buy_more:
+                        price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
+                        if price <= 0:
+                            stocks_to_balance[i]['quantity_to_adjust'] = 0
+                            continue
+                        qty = int(slice_keep / price)
+                        if qty <= 0:
+                            stocks_to_balance[i]['quantity_to_adjust'] = 0
+                            continue
+                        buy_amount = Decimal(str(qty)) * price
+                        current_val = Decimal(str(balance_item['current_value']))
+                        new_target = current_val + buy_amount
+                        stocks_to_balance[i]['target_value'] = float(new_target)
+                        stocks_to_balance[i]['difference'] = float(buy_amount)
+                        stocks_to_balance[i]['quantity_to_adjust'] = qty
         
         return {
             'stocks_to_sell': formatted_sells,

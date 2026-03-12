@@ -747,9 +747,13 @@ class RebalancingService:
                             current_quantity = 0
                             
                             if berk34_position:
-                                # Use valor_total_investido as current value (or could use current_price * quantity)
-                                current_value = Decimal(str(berk34_position.valor_total_investido))
                                 current_quantity = berk34_position.quantidade
+                                # Use current market value (quantity × current_price) for "Valor Atual" display
+                                current_price = berk34_stock.current_price or Decimal('0')
+                                if current_price and current_price > 0:
+                                    current_value = Decimal(str(current_quantity)) * current_price
+                                else:
+                                    current_value = Decimal(str(berk34_position.valor_total_investido))
                             
                             difference = target_value - current_value
                             
