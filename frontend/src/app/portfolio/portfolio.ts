@@ -15,6 +15,7 @@ import { HistoryListComponent } from '../brokerage-history/history-list/history-
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
 import { CryptoComponent } from '../crypto/crypto.component';
 import { FIIListComponent } from '../fiis/fiis-list.component';
+import { AllocationStrategyService } from '../allocation-strategies/allocation-strategy.service';
 import { StocksService } from '../configuration/stocks/stocks.service';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Stock } from '../configuration/stocks/stocks.models';
@@ -42,6 +43,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   // Grouped positions by investment type
   groupedPositions: Map<string, Position[]> = new Map();
   investmentTypeNames: Map<string, string> = new Map();
+
+  /** Current allocation from API (used so Valor Atual matches allocation strategy panel). */
+  allocationCurrent: { investment_types?: any[]; total_value?: number } | null = null;
   
   // Ticker to investment type mapping
   private tickerToInvestmentType: Map<string, InvestmentType> = new Map();
@@ -57,6 +61,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     private portfolioService: PortfolioService,
     private historyService: BrokerageHistoryService,
     private stocksService: StocksService,
+    private allocationStrategyService: AllocationStrategyService,
     private http: HttpClient,
     private debug: DebugService,
     private userService: UserService
@@ -127,6 +132,19 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     // Clear existing data immediately when loading for a new user
     this.operations = [];
     this.positions = [];
+    this.allocationCurrent = null;
+
+    // Load current allocation so "Valor Atual" in Ações tab matches allocation strategy panel
+    this.allocationStrategyService.getCurrentVsTarget(loadingUserId).subscribe({
+      next: (data) => {
+        if (this.userId !== loadingUserId) return;
+        this.allocationCurrent = data?.current ?? null;
+      },
+      error: () => {
+        if (this.userId !== loadingUserId) return;
+        this.allocationCurrent = null;
+      }
+    });
 
     this.portfolioService.getOperationsAsync(loadingUserId).subscribe({
       next: (operations) => {
@@ -699,6 +717,59 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
 
   getTotalValorAtualForGroup(positions: Position[]): number {
     return positions.reduce((sum, pos) => sum + (pos.valorAtual || 0), 0);
+  }
+
+  /**
+   * Valor Atual for a group: use allocation API value when available so it matches
+   * the allocation strategy panel; otherwise use sum of positions.
+   */
+  getValorAtualForGroup(group: { key: string; name: string; positions: Position[] }): number {
+    const types = this.allocationCurrent?.investment_types;
+    if (types?.length && group.key !== 'unclassified') {
+      const typeId = Number(group.key);
+      if (!Number.isNaN(typeId)) {
+        const typeData = types.find((t: any) => t.investment_type_id === typeId || t.investment_type_id == group.key);
+        if (typeData != null && typeData.current_value != null) {
+          return Number(typeData.current_value);
+        }
+      }
+    }
+    return this.getTotalValorAtualForGroup(group.positions);
+  }
+
+  /**
+   * For "Renda Variável em Dólares", returns crypto breakdown (e.g. BTC) from allocation API
+   * so they can be shown in the group table. Returns [] for other types or when no data.
+   */
+  getCryptoBreakdownForGroup(group: { key: string; name: string; positions: Position[] }): Array<{ label: string; value: number; invested: number; lucro: number }> {
+    const types = this.allocationCurrent?.investment_types;
+    if (!types?.length || group.key === 'unclassified') return [];
+    const typeId = Number(group.key);
+    if (Number.isNaN(typeId)) return [];
+    const typeData = types.find((t: any) => t.investment_type_id === typeId || t.investment_type_id == group.key);
+    if (!typeData?.sub_types?.length) return [];
+    const result: Array<{ label: string; value: number; invested: number; lucro: number }> = [];
+    for (const sub of typeData.sub_types) {
+      const breakdown = sub?.direct_crypto_breakdown;
+      if (!breakdown || typeof breakdown !== 'object') continue;
+      for (const [symbol, raw] of Object.entries(breakdown)) {
+        const value = typeof raw === 'object' && raw != null && 'value' in (raw as any)
+          ? Number((raw as any).value)
+          : Number(raw);
+        if (value <= 0) continue;
+        const name = typeof raw === 'object' && raw != null && (raw as any).name != null
+          ? String((raw as any).name)
+          : symbol;
+        const invested = typeof raw === 'object' && raw != null && 'invested' in (raw as any)
+          ? Number((raw as any).invested)
+          : 0;
+        const lucro = typeof raw === 'object' && raw != null && 'lucro' in (raw as any)
+          ? Number((raw as any).lucro)
+          : value - invested;
+        result.push({ label: name || symbol, value, invested, lucro });
+      }
+    }
+    return result.sort((a, b) => a.label.localeCompare(b.label));
   }
 
   getPercentageForGroup(positions: Position[]): number {

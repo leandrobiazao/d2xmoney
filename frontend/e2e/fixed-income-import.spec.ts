@@ -63,10 +63,12 @@ test.describe('Fixed Income Import - Liquidation Detection', () => {
     const positionsBefore = await page.locator('app-fixed-income-list .position-row').count();
     console.log(`Positions before import: ${positionsBefore}`);
 
-    // Step 4: Click Import button
+    // Step 4: Click Import button → modal → Selecionar ficheiro
     const importButton = page.locator('button:has-text("Importar Portfólio")');
     await expect(importButton).toBeVisible();
     await importButton.click();
+    await expect(page.getByRole('heading', { name: /Importar posição de Renda Fixa/i })).toBeVisible();
+    await page.locator('button:has-text("Selecionar ficheiro")').click();
 
     // Step 5: Wait for file input and upload test file
     // Note: In a real test, you'd need a test Excel file
@@ -166,9 +168,10 @@ test.describe('Fixed Income Import - Liquidation Detection', () => {
       }
     }
 
-    // Check for import button
     const importButton = page.locator('button:has-text("Importar Portfólio")');
     await expect(importButton).toBeVisible();
+    await importButton.click();
+    await expect(page.getByRole('heading', { name: /Importar posição de Renda Fixa/i })).toBeVisible();
 
     // Verify import UI elements exist
     // The actual file upload would happen here in a real test with a test file

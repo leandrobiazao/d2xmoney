@@ -11,7 +11,7 @@ The Portfolio Management System (d2xmoney) is a comprehensive full-stack applica
 - **Brokerage Note Processing**: Parse B3 brokerage note PDFs and extract trading operations
 - **Brokerage History**: Track and view history of processed brokerage notes
 - **Portfolio Summary**: View positions, operations, and portfolio analytics
-- **Fixed Income Management**: Track CDB, Tesouro Direto, and other fixed income investments
+- **Fixed Income Management**: Track CDB, Tesouro Direto, and other fixed income investments; Excel import escolhe formato BTG (Posição consolidada) ou XP (legado) conforme o utilizador
 - **Stock Catalog**: Master catalog of stocks with ticker symbols and pricing
 - **Investment Configuration**: Manage investment types and sub-types
 - **Allocation Strategies**: Define and manage portfolio allocation strategies
@@ -447,6 +447,7 @@ npm start
 - `GET /api/fixed-income/positions/{id}/` - Get position
 - `PUT /api/fixed-income/positions/{id}/` - Update position
 - `DELETE /api/fixed-income/positions/{id}/` - Delete position
+- `POST /api/fixed-income/positions/import-excel/` - Import positions from Excel (multipart: `file`, `user_id`; BTG vs XP conforme `User.account_provider`)
 - `GET /api/fixed-income/tesouro-direto/` - List Tesouro Direto positions
 - `POST /api/fixed-income/tesouro-direto/` - Create Tesouro Direto position
 

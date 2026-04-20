@@ -1,6 +1,5 @@
 import { Component, Input, OnInit, OnChanges, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { FixedIncomeService } from './fixed-income.service';
 import { FixedIncomePosition, ImportResult } from './fixed-income.models';
@@ -29,7 +28,6 @@ interface SubTypeGroup {
   standalone: true,
   imports: [
     CommonModule,
-    FormsModule,
     FixedIncomeDetailComponent
   ],
   templateUrl: './fixed-income-list.component.html',
@@ -54,6 +52,8 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   isImporting = false;
   importResult: ImportResult | null = null;
   importErrorMessage: string | null = null;
+  /** Modal step before native file picker (same botão Importar Portfólio). */
+  showImportModal = false;
 
   constructor(
     private fixedIncomeService: FixedIncomeService,
@@ -401,19 +401,28 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
 
   isCaixaPosition(position: FixedIncomePosition): boolean {
     // Check if position is CAIXA by asset_code or asset_name
-    return position.asset_code?.startsWith('CAIXA_') || 
-           position.asset_name?.toLowerCase().includes('caixa') ||
-           position.asset_name?.toLowerCase().includes('xp investimentos');
+    const n = position.asset_name?.toLowerCase() || '';
+    return position.asset_code?.startsWith('CAIXA_') ||
+           n.includes('caixa') ||
+           n.includes('conta corrente') ||
+           n.includes('xp investimentos');
   }
 
   onImportClick(): void {
-    if (this.fileInput) {
-      this.fileInput.nativeElement.click();
-    }
+    this.showImportModal = true;
+  }
+
+  closeImportModal(): void {
+    this.showImportModal = false;
+  }
+
+  triggerImportFilePicker(): void {
+    this.fileInput?.nativeElement.click();
   }
 
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
+    this.showImportModal = false;
     if (input.files && input.files.length > 0 && this.userId) {
       const file = input.files[0];
       this.importExcel(file);
@@ -450,7 +459,9 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
           if (result.debug_info && result.debug_info.length > 0) {
             debugInfo = '\n\nInformações de debug:\n' + result.debug_info.join('\n');
           }
-          this.importErrorMessage = 'Nenhum registro foi importado. Verifique se o arquivo contém dados válidos nas seções "RENDA FIXA" ou "TESOURO DIRETO".' + debugInfo;
+          this.importErrorMessage =
+            'Nenhum registro foi importado. Para XP, verifique as seções "RENDA FIXA" ou "TESOURO DIRETO". Para BTG Pactual, verifique a aba Renda Fixa após «Posições Detalhadas» e a aba Conta Corrente.' +
+            debugInfo;
         } else {
           // Success - refresh positions
           this.loadPositions();

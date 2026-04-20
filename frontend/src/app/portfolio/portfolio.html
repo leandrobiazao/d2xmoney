@@ -59,7 +59,7 @@
               <span class="label">Investido:</span>
               <span class="value">{{ formatCurrency(getTotalInvestidoForGroup(group.positions)) }}</span>
               <span class="label">Valor Atual:</span>
-              <span class="value">{{ formatCurrency(getTotalValorAtualForGroup(group.positions)) }}</span>
+              <span class="value">{{ formatCurrency(getValorAtualForGroup(group)) }}</span>
               <span class="label">Participação:</span>
               <span class="value">{{ getPercentageForGroup(group.positions).toFixed(2) }}%</span>
             </div>
@@ -89,6 +89,19 @@
                 <td>{{ position.valorAtual !== undefined ? formatCurrency(position.valorAtual) : 'N/A' }}</td>
                 <td [class.positive]="(position.totalLucro || 0) > 0" [class.negative]="(position.totalLucro || 0) < 0">
                   {{ formatCurrency(position.totalLucro || 0) }}
+                </td>
+              </tr>
+              }
+              @for (crypto of getCryptoBreakdownForGroup(group); track crypto.label) {
+              <tr class="crypto-row">
+                <td>{{ crypto.label }}</td>
+                <td>—</td>
+                <td>—</td>
+                <td>{{ formatCurrency(crypto.invested) }}</td>
+                <td>—</td>
+                <td>{{ formatCurrency(crypto.value) }}</td>
+                <td [class.positive]="(crypto.lucro || 0) > 0" [class.negative]="(crypto.lucro || 0) < 0">
+                  {{ formatCurrency(crypto.lucro || 0) }}
                 </td>
               </tr>
               }

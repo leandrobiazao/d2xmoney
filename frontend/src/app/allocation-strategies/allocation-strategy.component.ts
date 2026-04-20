@@ -2224,6 +2224,26 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
     return typeData ? Number(typeData.current_value || 0) : 0;
   }
 
+  /**
+   * When type has subtypes, return the sum of current values of the displayed subtypes
+   * so the type row Valor Atual equals the sum of subtype rows (same as Valor Alvo).
+   */
+  getCurrentTypeValueFromSubtypes(typeAlloc: any, typeIndex: number): number {
+    const typeId = typeAlloc?.investment_type_id;
+    const typeCode = typeAlloc?.investment_type?.code;
+    const subtypes = this.getSubTypesForInvestmentType(typeId, typeCode);
+    if (!subtypes?.length) return 0;
+    let sum = 0;
+    for (const subType of subtypes) {
+      if (this.isETFCryptoSubType(subType, typeCode)) {
+        sum += this.getCryptoSubTypeCurrentValueSum(typeId, typeIndex, subType.id);
+      } else {
+        sum += this.getCurrentSubTypeValue(typeId, subType.id, subType.name);
+      }
+    }
+    return sum;
+  }
+
   getCurrentSubTypeValue(typeId: number, subTypeId: number, subTypeName?: string): number {
     if (!this.currentAllocation?.current?.investment_types) {
       return 0;

@@ -9,6 +9,8 @@ import openpyxl
 from django.utils import timezone
 from .models import FixedIncomePosition, TesouroDiretoPosition
 from configuration.models import InvestmentType, InvestmentSubType
+from users.models import User
+from .btg_excel_import import import_btg_excel, user_is_btg
 
 
 class PortfolioExcelImportService:
@@ -485,7 +487,26 @@ class PortfolioExcelImportService:
     
     @staticmethod
     def import_from_excel(file_path: str, user_id: str) -> Dict:
-        """Import portfolio positions from Excel file."""
+        """Import portfolio positions from Excel file (BTG Pactual vs XP/legado)."""
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return {
+                'created': 0,
+                'updated': 0,
+                'errors': ['Utilizador não encontrado.'],
+                'cdb_count': 0,
+                'tesouro_count': 0,
+                'caixa_count': 0,
+                'debug_info': [],
+            }
+        if user_is_btg(user.account_provider):
+            return import_btg_excel(file_path, user_id)
+        return PortfolioExcelImportService._import_legacy_excel(file_path, user_id)
+
+    @staticmethod
+    def _import_legacy_excel(file_path: str, user_id: str) -> Dict:
+        """XP Investimentos / Posição consolidada numa folha (fluxo original)."""
         results = {
             'created': 0,
             'updated': 0,

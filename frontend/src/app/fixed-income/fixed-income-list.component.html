@@ -206,6 +206,25 @@
     }
   }
 
+  <!-- Import file modal (same entry as Importar Portfólio) -->
+  @if (showImportModal) {
+    <div class="modal-overlay import-file-modal" (click)="closeImportModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>Importar posição de Renda Fixa</h3>
+          <button type="button" class="btn-close" (click)="closeImportModal()" aria-label="Fechar">×</button>
+        </div>
+        <div class="modal-body import-file-modal-body">
+          <p>Selecione um ficheiro Excel (.xlsx ou .xls) exportado pela sua corretora. O processamento segue o formato do cliente (BTG Pactual ou XP Investimentos).</p>
+          <div class="import-file-actions">
+            <button type="button" class="btn-import" (click)="triggerImportFilePicker()">Selecionar ficheiro</button>
+            <button type="button" class="btn-import-secondary" (click)="closeImportModal()">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
   <!-- Detail Modal -->
   @if (selectedPosition) {
     <div class="modal-overlay" (click)="closeDetail()">

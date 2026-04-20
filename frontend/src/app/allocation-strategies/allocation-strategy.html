@@ -141,7 +141,11 @@
                             </div>
                           </div>
                           <div class="value-column">
-                            <span class="value-text current-value">R$ {{ getCurrentTypeValue(typeAlloc.investment_type_id) | number:'1.2-2' }}</span>
+                            @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0 && !isFIIInvestmentType(typeAlloc)) {
+                              <span class="value-text current-value">R$ {{ getCurrentTypeValueFromSubtypes(typeAlloc, typeIndex) | number:'1.2-2' }}</span>
+                            } @else {
+                              <span class="value-text current-value">R$ {{ getCurrentTypeValue(typeAlloc.investment_type_id) | number:'1.2-2' }}</span>
+                            }
                           </div>
                           <div class="value-column">
                             <span class="value-text target-value">R$ {{ getTargetTypeValue(typeAlloc) | number:'1.2-2' }}</span>

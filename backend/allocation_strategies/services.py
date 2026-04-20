@@ -556,7 +556,9 @@ class AllocationStrategyService:
                 position_value = Decimal(str(crypto_position.quantity)) * (
                     current_price if current_price else Decimal(str(crypto_position.average_price))
                 )
-                
+                invested = Decimal(str(crypto_position.quantity)) * Decimal(str(crypto_position.average_price))
+                lucro = position_value - invested
+
                 if subtype_id not in type_values[type_id]['sub_types']:
                     type_values[type_id]['sub_types'][subtype_id] = {
                         'sub_type_id': subtype_id,
@@ -573,9 +575,14 @@ class AllocationStrategyService:
                 if 'direct_crypto_breakdown' not in subtype_data:
                     subtype_data['direct_crypto_breakdown'] = {}
                 if symbol not in subtype_data['direct_crypto_breakdown']:
-                    subtype_data['direct_crypto_breakdown'][symbol] = {'value': Decimal('0'), 'name': name}
+                    subtype_data['direct_crypto_breakdown'][symbol] = {
+                        'value': Decimal('0'), 'name': name,
+                        'invested': Decimal('0'), 'lucro': Decimal('0')
+                    }
                 subtype_data['direct_crypto_breakdown'][symbol]['value'] += position_value
                 subtype_data['direct_crypto_breakdown'][symbol]['name'] = name
+                subtype_data['direct_crypto_breakdown'][symbol]['invested'] += invested
+                subtype_data['direct_crypto_breakdown'][symbol]['lucro'] += lucro
                 type_values[type_id]['current_value'] += position_value
         
         # Ensure subtype has direct_crypto_value and direct_crypto_breakdown when created only from stocks
@@ -633,9 +640,14 @@ class AllocationStrategyService:
                     result = {}
                     for k, v in subtype_data['direct_crypto_breakdown'].items():
                         if isinstance(v, dict) and 'value' in v:
-                            result[k] = {'value': float(v['value']), 'name': v.get('name') or k}
+                            result[k] = {
+                                'value': float(v['value']),
+                                'name': v.get('name') or k,
+                                'invested': float(v.get('invested', 0)),
+                                'lucro': float(v.get('lucro', 0)),
+                            }
                         else:
-                            result[k] = {'value': float(v), 'name': k}
+                            result[k] = {'value': float(v), 'name': k, 'invested': 0, 'lucro': 0}
                     subtype_data['direct_crypto_breakdown'] = result
                 sub_types_list.append(subtype_data)
             

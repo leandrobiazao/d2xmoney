@@ -83,7 +83,7 @@ The system consists of:
     - Fixed income positions
     - CDB management
     - Tesouro Direto tracking
-    - Portfolio import from Excel
+    - Portfolio import from Excel (XP legado vs BTG Pactual: abas Renda Fixa / Conta Corrente, modal no frontend)
 
 ### Database & Testing
 
@@ -126,7 +126,7 @@ The system consists of:
 
 ### Data Management
 - SQLite database for all data
-- Excel import for fixed income positions
+- Excel import for fixed income positions (corretora inferida pelo utilizador: BTG vs XP/legado)
 - Google Sheets integration for Clube do Valor
 - Ticker mapping system
 
