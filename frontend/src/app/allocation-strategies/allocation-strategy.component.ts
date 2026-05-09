@@ -1512,21 +1512,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       const rebalanceActions = this.getAcoesReaisRebalanceActions();
       rebalanceActions.forEach((action) => {
         if (action.stock) {
-          if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+          const sellQty = this.rebalanceExcelSellQuantity(action);
+          if (sellQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'V',
-              'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+              'QTDE': -sellQty,
               'VOLUME R$': '', // Empty as per example
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
             });
           }
-          if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+          const buyQty = this.rebalanceExcelBuyQuantity(action);
+          if (buyQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'C',
-              'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+              'QTDE': buyQty,
               'VOLUME R$': '', // Empty as per example
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
@@ -1569,21 +1571,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       const fiiRebalanceActions = this.getFIIRebalanceActions();
       fiiRebalanceActions.forEach((action) => {
         if (action.stock) {
-          if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+          const sellQty = this.rebalanceExcelSellQuantity(action);
+          if (sellQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'V',
-              'QTDE': -Math.abs(action.quantity_to_sell),
+              'QTDE': -sellQty,
               'VOLUME R$': '',
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
             });
           }
-          if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+          const buyQty = this.rebalanceExcelBuyQuantity(action);
+          if (buyQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'C',
-              'QTDE': Math.abs(action.quantity_to_buy),
+              'QTDE': buyQty,
               'VOLUME R$': '',
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
@@ -1620,21 +1624,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
           }
           // Process rebalance actions
           if (action.action_type === 'rebalance') {
-            if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+            const sellQty = this.rebalanceExcelSellQuantity(action);
+            if (sellQty > 0) {
               allOrders.push({
                 'TICKER': action.stock.ticker,
                 'C/V': 'V',
-                'QTDE': -Math.abs(action.quantity_to_sell), // Negative for sells
+                'QTDE': -sellQty,
                 'VOLUME R$': '', // Empty as per example
                 'CONTA': accountNumber,
                 'PREÇO': 'MERCADO'
               });
             }
-            if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+            const buyQty = this.rebalanceExcelBuyQuantity(action);
+            if (buyQty > 0) {
               allOrders.push({
                 'TICKER': action.stock.ticker,
                 'C/V': 'C',
-                'QTDE': Math.abs(action.quantity_to_buy), // Positive for buys
+                'QTDE': buyQty,
                 'VOLUME R$': '', // Empty as per example
                 'CONTA': accountNumber,
                 'PREÇO': 'MERCADO'
@@ -1649,23 +1655,23 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       console.log('ETF Renda Fixa actions for Excel export:', etfRendaFixaActions);
       etfRendaFixaActions.forEach((action) => {
         if (action.stock) {
-          // Process any action with quantity_to_sell
-          if (action.quantity_to_sell && action.quantity_to_sell > 0) {
+          const sellQty = this.rebalanceExcelSellQuantity(action);
+          if (sellQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'V',
-              'QTDE': -Math.abs(action.quantity_to_sell),
+              'QTDE': -sellQty,
               'VOLUME R$': '',
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
             });
           }
-          // Process any action with quantity_to_buy
-          if (action.quantity_to_buy && action.quantity_to_buy > 0) {
+          const buyQty = this.rebalanceExcelBuyQuantity(action);
+          if (buyQty > 0) {
             allOrders.push({
               'TICKER': action.stock.ticker,
               'C/V': 'C',
-              'QTDE': Math.abs(action.quantity_to_buy),
+              'QTDE': buyQty,
               'VOLUME R$': '',
               'CONTA': accountNumber,
               'PREÇO': 'MERCADO'
@@ -2323,6 +2329,75 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       const bOrder = b.subtypeActions.length > 0 ? (b.subtypeActions[0].display_order || 0) : 999999;
       return aOrder - bOrder;
     });
+  }
+
+  /**
+   * Sell-side badge when quantity_to_sell is missing but difference is negative (indicative ~qty from R$ gap / price).
+   */
+  rebalanceSellLabel(action: RebalancingAction): string {
+    const qSell = action.quantity_to_sell != null ? Math.abs(Number(action.quantity_to_sell)) : 0;
+    if (qSell > 0) {
+      return `Vender ${qSell}`;
+    }
+    const price = action.stock?.current_price;
+    if (action.difference >= 0) {
+      return 'Vender';
+    }
+    if (price != null && price > 0) {
+      const qty = Math.floor(Math.abs(action.difference) / price);
+      if (qty > 0) {
+        return `Vender ~${qty}`;
+      }
+    }
+    return 'Vender';
+  }
+
+  /**
+   * Buy-side badge when quantity_to_buy is missing but difference is positive (indicative ~qty from R$ gap / price).
+   */
+  rebalanceBuyLabel(action: RebalancingAction): string {
+    const qBuy = action.quantity_to_buy != null ? Math.abs(Number(action.quantity_to_buy)) : 0;
+    if (qBuy > 0) {
+      return `Comprar ${qBuy}`;
+    }
+    const price = action.stock?.current_price;
+    if (action.difference <= 0) {
+      return 'Comprar';
+    }
+    if (price != null && price > 0) {
+      const qty = Math.floor(Math.abs(action.difference) / price);
+      if (qty > 0) {
+        return `Comprar ~${qty}`;
+      }
+    }
+    return 'Comprar';
+  }
+
+  /**
+   * Quantidades para o Excel alinhadas ao ecrã: lotes explícitos ou floor(|diff|/preço).
+   */
+  rebalanceExcelSellQuantity(action: RebalancingAction): number {
+    const explicit = action.quantity_to_sell != null ? Math.abs(Number(action.quantity_to_sell)) : 0;
+    if (explicit > 0) {
+      return Math.floor(explicit);
+    }
+    const price = action.stock?.current_price;
+    if (action.difference < 0 && price != null && price > 0) {
+      return Math.floor(Math.abs(action.difference) / price);
+    }
+    return 0;
+  }
+
+  rebalanceExcelBuyQuantity(action: RebalancingAction): number {
+    const explicit = action.quantity_to_buy != null ? Math.abs(Number(action.quantity_to_buy)) : 0;
+    if (explicit > 0) {
+      return Math.floor(explicit);
+    }
+    const price = action.stock?.current_price;
+    if (action.difference > 0 && price != null && price > 0) {
+      return Math.floor(Math.abs(action.difference) / price);
+    }
+    return 0;
   }
 
   // Expose Math for template

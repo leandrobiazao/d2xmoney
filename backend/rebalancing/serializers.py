@@ -202,25 +202,31 @@ class RebalancingRecommendationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'total_sales_value']
     
+    def _recommended_sales_total_brl(self, obj):
+        """Complete + partial sales implied by persisted actions (aligned with list views)."""
+        from decimal import Decimal
+        return (
+            Decimal(str(self.get_total_complete_sales_value(obj)))
+            + Decimal(str(self.get_total_partial_sales_value(obj)))
+        )
+    
     def get_sales_limit_remaining(self, obj):
-        """Calculate remaining sales limit (19,000 - previous_sales_this_month - total_sales_value)."""
+        """Remaining limit: 19k - vendas já feitas no mês - vendas recomendadas (completas + parciais)."""
         from decimal import Decimal
         
         limit = Decimal('19000.00')
-        
-        # Get previous sales this month from brokerage notes (Operations)
-        # Use the same method as get_previous_sales_this_month to ensure consistency
         previous_sales = Decimal(str(self.get_previous_sales_this_month(obj)))
-        
-        # Remaining = limit - previous sales (from brokerage notes) - current recommendation sales
-        remaining = limit - previous_sales - obj.total_sales_value
+        recommended = self._recommended_sales_total_brl(obj)
+        remaining = limit - previous_sales - recommended
         return float(max(remaining, Decimal('0')))
     
     def get_sales_limit_reached(self, obj):
-        """Check if sales limit (19,000) has been reached."""
+        """True when vendas do mês + recomendação atual alcançam o teto de R$ 19k."""
         from decimal import Decimal
         limit = Decimal('19000.00')
-        return obj.total_sales_value >= limit
+        previous_sales = Decimal(str(self.get_previous_sales_this_month(obj)))
+        recommended = self._recommended_sales_total_brl(obj)
+        return previous_sales + recommended >= limit
     
     def get_previous_sales_this_month(self, obj):
         """Calculate total sales already executed this month from brokerage notes (Operations)."""
@@ -290,32 +296,46 @@ class RebalancingRecommendationSerializer(serializers.ModelSerializer):
         return float(total)
     
     def get_total_partial_sales_value(self, obj):
-        """Calculate total value of partial sales (rebalance actions with quantity_to_sell)."""
+        """
+        Valor em R$ das vendas parciais em rebalanceamento.
+        - Com quantity_to_sell: quantidade × preço atual do papel.
+        - Sem quantidade (ex.: AMBB mantém qty=0 em ações bem ranqueadas): usa o fosso em R$
+          min(|difference|, current_value), alinhado à coluna «Dif.» da UI.
+        """
         from decimal import Decimal
         total = Decimal('0')
         for action in obj.actions.filter(action_type='rebalance'):
-            if action.quantity_to_sell and action.quantity_to_sell > 0:
-                # Calculate value: quantity_to_sell * current_price
-                # We need to get the current price from the stock
+            q = action.quantity_to_sell
+            if q is not None and int(q) > 0:
                 if action.stock and action.stock.current_price:
                     price = Decimal(str(action.stock.current_price))
-                    quantity = Decimal(str(abs(action.quantity_to_sell)))  # Use abs to ensure positive
-                    total += price * quantity
-                elif action.current_value > 0:
-                    # Fallback: estimate from current_value
-                    # If we have current_value, we can estimate the price per share
-                    # This is a rough estimate but better than nothing
-                    if action.stock and hasattr(action.stock, 'current_price') and action.stock.current_price:
-                        price = Decimal(str(action.stock.current_price))
-                        quantity = Decimal(str(abs(action.quantity_to_sell)))
-                        total += price * quantity
+                    total += price * Decimal(str(abs(int(q))))
+                continue
+            diff = action.difference
+            if diff is None:
+                continue
+            diff_dec = Decimal(str(diff))
+            if diff_dec >= 0:
+                continue
+            cur = Decimal(str(action.current_value or 0))
+            if cur <= 0:
+                continue
+            gap = abs(diff_dec)
+            total += min(gap, cur)
         return float(total)
     
     def get_partial_sales_count(self, obj):
-        """Count number of stocks with partial sales."""
-        return obj.actions.filter(
-            action_type='rebalance',
-            quantity_to_sell__isnull=False
-        ).exclude(quantity_to_sell=0).count()
+        """Linhas de rebalance com venda parcial explícita ou fosso negativo em R$."""
+        from decimal import Decimal
+        n = 0
+        for action in obj.actions.filter(action_type='rebalance'):
+            if action.quantity_to_sell is not None and int(action.quantity_to_sell) > 0:
+                n += 1
+                continue
+            if action.difference is None:
+                continue
+            if Decimal(str(action.difference)) < 0 and Decimal(str(action.current_value or 0)) > 0:
+                n += 1
+        return n
 
 
