@@ -124,7 +124,8 @@
   <div class="history-section">
     <div class="section-header-with-action">
       <h3>Histórico de Notas de Corretagem</h3>
-      <app-upload-pdf [clientId]="userId!" (operationsAdded)="onOperationsAdded($event)" />
+      <app-upload-pdf [clientId]="userId!" [accountProvider]="accountProvider"
+        (operationsAdded)="onOperationsAdded($event)" />
     </div>
     <app-history-list #historyList [userId]="userId" />
   </div>

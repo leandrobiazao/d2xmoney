@@ -15,6 +15,34 @@ class PortfolioService:
     """Service for managing portfolio summaries using Django ORM."""
     
     @staticmethod
+    def _price_from_description_reais(description: Optional[str]) -> Optional[Decimal]:
+        """First BRL amount in description (subscription / bonus price per share)."""
+        if not description:
+            return None
+        match = re.search(r'R\$\s*(\d+(?:[.,]\d+)?)', description, re.IGNORECASE)
+        if not match:
+            return None
+        try:
+            return Decimal(match.group(1).replace(',', '.'))
+        except (ValueError, AttributeError):
+            return None
+    
+    @staticmethod
+    def _subscription_user_from_description(description: Optional[str]) -> Optional[str]:
+        """
+        If description contains @user:<uuid>, the subscription applies only to that user during refresh.
+        Omit @user for a global subscription (every holder of the ticker).
+        """
+        if not description:
+            return None
+        match = re.search(r'@user:\s*([0-9a-fA-F-]{36})', description)
+        return match.group(1).lower() if match else None
+    
+    @staticmethod
+    def _normalize_user_id(user_id: Optional[str]) -> str:
+        return str(user_id).strip().lower() if user_id else ''
+    
+    @staticmethod
     def is_fii(ticker: str) -> bool:
         """
         Check if a ticker is a FII (Fundo Imobiliário).
@@ -440,7 +468,11 @@ class PortfolioService:
         return ticker_summaries
     
     @staticmethod
-    def process_operations_with_corporate_events(operations: List[Dict], events_by_ticker: Dict[str, List[CorporateEvent]]) -> Dict[str, Dict]:
+    def process_operations_with_corporate_events(
+        operations: List[Dict],
+        events_by_ticker: Dict[str, List[CorporateEvent]],
+        current_user_id: Optional[str] = None,
+    ) -> Dict[str, Dict]:
         """
         Process operations chronologically and apply corporate events when appropriate.
         
@@ -450,6 +482,7 @@ class PortfolioService:
         Args:
             operations: List of operations sorted chronologically
             events_by_ticker: Dict mapping ticker to list of CorporateEvent objects (sorted by ex_date)
+            current_user_id: User id for SUBSCRIPTION events scoped with @user: in the event description
         
         Returns:
             Dict mapping ticker to summary: {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
@@ -488,6 +521,15 @@ class PortfolioService:
                     
                     # Apply event if operation date is >= ex_date
                     if operation_date >= event.ex_date:
+                        if event.event_type == 'SUBSCRIPTION':
+                            scoped = PortfolioService._subscription_user_from_description(event.description)
+                            uid = PortfolioService._normalize_user_id(current_user_id)
+                            if scoped and uid and scoped != uid:
+                                if ticker not in applied_events:
+                                    applied_events[ticker] = []
+                                if event.id not in applied_events[ticker]:
+                                    applied_events[ticker].append(event.id)
+                                continue
                         # Initialize ticker summary if needed
                         if ticker not in ticker_summaries:
                             ticker_summaries[ticker] = {
@@ -638,12 +680,22 @@ class PortfolioService:
         
         # Apply any remaining corporate events that haven't been applied yet
         # This handles cases where all operations occurred before the ex-date
+        uid = PortfolioService._normalize_user_id(current_user_id)
         for ticker_key, events in events_by_ticker.items():
             ticker_upper = ticker_key.upper()
             for event in events:
                 # Skip if event already applied
                 if ticker_upper in applied_events and event.id in applied_events[ticker_upper]:
                     continue
+                
+                if event.event_type == 'SUBSCRIPTION':
+                    scoped = PortfolioService._subscription_user_from_description(event.description)
+                    if scoped and uid and scoped != uid:
+                        if ticker_upper not in applied_events:
+                            applied_events[ticker_upper] = []
+                        if event.id not in applied_events[ticker_upper]:
+                            applied_events[ticker_upper].append(event.id)
+                        continue
                 
                 # Check if ticker has a position (check both original and uppercase key)
                 ticker_in_summary = ticker_upper if ticker_upper in ticker_summaries else None
@@ -654,12 +706,30 @@ class PortfolioService:
                             ticker_in_summary = existing_ticker
                             break
                 
-                # If ticker has a position, apply the event
-                if ticker_in_summary and ticker_summaries[ticker_in_summary]['quantidade'] > 0:
+                if not ticker_in_summary and event.event_type == 'SUBSCRIPTION':
+                    ticker_summaries[ticker_upper] = {
+                        'quantidade': 0,
+                        'precoMedio': 0.0,
+                        'valorTotalInvestido': 0.0,
+                        'lucroRealizado': 0.0,
+                    }
+                    ticker_in_summary = ticker_upper
+                
+                if not ticker_in_summary:
+                    continue
+                
+                qty = ticker_summaries[ticker_in_summary]['quantidade']
+                if event.event_type == 'SUBSCRIPTION':
                     PortfolioService._apply_corporate_event_to_summary(
                         ticker_summaries[ticker_in_summary], event
                     )
-                    # Mark as applied
+                    if ticker_upper not in applied_events:
+                        applied_events[ticker_upper] = []
+                    applied_events[ticker_upper].append(event.id)
+                elif qty > 0:
+                    PortfolioService._apply_corporate_event_to_summary(
+                        ticker_summaries[ticker_in_summary], event
+                    )
                     if ticker_upper not in applied_events:
                         applied_events[ticker_upper] = []
                     applied_events[ticker_upper].append(event.id)
@@ -672,6 +742,7 @@ class PortfolioService:
         Apply a corporate event adjustment to a ticker summary dictionary.
         
         For grouping (reverse split): If resulting quantity < 1, the position is zeroed (sold at market).
+        For subscription: ratio N:1 adds N shares; first R$ amount in description is price per new share.
         """
         try:
             numerator, denominator = event.parse_ratio()
@@ -681,6 +752,34 @@ class PortfolioService:
         old_quantity = summary['quantidade']
         old_price = summary['precoMedio']
         old_total = summary['valorTotalInvestido']
+        
+        if event.event_type == 'SUBSCRIPTION':
+            new_shares = int(numerator)
+            if new_shares <= 0:
+                return
+            sub_price = PortfolioService._price_from_description_reais(event.description)
+            old_total_decimal = Decimal(str(old_total))
+            if old_quantity <= 0:
+                summary['quantidade'] = new_shares
+                if sub_price is not None:
+                    new_total = sub_price * new_shares
+                    summary['valorTotalInvestido'] = float(new_total)
+                    summary['precoMedio'] = float(sub_price)
+                else:
+                    summary['valorTotalInvestido'] = 0.0
+                    summary['precoMedio'] = 0.0
+                return
+            old_price_decimal = Decimal(str(old_price))
+            new_quantity = old_quantity + new_shares
+            if sub_price is not None:
+                new_total = old_total_decimal + sub_price * new_shares
+            else:
+                new_total = old_total_decimal
+            new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
+            summary['quantidade'] = new_quantity
+            summary['precoMedio'] = float(new_price)
+            summary['valorTotalInvestido'] = float(new_total)
+            return
         
         if old_quantity <= 0:
             return  # Nothing to adjust
@@ -1035,7 +1134,7 @@ class PortfolioService:
         for user_id, user_operations in operations_by_user.items():
             # Process operations with corporate events
             ticker_summaries = PortfolioService.process_operations_with_corporate_events(
-                user_operations, events_by_ticker
+                user_operations, events_by_ticker, user_id
             )
             
             # Convert to list format sorted by ticker
@@ -1088,6 +1187,10 @@ class PortfolioService:
         query = PortfolioPosition.objects.filter(ticker=event.ticker.upper())
         if user_id:
             query = query.filter(user_id=user_id)
+        if event.event_type == 'SUBSCRIPTION':
+            scoped_uid = PortfolioService._subscription_user_from_description(event.description)
+            if scoped_uid:
+                query = query.filter(user_id__iexact=scoped_uid)
         
         positions_to_adjust = list(query)
         
@@ -1102,6 +1205,39 @@ class PortfolioService:
         
         # Apply adjustment based on event type
         for position in positions_to_adjust:
+            if event.event_type == 'SUBSCRIPTION':
+                scoped_uid = PortfolioService._subscription_user_from_description(event.description)
+                if scoped_uid and PortfolioService._normalize_user_id(position.user_id) != scoped_uid:
+                    continue
+                new_shares = int(numerator)
+                if new_shares <= 0:
+                    continue
+                sub_price = PortfolioService._price_from_description_reais(event.description)
+                old_quantity = position.quantidade
+                old_total = Decimal(str(position.valor_total_investido))
+                if old_quantity <= 0:
+                    position.quantidade = new_shares
+                    if sub_price is not None:
+                        nt = sub_price * new_shares
+                        position.valor_total_investido = float(nt)
+                        position.preco_medio = float(sub_price)
+                    else:
+                        position.valor_total_investido = 0.0
+                        position.preco_medio = 0.0
+                else:
+                    new_quantity = old_quantity + new_shares
+                    if sub_price is not None:
+                        new_total = old_total + sub_price * new_shares
+                    else:
+                        new_total = old_total
+                    new_price = new_total / Decimal(str(new_quantity)) if new_quantity > 0 else Decimal('0.00')
+                    position.quantidade = new_quantity
+                    position.preco_medio = float(new_price)
+                    position.valor_total_investido = float(new_total)
+                position.save(update_fields=['quantidade', 'preco_medio', 'valor_total_investido'])
+                adjusted_count += 1
+                continue
+            
             if position.quantidade <= 0:
                 # Skip positions with zero or negative quantity
                 continue

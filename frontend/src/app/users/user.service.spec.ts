@@ -26,7 +26,7 @@ describe('UserService', () => {
 
   it('should get users', () => {
     const mockUsers: User[] = [
-      { id: '1', name: 'Test User', cpf: '123.456.789-00', account_provider: 'XP', account_number: '12345-6' }
+      { id: '1', name: 'Test User', cpf: '123.456.789-00', account_provider: 'XP', account_number: '12345-6', picture: null }
     ];
 
     service.getUsers().subscribe(users => {
@@ -44,7 +44,8 @@ describe('UserService', () => {
       name: 'Test User',
       cpf: '123.456.789-00',
       account_provider: 'XP',
-      account_number: '12345-6'
+      account_number: '12345-6',
+      picture: null
     };
 
     service.getUserById('1').subscribe(user => {
@@ -68,7 +69,8 @@ describe('UserService', () => {
       name: 'New User',
       cpf: '123.456.789-00',
       account_provider: 'XP',
-      account_number: '12345-6'
+      account_number: '12345-6',
+      picture: null
     };
 
     service.createUser(formData).subscribe(user => {
@@ -89,7 +91,8 @@ describe('UserService', () => {
       name: 'Updated User',
       cpf: '123.456.789-00',
       account_provider: 'XP',
-      account_number: '12345-6'
+      account_number: '12345-6',
+      picture: null
     };
 
     service.updateUser('1', formData).subscribe(user => {

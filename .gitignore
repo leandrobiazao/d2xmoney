@@ -187,3 +187,4 @@ backend/media/portafolio_wallet/*/*.xlsx
 .vscode/settings.json
 backend/media/order_requests/*.xlsx
 backend/media/order_requests/*/*.xlsx
+.playwright-mcp/*.yml

@@ -223,7 +223,7 @@ class CorporateEventApplyView(APIView):
                         'event': CorporateEventSerializer(event).data
                     }, status=status.HTTP_200_OK)
                 else:
-                    # Handle other event types (GROUPING, SPLIT, BONUS)
+                    # GROUPING, SPLIT, BONUS, SUBSCRIPTION
                     PortfolioService.apply_corporate_event(event, user_id=user_id)
                     event.applied = True
                     event.save()

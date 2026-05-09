@@ -5,6 +5,11 @@ import { Operation } from './operation.model';
 import { FinancialSummary } from './financial-summary.model';
 import { TickerMappingService } from '../portfolio/ticker-mapping/ticker-mapping.service';
 import { DebugService } from '../shared/services/debug.service';
+import {
+  labelCorretoraForBroker,
+  type PdfBrokerParam,
+  type PdfBrokerResolved
+} from './map-account-provider-to-pdf-broker';
 
 /** Result for one brokerage note within a PDF. A single PDF may contain multiple notes. */
 export interface NoteParseResult {
@@ -40,36 +45,52 @@ export class PdfParserService {
   /**
    * Parses a PDF that may contain one or more brokerage notes.
    * Returns an array of note results; single-note PDFs produce an array of length 1.
+   * @param pdfBrokerParam From User.account_provider via mapAccountProviderToPdfBroker; auto = detect from PDF branding.
    */
-  async parsePdf(file: File, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ notes: NoteParseResult[]; accountNumber?: string }> {
+  async parsePdf(
+    file: File,
+    onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>,
+    pdfBrokerParam: PdfBrokerParam = 'auto'
+  ): Promise<{ notes: NoteParseResult[]; accountNumber?: string }> {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      
+
       if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/assets/pdfjs/pdf.worker.min.mjs';
       }
-      
-      const loadingTask = pdfjsLib.getDocument({ 
+
+      const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer,
         verbosity: 0
       });
-      
+
       const pdf = await loadingTask.promise;
 
-      // Detect note boundaries (page-based: each "Nr. nota" starts a new note)
-      const boundaries = await this.detectNoteBoundaries(pdf);
+      const effectiveBroker = await this.resolveEffectiveBroker(pdf, pdfBrokerParam);
+      const corretoraLabel = labelCorretoraForBroker(effectiveBroker);
+      this.debug.log(`🏦 Effective PDF broker: ${effectiveBroker} (${corretoraLabel})`);
+
+      const boundaries = await this.detectNoteBoundaries(pdf, effectiveBroker);
       this.debug.log(`📑 Detected ${boundaries.length} note boundary(ies):`, boundaries);
 
-      // Account number from first pages of the document
-      const firstPagesText = await this.extractPagesText(pdf, 1, Math.min(3, pdf.numPages));
-      const accountNumber = this.extractAccountNumber(firstPagesText);
+      const accountPagesEnd = Math.min(effectiveBroker === 'btg' ? 2 : 3, pdf.numPages);
+      const accountSourceText =
+        effectiveBroker === 'btg'
+          ? await this.extractSpatialPagesText(pdf, 1, accountPagesEnd)
+          : await this.extractPagesText(pdf, 1, accountPagesEnd);
+      const accountNumber = this.extractAccountNumber(accountSourceText, effectiveBroker);
 
       const notes: NoteParseResult[] = [];
       for (const b of boundaries) {
-        const sectionText = await this.extractPagesText(pdf, b.pageStart, b.pageEnd);
-        const parseResult = await this.parseOperationsFromText(sectionText, onTickerRequired);
+        const sectionText = await this.extractPagesForOperations(pdf, b.pageStart, b.pageEnd, effectiveBroker);
+        const parseResult = await this.parseOperationsFromText(
+          sectionText,
+          onTickerRequired,
+          effectiveBroker,
+          corretoraLabel
+        );
         const lastPageOfNote = await this.extractPageText(pdf, b.pageEnd);
-        const financialSummary = this.extractFinancialSummary(lastPageOfNote);
+        const financialSummary = this.extractFinancialSummary(lastPageOfNote, effectiveBroker);
 
         const noteResult: NoteParseResult = {
           operations: parseResult.operations,
@@ -89,42 +110,111 @@ export class PdfParserService {
     } catch (error) {
       this.debug.error('Error parsing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida da B3.`);
+      throw new Error(
+        `Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual ou layout B3 compatível) com camada de texto. PDFs somente imagem não são suportados.`
+      );
     }
   }
+
+  private async resolveEffectiveBroker(pdf: PDFDocumentProxy, param: PdfBrokerParam): Promise<PdfBrokerResolved> {
+    if (param === 'xp' || param === 'btg') {
+      return param;
+    }
+    const streamSample = await this.extractPagesText(pdf, 1, Math.min(2, pdf.numPages));
+    const page1Spatial = await this.extractPageText(pdf, 1);
+    const blob = (streamSample + '\n' + page1Spatial).toLowerCase();
+    if (blob.includes('btg') && blob.includes('pactual')) {
+      this.debug.log('🔎 Auto-detected broker: BTG Pactual');
+      return 'btg';
+    }
+    if (blob.includes('xp') && blob.includes('invest')) {
+      this.debug.log('🔎 Auto-detected broker: XP Investimentos');
+      return 'xp';
+    }
+    this.debug.warn('⚠️ Could not detect broker from PDF; using XP-compatible parser.');
+    return 'xp';
+  }
+
+  private async extractSpatialPagesText(pdf: PDFDocumentProxy, start: number, end: number): Promise<string> {
+    let full = '';
+    for (let p = start; p <= end; p++) {
+      full += (await this.extractPageText(pdf, p)) + '\n';
+    }
+    return full;
+  }
+
+  private async extractPagesForOperations(
+    pdf: PDFDocumentProxy,
+    start: number,
+    end: number,
+    broker: PdfBrokerResolved
+  ): Promise<string> {
+    if (broker === 'btg') {
+      return this.extractSpatialPagesText(pdf, start, end);
+    }
+    return this.extractPagesText(pdf, start, end);
+  }
   
-  private extractAccountNumber(text: string): string | null {
+  private extractAccountNumber(text: string, broker: PdfBrokerResolved): string | null {
     const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    
-    // Try multiple patterns to find account number
-    // Pattern 1: "C/C" or "C/C:" followed by account number (usually 7 digits for XP)
-    let match = normalizedText.match(/C\/C\s*:?\s*(\d{6,})/i);
-    if (match && match[1]) {
-      this.debug.log(`📋 Extracted account number (C/C pattern): ${match[1]}`);
-      return match[1];
+    const digits = (raw: string) => {
+      const d = raw.replace(/\D/g, '');
+      return d.length >= 5 ? d : null;
+    };
+
+    if (broker === 'btg') {
+      const btgPatterns: RegExp[] = [
+        /C\/C\s*:?\s*([\d.\s\-/]+)/i,
+        /Conta(?:\s+[Cc]orrente)?\s*:?\s*([\d.\s\-/]+)/i,
+        /C[oó]digo\s+d[oa]\s+[Cc]liente\s*:?\s*([\d.\s\-/]+)/i,
+        /C[oó]digo\s+d[oa]\s+[Cc]onta\s*:?\s*([\d.\s\-/]+)/i,
+        /Conta\s+de\s+[Ii]nvestimento\s*:?\s*([\d.\s\-/]+)/i
+      ];
+      for (const re of btgPatterns) {
+        const m = normalizedText.match(re);
+        if (m?.[1]) {
+          const d = digits(m[1]);
+          if (d) {
+            this.debug.log(`📋 Extracted account number (BTG pattern): ${d}`);
+            return d;
+          }
+        }
+      }
     }
-    
-    // Pattern 2: "Conta" or "Conta:" followed by account number
-    match = normalizedText.match(/Conta\s*:?\s*(\d{6,})/i);
-    if (match && match[1]) {
-      this.debug.log(`📋 Extracted account number (Conta pattern): ${match[1]}`);
-      return match[1];
+
+    let match = normalizedText.match(/C\/C\s*:?\s*([\d.\s\-/]+)/i);
+    if (match?.[1]) {
+      const d = digits(match[1]);
+      if (d) {
+        this.debug.log(`📋 Extracted account number (C/C pattern): ${d}`);
+        return d;
+      }
     }
-    
-    // Pattern 3: "Número da Conta" or "Nº Conta" followed by account number
-    match = normalizedText.match(/N(?:úmero|º)?\s*(?:da\s*)?Conta\s*:?\s*(\d{6,})/i);
-    if (match && match[1]) {
-      this.debug.log(`📋 Extracted account number (Número da Conta pattern): ${match[1]}`);
-      return match[1];
+
+    match = normalizedText.match(/Conta\s*:?\s*([\d.\s\-/]+)/i);
+    if (match?.[1]) {
+      const d = digits(match[1]);
+      if (d) {
+        this.debug.log(`📋 Extracted account number (Conta pattern): ${d}`);
+        return d;
+      }
     }
-    
-    // Pattern 4: XP Investimentos followed by account number (common format)
+
+    match = normalizedText.match(/N(?:úmero|º)?\s*(?:da\s*)?Conta\s*:?\s*([\d.\s\-/]+)/i);
+    if (match?.[1]) {
+      const d = digits(match[1]);
+      if (d) {
+        this.debug.log(`📋 Extracted account number (Número da Conta pattern): ${d}`);
+        return d;
+      }
+    }
+
     match = normalizedText.match(/XP\s+(?:Investimentos|INVESTIMENTOS)?[:\s]+.*?(\d{6,})/i);
-    if (match && match[1]) {
+    if (match?.[1]) {
       this.debug.log(`📋 Extracted account number (XP pattern): ${match[1]}`);
-      return match[1];
+      return match[1].replace(/\D/g, '');
     }
-    
+
     this.debug.warn('⚠️ Could not extract account number from PDF');
     return null;
   }
@@ -201,41 +291,156 @@ export class PdfParserService {
   }
 
   /**
-   * Scans each page for "Nr. nota" and "Data pregão". When a new "Nr. nota" is found, that page starts a new note.
+   * BTG layout often places the note number on the line *above* "Nr. nota" (pregão date on the same line),
+   * and the pregão date may appear *before* the "Data pregão" label. Naive regexes then fail or pick the
+   * 9-digit "Código cliente" (e.g. 019322213) as if it were the note number.
+   */
+  private extractBtgNoteIdentityFromHeaderBlock(pageText: string): { noteNumber: string; noteDate: string } {
+    const rawLines = pageText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
+
+    let noteNumber = '';
+    let noteDate = '';
+
+    const notaLineIdx = lines.findIndex(l => /nr\.?\s*nota|n[uú]mero\s+da\s+nota/i.test(l));
+    if (notaLineIdx >= 0) {
+      const prev = notaLineIdx > 0 ? lines[notaLineIdx - 1] : '';
+      const next = notaLineIdx + 1 < lines.length ? lines[notaLineIdx + 1] : '';
+
+      const prevMatch = prev.match(/^(\d{6,9})(?:\s+(\d{2}\/\d{2}\/\d{4}))?$/);
+      if (prevMatch) {
+        noteNumber = prevMatch[1];
+        if (prevMatch[2]) noteDate = prevMatch[2];
+      }
+      if (!noteNumber && next) {
+        const nextMatch = next.match(/^(\d{6,9})(?:\s+(\d{2}\/\d{2}\/\d{4}))?$/);
+        if (nextMatch) {
+          noteNumber = nextMatch[1];
+          if (nextMatch[2]) noteDate = nextMatch[2];
+        }
+      }
+    }
+
+    if (!noteDate) {
+      const pregIdx = lines.findIndex(l => /data\s+(?:do\s+)?preg[aã]o/i.test(l));
+      if (pregIdx >= 0) {
+        for (const delta of [-1, 1]) {
+          const j = pregIdx + delta;
+          if (j >= 0 && j < lines.length) {
+            const dm = lines[j].match(/(\d{2}\/\d{2}\/\d{4})/);
+            if (dm) {
+              noteDate = dm[1];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!noteDate) {
+      const dateBeforeLabel = pageText.match(/(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i);
+      if (dateBeforeLabel) {
+        noteDate = dateBeforeLabel[1];
+      }
+    }
+
+    if (!noteNumber) {
+      for (let i = 0; i < Math.min(lines.length, 35); i++) {
+        const m = lines[i].match(/^(\d{6,9})(?:\s+(\d{2}\/\d{2}\/\d{4}))?$/);
+        if (m) {
+          noteNumber = m[1];
+          if (m[2] && !noteDate) noteDate = m[2];
+          break;
+        }
+      }
+    }
+
+    return { noteNumber, noteDate };
+  }
+
+  /**
+   * Scans each page for note identity. BTG deduplicates repeated headers on continuation pages.
    * Returns one boundary per note; if none found, returns a single boundary for the whole document.
    */
-  private async detectNoteBoundaries(pdf: PDFDocumentProxy): Promise<NoteBoundary[]> {
+  private async detectNoteBoundaries(pdf: PDFDocumentProxy, broker: PdfBrokerResolved): Promise<NoteBoundary[]> {
     const totalPages = pdf.numPages;
     if (totalPages === 0) {
       return [];
     }
 
-    const nrNotaPattern = /Nr\.?\s*nota\s*:?\s*(\d{8,})/i;
-    const dataPregaoPattern = /Data pregão\s+(\d{2}\/\d{2}\/\d{4})/i;
+    const nrNotaPattern =
+      broker === 'btg'
+        ? /(?:Nr\.?\s*[Nn]ota|N[uú]mero\s+da\s+[Nn]ota)\s*:?\s*(\d{6,})/i
+        : /Nr\.?\s*nota\s*:?\s*(\d{8,})/i;
+    const dataPregaoPattern = /Data\s+(?:do\s+)?preg[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i;
+    const dataBeforePregaoPattern = /(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i;
 
     const headers: Array<{ pageNum: number; noteNumber: string; noteDate: string }> = [];
+    let lastBtgKey = '';
+
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       const pageText = await this.extractPageText(pdf, pageNum);
-      const notaMatch = pageText.match(nrNotaPattern);
-      const dateMatch = pageText.match(dataPregaoPattern);
-      if (notaMatch && notaMatch[1]) {
-        const noteNumber = notaMatch[1];
-        const noteDate = dateMatch && dateMatch[1] ? dateMatch[1] : '';
-        headers.push({ pageNum, noteNumber, noteDate });
+
+      if (broker === 'btg') {
+        let { noteNumber, noteDate } = this.extractBtgNoteIdentityFromHeaderBlock(pageText);
+        if (!noteNumber) {
+          const notaMatch = pageText.match(nrNotaPattern);
+          if (notaMatch && notaMatch[1]) noteNumber = notaMatch[1];
+        }
+        if (!noteDate) {
+          const dm = pageText.match(dataPregaoPattern) ?? pageText.match(dataBeforePregaoPattern);
+          if (dm && dm[1]) noteDate = dm[1];
+        }
+        if (noteNumber) {
+          const key = `${noteNumber}|${noteDate}`;
+          if (key !== lastBtgKey) {
+            headers.push({ pageNum, noteNumber, noteDate });
+            lastBtgKey = key;
+          }
+        }
+      } else {
+        const notaMatch = pageText.match(nrNotaPattern);
+        const dateMatch = pageText.match(dataPregaoPattern);
+        if (notaMatch && notaMatch[1]) {
+          const noteNumber = notaMatch[1];
+          const noteDate = dateMatch && dateMatch[1] ? dateMatch[1] : '';
+          headers.push({ pageNum, noteNumber, noteDate });
+        }
       }
     }
 
     if (headers.length === 0) {
-      // No "Nr. nota" found: treat whole document as one note
       const fullText = await this.extractPagesText(pdf, 1, totalPages);
-      const dateMatch = fullText.match(dataPregaoPattern);
-      const notaMatch = fullText.match(nrNotaPattern);
-      return [{
-        noteNumber: notaMatch && notaMatch[1] ? notaMatch[1] : '',
-        noteDate: dateMatch && dateMatch[1] ? dateMatch[1] : '',
-        pageStart: 1,
-        pageEnd: totalPages
-      }];
+      const spatialHead = await this.extractSpatialPagesText(pdf, 1, Math.min(2, totalPages));
+      const combined = fullText + '\n' + spatialHead;
+      if (broker === 'btg') {
+        const btg = this.extractBtgNoteIdentityFromHeaderBlock(combined);
+        if (btg.noteNumber) {
+          let noteDate = btg.noteDate;
+          if (!noteDate) {
+            const dm = combined.match(dataPregaoPattern) ?? combined.match(dataBeforePregaoPattern);
+            if (dm && dm[1]) noteDate = dm[1];
+          }
+          return [
+            {
+              noteNumber: btg.noteNumber,
+              noteDate,
+              pageStart: 1,
+              pageEnd: totalPages
+            }
+          ];
+        }
+      }
+      const dateMatch = combined.match(dataPregaoPattern) ?? combined.match(dataBeforePregaoPattern);
+      const notaMatch = combined.match(nrNotaPattern);
+      return [
+        {
+          noteNumber: notaMatch && notaMatch[1] ? notaMatch[1] : '',
+          noteDate: dateMatch && dateMatch[1] ? dateMatch[1] : '',
+          pageStart: 1,
+          pageEnd: totalPages
+        }
+      ];
     }
 
     const boundaries: NoteBoundary[] = [];
@@ -252,7 +457,7 @@ export class PdfParserService {
     return boundaries;
   }
 
-  private extractFinancialSummary(lastPageText: string): FinancialSummary | null {
+  private extractFinancialSummary(lastPageText: string, _broker: PdfBrokerResolved): FinancialSummary | null {
     if (!lastPageText || lastPageText.trim().length === 0) {
       this.debug.warn('⚠️ Last page text is empty, cannot extract financial summary');
       return null;
@@ -328,7 +533,9 @@ export class PdfParserService {
                                         extractValue('Valor liquido das operacoes', normalizedText) ||
                                         extractValue('Valor líquido das oper', normalizedText);
       summary.taxa_liquidacao = extractValue('Taxa de liquidação', normalizedText) ||
-                                extractValue('Taxa de liquidacao', normalizedText);
+                                extractValue('Taxa de liquidacao', normalizedText) ||
+                                extractValue('Taxa de liquidação/CCP', normalizedText) ||
+                                extractValue('Taxa de liquidacao/CCP', normalizedText);
       summary.taxa_registro = extractValue('Taxa de Registro', normalizedText) ||
                                extractValue('Taxa de registro', normalizedText);
       summary.total_cblc = extractValue('Total CBLC', normalizedText);
@@ -340,7 +547,9 @@ export class PdfParserService {
       summary.total_custos_despesas = extractValue('Total Custos / Despesas', normalizedText, true) ||
                                       extractValue('Total Custos/Despesas', normalizedText, true) ||
                                       extractValue('Total de custos / despesas', normalizedText, true) ||
-                                      extractValue('Total de custos e despesas', normalizedText, true);
+                                      extractValue('Total de custos e despesas', normalizedText, true) ||
+                                      extractValue('Total corretagem / Despesas', normalizedText) ||
+                                      extractValue('Total corretagem/Despesas', normalizedText);
       
       // Taxa de transferência de ativos
       summary.taxa_transferencia_ativos = extractValue('Taxa de Transf. de Ativos', normalizedText, true) ||
@@ -359,6 +568,14 @@ export class PdfParserService {
       summary.irrf_operacoes = extractValue('I.R.R.F. s/ operações', normalizedText) ||
                                extractValue('IRRF s/ operacoes', normalizedText) ||
                                extractValue('IRRF s/ operações', normalizedText);
+      if (summary.irrf_operacoes === undefined) {
+        const irrfM = normalizedText.match(
+          /I\.R\.R\.F\.\s+s\/\s*opera.{0,6}es[^0-9]*(?:R\$\s*[\d.,\s]+)?\s*([\d.,]+)\s*[CD]?\b/i
+        );
+        if (irrfM && irrfM[1]) {
+          summary.irrf_operacoes = parseBrazilianNumber(irrfM[1]);
+        }
+      }
       summary.irrf_base = extractValue('I.R.R.F. s/ base', normalizedText) ||
                          extractValue('IRRF s/ base', normalizedText);
       summary.outros_custos = extractValue('Outros', normalizedText);
@@ -376,8 +593,19 @@ export class PdfParserService {
         // Try "Líquido para DD/MM/YYYY Value" (Standard style - Label Date Value)
         // Must SKIP the date to avoid matching the day as the value
         // Look for "Líquido para" followed by a date, then the value
-        const liquidoFollowingMatch = normalizedText.match(/Líquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i) ||
-                                      normalizedText.match(/Liquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i);
+        const liquidoFollowingMatch =
+          normalizedText.match(
+            /Líquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i
+          ) ||
+          normalizedText.match(
+            /Liquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*[:]?\s*([\d.,]+)\s*[CD]?/i
+          ) ||
+          normalizedText.match(
+            /Observa(?:ç|c)ões[^L]*?Líquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*([\d.,]+)\s*[CD]?/i
+          ) ||
+          normalizedText.match(
+            /Observa[^L]*?Liquido\s+para\s+\d{2}\/\d{2}\/\d{4}\s*([\d.,]+)\s*[CD]?/i
+          );
         
         if (liquidoFollowingMatch && liquidoFollowingMatch[1]) {
           summary.liquido = parseBrazilianNumber(liquidoFollowingMatch[1]);
@@ -418,16 +646,31 @@ export class PdfParserService {
     }
   }
 
-  private async parseOperationsFromText(text: string, onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>): Promise<{ operations: Operation[]; expectedOperationsCount: number | null }> {
+  private async parseOperationsFromText(
+    text: string,
+    onTickerRequired: ((nome: string, operationData: any) => Promise<string | null>) | undefined,
+    broker: PdfBrokerResolved,
+    corretoraLabel: string
+  ): Promise<{ operations: Operation[]; expectedOperationsCount: number | null }> {
     const operations: Operation[] = [];
     const skippedOperations: string[] = [];
     const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     
-    // Extrair data do pregão do PDF
+    // Extrair data / número do cabeçalho (BTG: layout espacial quebra regex simples)
     let pdfDate = '';
-    const dateMatch = normalizedText.match(/Data pregão\s+(\d{2}\/\d{2}\/\d{4})/i);
-    if (dateMatch) {
+    const headerSampleLines = normalizedText.split('\n').slice(0, 80).join('\n');
+    let btgHeaderIdentity: { noteNumber: string; noteDate: string } | null = null;
+    if (broker === 'btg') {
+      btgHeaderIdentity = this.extractBtgNoteIdentityFromHeaderBlock(headerSampleLines);
+      if (btgHeaderIdentity.noteDate) pdfDate = btgHeaderIdentity.noteDate;
+    }
+    const dateMatch = normalizedText.match(/Data\s+(?:do\s+)?preg[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+    if (dateMatch && !pdfDate) {
       pdfDate = dateMatch[1];
+    }
+    if (!pdfDate) {
+      const dateBefore = normalizedText.match(/(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i);
+      if (dateBefore) pdfDate = dateBefore[1];
     }
     
     // Count expected operations by counting lines that match the B3 operation pattern
@@ -436,7 +679,8 @@ export class PdfParserService {
     let expectedOperationsCount: number | null = null;
     
     // Count lines that match the B3 operation pattern (N-BOVESPA: 1-BOVESPA, 7-BOVESPA, etc.)
-    const bovespaLinePattern = /\d+-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}/i;
+    const colGap = broker === 'btg' ? '\\s+' : '\\s{2,}';
+    const bovespaLinePattern = new RegExp(`\\d+-BOVESPA${colGap}[CV]${colGap}[A-Z]+${colGap}`, 'i');
     const matchingLines = allLines
       .map((line, idx) => ({ line: line.trim(), index: idx + 1 }))
       .filter(item => bovespaLinePattern.test(item.line));
@@ -453,33 +697,35 @@ export class PdfParserService {
     }
     
     // Extrair número da nota do PDF
-    // Try multiple patterns to find note number
-    let pdfNota = '';
-    
-    // Pattern 1: "Nr. nota" or "Nr nota" or "Nr.nota" followed by number
-    let notaMatch = normalizedText.match(/Nr\.?\s*nota\s*:?\s*(\d{8,})/i);
-    if (notaMatch) {
-      pdfNota = notaMatch[1];
-      this.debug.log(`✅ Found note number (pattern 1): ${pdfNota}`);
-    } else {
-      // Pattern 2: Look for "nota" followed by a number (8+ digits)
-      notaMatch = normalizedText.match(/nota\s*:?\s*(\d{8,})/i);
+    let pdfNota = btgHeaderIdentity?.noteNumber || '';
+
+    // Pattern 1–3: XP e fallback quando BTG ainda não achou número no cabeçalho
+    if (!pdfNota) {
+      let notaMatch = normalizedText.match(
+        broker === 'btg'
+          ? /(?:Nr\.?\s*[Nn]ota|N[uú]mero\s+da\s+[Nn]ota)\s*:?\s*(\d{6,})/i
+          : /Nr\.?\s*nota\s*:?\s*(\d{8,})/i
+      );
       if (notaMatch) {
         pdfNota = notaMatch[1];
-        this.debug.log(`✅ Found note number (pattern 2): ${pdfNota}`);
+        this.debug.log(`✅ Found note number (pattern 1): ${pdfNota}`);
       } else {
-        // Pattern 3: Look for standalone 8-9 digit numbers that could be note numbers
-        // Usually note numbers are 8-9 digits and appear near the top of the document
-        const headerLines = normalizedText.split('\n').slice(0, 20); // Check first 20 lines
-        for (const line of headerLines) {
-          const numberMatch = line.match(/(\d{8,9})/);
-          if (numberMatch) {
-            // Check if it's not a date (DD/MM/YYYY or similar)
-            const datePattern = /\d{2}\/\d{2}\/\d{4}/;
-            if (!datePattern.test(line)) {
-              pdfNota = numberMatch[1];
-              this.debug.log(`✅ Found note number (pattern 3): ${pdfNota} in line: ${line.substring(0, 50)}`);
-              break;
+        notaMatch = normalizedText.match(broker === 'btg' ? /nota\s*:?\s*(\d{6,})/i : /nota\s*:?\s*(\d{8,})/i);
+        if (notaMatch) {
+          pdfNota = notaMatch[1];
+          this.debug.log(`✅ Found note number (pattern 2): ${pdfNota}`);
+        } else if (broker !== 'btg') {
+          // Pattern 3 (XP / generic): skipped for BTG to avoid mistaking "Código cliente" for número da nota
+          const headerLines = normalizedText.split('\n').slice(0, 20);
+          for (const line of headerLines) {
+            const numberMatch = line.match(/(\d{8,9})/);
+            if (numberMatch) {
+              const datePattern = /\d{2}\/\d{2}\/\d{4}/;
+              if (!datePattern.test(line)) {
+                pdfNota = numberMatch[1];
+                this.debug.log(`✅ Found note number (pattern 3): ${pdfNota} in line: ${line.substring(0, 50)}`);
+                break;
+              }
             }
           }
         }
@@ -514,7 +760,10 @@ export class PdfParserService {
       // First, try pattern that captures company name and classification as one field
       // More flexible pattern: capture everything between market type and quantity
       // N-BOVESPA [C/V] [MARKET] [NAME.....] [#] [QTD] [PRICE] [VALUE] [D/C] (N = 1, 7, etc.)
-      let bovespaPattern = /\d+-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}(.+?)\s{2,}[#@]?\d*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+      let bovespaPattern = new RegExp(
+        `\\d+-BOVESPA${colGap}([CV])${colGap}([A-Z]+)${colGap}(.+?)${colGap}[#@]?\\d*\\s+(\\d+)\\s+([\\d,\\.]+)\\s+([\\d,\\.]+)\\s+([DC])`,
+        'i'
+      );
       let bovespaMatch = line.match(bovespaPattern);
       
       let nomeAcaoCompleto = '';
@@ -529,7 +778,10 @@ export class PdfParserService {
       } else {
         // Fallback to stricter pattern if flexible fails (unlikely but safe)
         // Pattern: N-BOVESPA   C/V   TIPO   COMPANY_NAME    CLASSIFICATION   @   QTD   PRECO   VALOR   D/C
-        bovespaPattern = /\d+-BOVESPA\s{2,}([CV])\s{2,}([A-Z]+)\s{2,}([A-Z0-9\.\-\s]+?)\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))\s+[#@\s]*\s+(\d+)\s+([\d,\.]+)\s+([\d,\.]+)\s+([DC])/i;
+        bovespaPattern = new RegExp(
+          `\\d+-BOVESPA${colGap}([CV])${colGap}([A-Z]+)${colGap}([A-Z0-9\\.\\-\\s]+?)${colGap}((?:ON|UNT|PN|PNA|PNAB)\\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))\\s+[#@\\s]*\\s+(\\d+)\\s+([\\d,\\.]+)\\s+([\\d,\\.]+)\\s+([DC])`,
+          'i'
+        );
         bovespaMatch = line.match(bovespaPattern);
         
         if (bovespaMatch && bovespaMatch.length >= 9) {
@@ -564,8 +816,14 @@ export class PdfParserService {
         const classificationPattern = /\b(ON|UNT|PN|PNA|PNAB)\s+(NM|N[12]|EJ|ED|EDJ|ATZ)\b/i;
         if (!classificationPattern.test(nomeAcaoCompleto)) {
           // Try to find classification code in the next part of the line
-          const afterField = line.substring(line.indexOf(nomeAcaoCompleto.split(/\s{2,}/)[0]) + nomeAcaoCompleto.split(/\s{2,}/)[0].length);
-          const classificationMatch = afterField.match(/\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))/i);
+          const sepGap = broker === 'btg' ? /\s+/ : /\s{2,}/;
+          const firstChunk = nomeAcaoCompleto.split(sepGap)[0];
+          const afterField = line.substring(line.indexOf(firstChunk) + firstChunk.length);
+          const classificationMatch = afterField.match(
+            broker === 'btg'
+              ? /\s+((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))/i
+              : /\s{2,}((?:ON|UNT|PN|PNA|PNAB)\s+(?:NM|N[12]|EJ|ED|EDJ|ATZ))/i
+          );
           if (classificationMatch) {
             nomeAcaoCompleto = (nomeAcaoCompleto + ' ' + classificationMatch[1]).trim();
             this.debug.log(`📝 Extended field with classification: "${nomeAcaoCompleto}"`);
@@ -580,12 +838,13 @@ export class PdfParserService {
         
         try {
           const operation = await this.parseBovespaLine(
-            bovespaMatch, 
-            line, 
-            operations.length + 1, 
-            pdfDate, 
-            pdfNota, 
-            nomeAcaoCompleto, // Pass complete field
+            bovespaMatch,
+            line,
+            operations.length + 1,
+            pdfDate,
+            pdfNota,
+            nomeAcaoCompleto,
+            corretoraLabel,
             onTickerRequired
           );
           
@@ -651,7 +910,9 @@ export class PdfParserService {
       unmatchedLines.forEach(item => {
         this.debug.error(`❌ Line ${item.index}: "${item.line.substring(0, 150)}"`);
         // Try to extract what might be the company name from this line
-        const nameMatch = item.line.match(/\d+-BOVESPA\s{2,}[CV]\s{2,}[A-Z]+\s{2,}([A-Z0-9\.\-\s]+?)(?:\s{2,}|$)/i);
+        const nameMatch = item.line.match(
+          new RegExp(`\\d+-BOVESPA${colGap}[CV]${colGap}[A-Z]+${colGap}([A-Z0-9\\.\\-\\s]+?)(?:${colGap}|$)`, 'i')
+        );
         if (nameMatch && nameMatch[1]) {
           this.debug.error(`   → Possible company name field: "${nameMatch[1].trim()}"`);
         }
@@ -670,7 +931,9 @@ export class PdfParserService {
     this.debug.log(`✅ Parsed ${operations.length} operations successfully${skippedOperations.length > 0 ? `, ${skippedOperations.length} skipped` : ''}`);
     
     if (operations.length === 0) {
-      throw new Error('Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3 e se contém operações no formato esperado.');
+      throw new Error(
+        'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual ou layout B3 compatível) e se contém operações no formato esperado.'
+      );
     }
     
     // Validate operations count if we have an expected count
@@ -745,12 +1008,13 @@ export class PdfParserService {
   }
 
   private async parseBovespaLine(
-    match: RegExpMatchArray, 
-    line: string, 
-    ordem: number, 
-    pdfDate: string = '', 
+    match: RegExpMatchArray,
+    line: string,
+    ordem: number,
+    pdfDate: string = '',
     pdfNota: string = '',
-    nomeAcaoCompleto: string, // Complete field (company name + classification code)
+    nomeAcaoCompleto: string,
+    corretoraLabel: string,
     onTickerRequired?: (nome: string, operationData: any) => Promise<string | null>
   ): Promise<Operation | null> {
     try {
@@ -972,7 +1236,7 @@ export class PdfParserService {
         valorOperacao: Math.abs(valorOperacao),
         dc,
         notaTipo: 'Bovespa',
-        corretora: 'XP',
+        corretora: corretoraLabel,
         nota: nota,
         data,
         clientId: ''

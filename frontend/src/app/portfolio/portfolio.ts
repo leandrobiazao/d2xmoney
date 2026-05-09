@@ -32,6 +32,8 @@ import { UserService } from '../users/user.service';
 export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   @Input() userId!: string;
   @Input() userName!: string;
+  /** User.account_provider — forwarded to PDF parser (XP vs BTG layout). */
+  @Input() accountProvider?: string;
   @ViewChild('historyList') historyListComponent!: HistoryListComponent;
 
   operations: Operation[] = [];
@@ -431,10 +433,11 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         next: (user) => {
           this.debug.log(`🔍 Validating account number: PDF has "${accountNumber}", User has "${user.account_number}"`);
 
-          const pdfAccountNormalized = accountNumber.trim().replace(/[-\s]/g, '');
-          const userAccountNormalized = user.account_number.trim().replace(/[-\s]/g, '');
+          const normalizeAcct = (s: string) => s.replace(/\D/g, '');
+          const pdfDigits = normalizeAcct(accountNumber.trim());
+          const userDigits = normalizeAcct(user.account_number.trim());
 
-          if (pdfAccountNormalized !== userAccountNormalized) {
+          if (pdfDigits.length > 0 && userDigits.length > 0 && pdfDigits !== userDigits) {
             const errorMsg = `❌ Erro de validação: O número da conta no PDF (${accountNumber}) não corresponde à conta do usuário selecionado (${user.account_number}).\n\nPor favor, verifique se você está fazendo upload da nota correta para o usuário correto.\n\nOperações não serão salvas.`;
             this.debug.error(errorMsg);
             alert(errorMsg);
@@ -497,7 +500,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
           const msg = e?.error?.message || e?.message || 'Erro ao salvar nota.';
           alert(`⚠️ ${msg}\n\nAs demais notas serão processadas.`);
           saveNext(index + 1);
-        }
+        },
+        noteResult.noteNumber,
+        noteResult.noteDate
       );
     };
 
@@ -510,7 +515,9 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     financialSummary: FinancialSummary | undefined,
     fileName: string | undefined,
     onSuccess?: (savedNote: BrokerageNote) => void,
-    onError?: (err: unknown) => void
+    onError?: (err: unknown) => void,
+    parsedNoteNumber?: string,
+    parsedNoteDate?: string
   ): void {
     // Validate operations count if expected count is available
     if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
@@ -524,9 +531,11 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     }
 
     const firstOperation = operations[0];
-    const noteDate = firstOperation.data;
-    // Use the note number from operation, but if it's 'N/A' or empty, try to extract from file name
-    let noteNumber = firstOperation.nota || '';
+    const noteDate =
+      (parsedNoteDate && parsedNoteDate.trim()) ||
+      firstOperation.data ||
+      '';
+    let noteNumber = (parsedNoteNumber && parsedNoteNumber.trim()) || firstOperation.nota || '';
     // If empty or 'N/A', try to extract from file name
     if (!noteNumber || noteNumber === 'N/A' || noteNumber.trim() === '') {
       noteNumber = '';

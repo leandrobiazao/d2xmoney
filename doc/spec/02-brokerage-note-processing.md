@@ -11,6 +11,20 @@ The Brokerage Note Processing app allows users to:
 - Handle missing ticker mappings with user input
 - Save extracted operations for portfolio tracking
 
+## Broker layouts (XP Investimentos vs BTG Pactual)
+
+Brazilian brokerage notes follow B3 rules, but **PDF text layout** differs by institution. The frontend must pick the right extraction rules.
+
+- **Who chooses the parser**: `User.account_provider` is mapped to `'xp' | 'btg' | 'auto'` in `frontend/src/app/brokerage-note/map-account-provider-to-pdf-broker.ts`. Substring **`btg`** → BTG branch; **`xp`** → XP branch; otherwise **`auto`** inspects the first pages for branding (`BTG` + `Pactual`, or `XP` + `invest`) and **defaults to XP** if unknown (with a debug warning).
+- **User vs PDF**: When `account_provider` resolves to XP or BTG explicitly, that choice is **not** overridden by PDF text. Auto-detect runs **only** for `auto`.
+- **UI wiring**: `app.html` passes `selectedUser.account_provider` into `PortfolioComponent`, then into `UploadPdfComponent` as `accountProvider`, which feeds `parsePdf(..., pdfBroker)`.
+- **`corretora` on operations**: `Operation.corretora` is set to **XP Investimentos** or **BTG Pactual** for all lines in that parse, matching the effective broker.
+- **Text extraction**: **Note boundaries** and **financial summary** use spatially sorted text per page (`extractPageText`). **Operations**: XP keeps stream-joined `extractPagesText` per page range; BTG uses **spatial** concatenation across the note’s operation pages so narrow column gaps still parse.
+- **Post-upload account check**: If the parser returns an account number, `PortfolioComponent` compares **digits only** (non-digits stripped) with `User.account_number`. Align what users store with what appears on the PDF.
+- **Unsupported**: Scanned/image-only PDFs without a text layer are not supported (no OCR in app).
+
+The example figure below is **XP-style**; BTG notes use the same logical fields (`nomeAcaoCompleto`, multi-note headers, etc.) with broker-specific header and line patterns where needed.
+
 ## Brokerage Note Example
 
 The following image shows the first page of a B3 brokerage note example (Aurelio's note from September 2025):
@@ -171,31 +185,23 @@ Create PDF parser service in frontend/src/app/brokerage-note/pdf-parser.service.
 - Use pdfjs-dist library
 - Configure PDF.js worker from /assets/pdfjs/pdf.worker.min.mjs
 - Methods:
-  - parsePdf(file: File, onTickerRequired?: callback): Promise<Operation[]>
-- Parse B3 brokerage note PDFs:
-  - Extract text from all pages
-  - Find operation lines matching pattern: "1-BOVESPA   C/V   TIPO_MERCADO   NOME_ACAO_CLASSIFICACAO   @   QTD   PRECO   VALOR   D/C"
-  - IMPORTANT: The company name and classification code (e.g., "3TENTOS ON NM", "CSNMINERACAO ON N2") 
+  - parsePdf(file: File, onTickerRequired?: callback, pdfBroker?: 'xp' | 'btg' | 'auto'): Promise<{ notes: NoteParseResult[]; accountNumber?: string }>
+  - pdfBroker defaults to 'auto' (detect from first pages); otherwise use mapAccountProviderToPdfBroker(User.account_provider) from the upload component
+- Parse B3-compatible brokerage note PDFs (XP Investimentos, BTG Pactual, etc.):
+  - Extract text from all pages; broker-specific strategies for boundaries, account, operations
+  - Find operation lines matching N-BOVESPA table rows (spacing may be wide columns for XP or tighter for BTG)
+  - IMPORTANT: The company name and classification code (e.g., "3TENTOS ON NM", "CSNMINERACAO ON N2")
     should be treated as a SINGLE unified field, not separate fields
-  - Extract: data do pregão, número da nota from PDF
-  - Parse each operation line:
-    - tipoOperacao (C/V)
-    - tipoMercado
-    - nomeAcaoCompleto (company name + classification code as one field, e.g., "3TENTOS ON NM")
-    - quantidade, preco, valorOperacao
-    - dc (D/C)
-  - For each operation:
-    - Use nomeAcaoCompleto (complete field with classification code) for ticker mapping
-    - Import and use TickerMappingService from portfolio/ticker-mapping
-    - Try to get ticker from TickerMappingService using nomeAcaoCompleto
-    - If not found, try to extract ticker pattern (4 letters + 1-2 digits) from the full field
-    - If still not found, call onTickerRequired callback with nomeAcaoCompleto
-    - Create Operation object with all fields
-- Handle errors gracefully
-- Return array of Operation objects
-- Support multiple parsing strategies (fallback methods)
+  - Extract: Data (do) pregão, número da nota (incl. variants "Número da Nota" where used)
+  - Parse each operation line into Operation; set corretora to XP Investimentos or BTG Pactual from effective broker
+  - For each operation: TickerMappingService + onTickerRequired as today
+- Multi-note PDFs: return notes: NoteParseResult[] (one entry per note range); optional accountNumber on root result
+- Handle errors with messages that mention supported brokers and text-layer PDFs (not image-only)
 - Note: Classification codes (ON NM, ON N2, ON ED NM, UNT N1, etc.) are preserved in the field
   as they may define different tickers for the same company
+
+Related helpers:
+- `frontend/src/app/brokerage-note/map-account-provider-to-pdf-broker.ts` — maps account_provider to parse mode and display corretora label.
 ```
 
 ### Prompt BNP-12: Create Ticker Dialog Component
@@ -319,9 +325,9 @@ All financial summary fields are optional and nullable to support existing notes
 
 ## Multi-note PDF support
 
-A single PDF file may contain **more than one brokerage note** (e.g. note A on pages 1–3, note B on page 4). The system treats each “Nr. nota” header as the start of a new note:
+A single PDF file may contain **more than one brokerage note** (e.g. note A on pages 1–3, note B on page 4). The system treats each note header as the start of a new note:
 
-- **Parser:** `PdfParserService.parsePdf()` scans each page for “Nr. nota” and “Data pregão”. When a new “Nr. nota” appears on a page, that page starts a new note. The parser returns `{ notes: NoteParseResult[]; accountNumber?: string }`, where each `NoteParseResult` has `operations`, `expectedOperationsCount`, `financialSummary`, `noteNumber`, and `noteDate` for that note’s page range. Operations and financial summary are parsed **per note** (each note’s pages only; financial summary from that note’s last page).
+- **Parser:** `PdfParserService.parsePdf()` resolves broker (user `account_provider` or auto-detect), then scans each page for note number / **Data (do) pregão** headers. When a new note header appears on a page, that page starts a new note. BTG may use label variants such as **Número da Nota** and relaxed digit lengths; XP keeps stricter `Nr. nota` patterns where applicable. The parser returns `{ notes: NoteParseResult[]; accountNumber?: string }`, where each `NoteParseResult` has `operations`, `expectedOperationsCount`, `financialSummary`, `noteNumber`, and `noteDate` for that note’s page range. Operations and financial summary are parsed **per note** (each note’s pages only; financial summary from that note’s last page).
 - **Upload:** Emits one `operationsAdded` event with `notes: NoteParseResult[]` (single-note PDFs produce an array of length 1).
 - **Portfolio:** Saves one backend `BrokerageNote` per parsed note (one POST per note). Success messages can refer to multiple notes (e.g. “Notas 12345678 e 87654321 importadas com sucesso”).
 - **Backend:** Unchanged: one note per POST; duplicate rule `(user_id, note_number, note_date)` applies per note.
@@ -330,13 +336,12 @@ See the plan/spec for “Multi-Note PDF Support” for full details. E2e fixture
 
 ## Data Flow
 
-1. User uploads PDF file via UploadPdfComponent
-2. PdfParserService **detects note boundaries** (page-based: each “Nr. nota” starts a new note)
+1. User uploads PDF file via UploadPdfComponent (`accountProvider` from selected user).
+2. PdfParserService resolves **effective broker** (XP, BTG, or auto-detect), then **detects note boundaries** (page-based).
 3. For **each note** (page range):
-   - Extracts text from that note’s pages for operations parsing
-   - Extracts financial summary from **that note’s last page** only
-   - Parses operation lines and financial summary for that note
-4. Parser returns **array of note results** `{ notes, accountNumber }`; single-note PDFs yield one element
+   - Extracts text from that note’s pages for operations parsing (spatial concatenation for BTG operations; XP stream join).
+   - Extracts financial summary from **that note’s last page** only (spatial text).
+4. Parser returns **array of note results** `{ notes, accountNumber }`; single-note PDFs yield one element.
 5. For each operation line (within each note’s text):
    - Extract nomeAcaoCompleto as a single field (e.g., "3TENTOS ON NM")
    - Preserve the complete field including classification code
@@ -345,9 +350,9 @@ See the plan/spec for “Multi-Note PDF Support” for full details. E2e fixture
    - Dialog shows the complete field (e.g., "3TENTOS ON NM")
    - User provides ticker for the complete field
 8. Ticker mapping is saved using the complete field (company name + classification code)
-9. Operations are created with all required fields per note
+9. Operations are created with all required fields per note (`corretora` set to XP Investimentos or BTG Pactual).
 10. Upload emits **one** `operationsAdded` event with `notes: NoteParseResult[]`
-11. Parent component receives the notes array and **saves one backend note per parsed note**
+11. Parent component validates **account number** (digits-only) when present, then **saves one backend note per parsed note**
 
 ## Integration
 
@@ -363,11 +368,13 @@ Update main app component or brokerage note route:
 
 ## Error Handling
 
-- PDF parsing errors: Display user-friendly error messages
-- Invalid PDF format: Show specific error about B3 format requirement
+- PDF parsing errors: Display user-friendly error messages (supported brokers, text-layer PDF requirement)
+- Invalid PDF format: Not a supported brokerage note layout or missing extractable operations
+- Image-only / scanned PDF: Not supported without OCR; user should obtain a text-layer PDF from the broker
 - Missing ticker: Prompt user via dialog
 - Network errors: Handle server connection issues
 - File size limits: Validate before upload
+- Account mismatch: When the PDF includes an account number, it must match the selected user’s `account_number` after digit-only normalization
 
 ---
 

@@ -15,7 +15,8 @@
     }
 
     @if (selectedUser) {
-      <app-portfolio [userId]="selectedUser.id" [userName]="selectedUser.name || ''"/>
+      <app-portfolio [userId]="selectedUser.id" [userName]="selectedUser.name || ''"
+        [accountProvider]="selectedUser.account_provider" />
     } @else {
       <p id="fallback">Selecione um cliente para ver sua carteira de investimentos.</p>
     }

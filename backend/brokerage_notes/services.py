@@ -9,6 +9,33 @@ from django.db import transaction
 from django.db.utils import OperationalError
 from .models import BrokerageNote, Operation
 
+# Resumo + custos persisted on BrokerageNote (must match model / API serializer).
+_BROKERAGE_NOTE_SUMMARY_FIELDS = (
+    'debentures',
+    'vendas_a_vista',
+    'compras_a_vista',
+    'valor_das_operacoes',
+    'clearing',
+    'valor_liquido_operacoes',
+    'taxa_liquidacao',
+    'taxa_registro',
+    'total_cblc',
+    'bolsa',
+    'emolumentos',
+    'taxa_transferencia_ativos',
+    'total_bovespa',
+    'taxa_operacional',
+    'execucao',
+    'taxa_custodia',
+    'impostos',
+    'irrf_operacoes',
+    'irrf_base',
+    'outros_custos',
+    'total_custos_despesas',
+    'liquido',
+    'liquido_data',
+)
+
 
 class BrokerageNoteHistoryService:
     """Service for managing brokerage note history using Django ORM."""
@@ -23,56 +50,32 @@ class BrokerageNoteHistoryService:
     def load_history() -> List[Dict]:
         """Load all notes from database."""
         try:
-            # First, check if status and error_message columns exist in the database
             from django.db import connection
             with connection.cursor() as cursor:
                 cursor.execute("PRAGMA table_info(brokerage_notes)")
                 columns = [row[1] for row in cursor.fetchall()]
-                has_status = 'status' in columns
-                has_error_message = 'error_message' in columns
-            
-            # Build list of fields to select (only those that exist in database)
+                colset = set(columns)
+                has_status = 'status' in colset
+                has_error_message = 'error_message' in colset
+
             fields_to_select = [
                 'id', 'user_id', 'file_name', 'original_file_path',
                 'note_date', 'note_number', 'processed_at',
-                'operations_count', 'operations'
+                'operations_count', 'operations',
             ]
             if has_status:
                 fields_to_select.append('status')
             if has_error_message:
                 fields_to_select.append('error_message')
-            
-            # Use only() to select only existing fields
+            for fname in _BROKERAGE_NOTE_SUMMARY_FIELDS:
+                if fname in colset:
+                    fields_to_select.append(fname)
+
             notes = BrokerageNote.objects.all().only(*fields_to_select)
             
             result = []
             for note in notes:
-                note_dict = {
-                    'id': str(note.id),
-                    'user_id': note.user_id,
-                    'file_name': note.file_name,
-                    'original_file_path': note.original_file_path,
-                    'note_date': note.note_date,
-                    'note_number': note.note_number,
-                    'processed_at': note.processed_at.isoformat() if note.processed_at else None,
-                    'operations_count': note.operations_count,
-                    'operations': note.operations or [],
-                }
-                
-                # Add status and error_message - only access if column exists
-                # If column doesn't exist, use defaults without trying to access
-                if has_status and 'status' in fields_to_select:
-                    # Only access if it was selected
-                    note_dict['status'] = getattr(note, 'status', 'success')
-                else:
-                    note_dict['status'] = 'success'
-                
-                if has_error_message and 'error_message' in fields_to_select:
-                    # Only access if it was selected
-                    note_dict['error_message'] = getattr(note, 'error_message', None)
-                else:
-                    note_dict['error_message'] = None
-                
+                note_dict = BrokerageNoteHistoryService._note_to_dict(note)
                 result.append(note_dict)
             
             return result
@@ -95,26 +98,26 @@ class BrokerageNoteHistoryService:
     def get_note_by_id(note_id: str) -> Optional[Dict]:
         """Get note by ID."""
         try:
-            # Check if status and error_message columns exist
             from django.db import connection
             with connection.cursor() as cursor:
                 cursor.execute("PRAGMA table_info(brokerage_notes)")
-                columns = [row[1] for row in cursor.fetchall()]
-                has_status = 'status' in columns
-                has_error_message = 'error_message' in columns
-            
-            # Build list of fields to select (only those that exist in database)
+                colset = {row[1] for row in cursor.fetchall()}
+                has_status = 'status' in colset
+                has_error_message = 'error_message' in colset
+
             fields_to_select = [
                 'id', 'user_id', 'file_name', 'original_file_path',
                 'note_date', 'note_number', 'processed_at',
-                'operations_count', 'operations'
+                'operations_count', 'operations',
             ]
             if has_status:
                 fields_to_select.append('status')
             if has_error_message:
                 fields_to_select.append('error_message')
-            
-            # Use only() to select only existing fields
+            for fname in _BROKERAGE_NOTE_SUMMARY_FIELDS:
+                if fname in colset:
+                    fields_to_select.append(fname)
+
             note = BrokerageNote.objects.only(*fields_to_select).get(id=note_id)
             return BrokerageNoteHistoryService._note_to_dict(note)
         except BrokerageNote.DoesNotExist:
@@ -155,8 +158,11 @@ class BrokerageNoteHistoryService:
         try:
             note = BrokerageNote.objects.get(id=note_id)
             # Update note fields
-            for field in ['user_id', 'file_name', 'original_file_path', 'note_date', 
-                         'note_number', 'operations_count', 'operations']:
+            scalar_fields = [
+                'user_id', 'file_name', 'original_file_path', 'note_date',
+                'note_number', 'operations_count', 'operations',
+            ] + list(_BROKERAGE_NOTE_SUMMARY_FIELDS)
+            for field in scalar_fields:
                 if field in note_data:
                     setattr(note, field, note_data[field])
             
@@ -216,20 +222,24 @@ class BrokerageNoteHistoryService:
         for attempt in range(max_retries):
             try:
                 with transaction.atomic():
+                    defaults = {
+                        'user_id': note_data.get('user_id', ''),
+                        'file_name': note_data.get('file_name', ''),
+                        'original_file_path': note_data.get('original_file_path'),
+                        'note_date': note_data.get('note_date', ''),
+                        'note_number': note_data.get('note_number', ''),
+                        'processed_at': processed_at,
+                        'operations_count': note_data.get('operations_count', 0),
+                        'operations': note_data.get('operations', []),
+                        'status': note_data.get('status', 'success'),
+                        'error_message': note_data.get('error_message'),
+                    }
+                    for fname in _BROKERAGE_NOTE_SUMMARY_FIELDS:
+                        defaults[fname] = note_data.get(fname)
+
                     note, created = BrokerageNote.objects.update_or_create(
                         id=note_id,
-                        defaults={
-                            'user_id': note_data.get('user_id', ''),
-                            'file_name': note_data.get('file_name', ''),
-                            'original_file_path': note_data.get('original_file_path'),
-                            'note_date': note_data.get('note_date', ''),
-                            'note_number': note_data.get('note_number', ''),
-                            'processed_at': processed_at,
-                            'operations_count': note_data.get('operations_count', 0),
-                            'operations': note_data.get('operations', []),
-                            'status': note_data.get('status', 'success'),
-                            'error_message': note_data.get('error_message'),
-                        }
+                        defaults=defaults,
                     )
                     
                     # Save operations
@@ -312,9 +322,29 @@ class BrokerageNoteHistoryService:
             result['error_message'] = getattr(note, 'error_message', None)
         except Exception:
             result['error_message'] = None
-        
+
+        for fname in _BROKERAGE_NOTE_SUMMARY_FIELDS:
+            try:
+                raw = getattr(note, fname, None)
+                if fname == 'liquido_data':
+                    result[fname] = raw
+                else:
+                    result[fname] = BrokerageNoteHistoryService._json_decimal(raw)
+            except Exception:
+                result[fname] = None
+
         return result
     
+    @staticmethod
+    def _json_decimal(value):
+        """Serialize Decimal/numeric model value for JSON APIs."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     @staticmethod
     def _parse_datetime(dt_str):
         """Parse datetime string to datetime object."""

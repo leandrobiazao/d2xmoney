@@ -8,7 +8,7 @@ The Portfolio Management System (d2xmoney) is a comprehensive full-stack applica
 
 **Core Features:**
 - **User Management**: Create and manage users with CPF, account information, and profile pictures
-- **Brokerage Note Processing**: Parse B3 brokerage note PDFs and extract trading operations
+- **Brokerage Note Processing**: Parse B3-compatible brokerage note PDFs (XP Investimentos, BTG Pactual layouts; see [02-brokerage-note-processing.md](02-brokerage-note-processing.md#broker-layouts-xp-investimentos-vs-btg-pactual))
 - **Brokerage History**: Track and view history of processed brokerage notes
 - **Portfolio Summary**: View positions, operations, and portfolio analytics
 - **Fixed Income Management**: Track CDB, Tesouro Direto, and other fixed income investments; Excel import escolhe formato BTG (Posição consolidada) ou XP (legado) conforme o utilizador

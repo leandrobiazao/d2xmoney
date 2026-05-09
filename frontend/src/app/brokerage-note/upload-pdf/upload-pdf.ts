@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PdfParserService, NoteParseResult } from '../pdf-parser.service';
+import { mapAccountProviderToPdfBroker } from '../map-account-provider-to-pdf-broker';
 import { Operation } from '../operation.model';
 import { TickerDialogComponent } from '../ticker-dialog/ticker-dialog';
 import { TickerMappingService } from '../../portfolio/ticker-mapping/ticker-mapping.service';
@@ -22,6 +23,8 @@ export interface OperationsAddedEvent {
 })
 export class UploadPdfComponent implements OnInit, OnDestroy {
   @Input() clientId!: string;
+  /** From User.account_provider — selects XP vs BTG PDF layout. */
+  @Input() accountProvider: string | undefined;
   @Output() operationsAdded = new EventEmitter<OperationsAddedEvent>();
 
   isProcessing = false;
@@ -113,7 +116,8 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
       
       let parseResult: { notes: NoteParseResult[]; accountNumber?: string };
       try {
-        parseResult = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired);
+        const pdfBroker = mapAccountProviderToPdfBroker(this.accountProvider);
+        parseResult = await this.pdfParserService.parsePdf(this.selectedFile, onTickerRequired, pdfBroker);
       } catch (parseError) {
         const errorMsg = parseError instanceof Error ? parseError.message : 'Erro desconhecido ao processar PDF';
         this.errorMessage = errorMsg;
@@ -124,7 +128,8 @@ export class UploadPdfComponent implements OnInit, OnDestroy {
 
       const hasAnyOperations = parseResult.notes.some(n => n.operations.length > 0);
       if (!hasAnyOperations || parseResult.notes.length === 0) {
-        this.errorMessage = 'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida da B3.';
+        this.errorMessage =
+          'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual ou layout B3 compatível) com camada de texto.';
         this.isProcessing = false;
         return;
       }
