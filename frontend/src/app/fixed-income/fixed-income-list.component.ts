@@ -40,7 +40,7 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
   positions: FixedIncomePosition[] = [];
   /** ETF Renda Fixa positions (e.g. AUPO11) from portfolio, shown as Renda Fixa options. */
   etfRendaFixaPositions: FixedIncomePosition[] = [];
-  /** Current prices for ETF tickers (asset_code -> price) used to compute Valor Líquido / Posição. */
+  /** Preços atuais ETF RF (asset_code → preço) para valor bruto Posição = qty × preço. */
   etfCurrentPrices = new Map<string, number>();
   groupedPositions: GroupedPositions[] = [];
   filteredPositions: FixedIncomePosition[] = [];
@@ -127,14 +127,6 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       return (typeof numValue === 'number' && !isNaN(numValue)) ? numValue : 0;
     };
 
-    // Helper function to safely convert net_value to number
-    const getNetValue = (value: any): number => {
-      if (value == null) return 0;
-      // Handle both string and number types (Django DecimalField serializes as string)
-      const numValue = typeof value === 'string' ? parseFloat(value) : value;
-      return (typeof numValue === 'number' && !isNaN(numValue)) ? numValue : 0;
-    };
-
     // Separate Tesouro Direto from other fixed income
     const tesouroPositions: FixedIncomePosition[] = [];
     const otherPositions: FixedIncomePosition[] = [];
@@ -202,16 +194,16 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
         subTypeGroup.totalValue += positionValue;
       });
 
-      // Calculate percentages for sub-types and sort positions by net_value
+      // Percentuais por subtipo; ordenar por valor bruto (position_value)
       tesouroSubTypes.forEach(subTypeGroup => {
         subTypeGroup.percentage = tesouroTotalValue > 0
           ? (subTypeGroup.totalValue / tesouroTotalValue) * 100
           : 0;
-        // Sort positions by net_value descending (higher to lower)
+        // Sort by valor bruto (position_value)
         subTypeGroup.positions.sort((a, b) => {
-          const netValueA = getNetValue(a.net_value);
-          const netValueB = getNetValue(b.net_value);
-          return netValueB - netValueA;
+          const va = getPositionValue(a.position_value);
+          const vb = getPositionValue(b.position_value);
+          return vb - va;
         });
       });
 
@@ -244,23 +236,22 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
       percentage: totalPortfolioValue > 0 ? (etfRendaFixaTotalValue / totalPortfolioValue) * 100 : 0,
       totalValue: etfRendaFixaTotalValue,
       positions: [...this.etfRendaFixaPositions].sort((a, b) =>
-        getNetValue(b.net_value) - getNetValue(a.net_value)
+        getPositionValue(b.position_value) - getPositionValue(a.position_value)
       ),
       isTesouroDireto: false
     };
     groups.set('etf_renda_fixa', etfRendaFixaGroup);
 
-    // Calculate percentages based on position_value totals and sort positions by net_value
+    // Percentuais por grupo; ordenar linhas por valor bruto (position_value)
     groups.forEach(group => {
       if (!group.isTesouroDireto) {
         group.percentage = totalPortfolioValue > 0 
           ? (group.totalValue / totalPortfolioValue) * 100 
           : 0;
-        // Sort positions by net_value descending (higher to lower)
         group.positions.sort((a, b) => {
-          const netValueA = getNetValue(a.net_value);
-          const netValueB = getNetValue(b.net_value);
-          return netValueB - netValueA;
+          const va = getPositionValue(a.position_value);
+          const vb = getPositionValue(b.position_value);
+          return vb - va;
         });
       }
     });
@@ -287,7 +278,7 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     return fromPositions + fromEtf;
   }
 
-  /** Fetch current prices for ETF Renda Fixa tickers so Posição / Valor Líquido can differ from Valor Aplicado. */
+  /** Preços atuais para ETF Renda Fixa: Posição bruta = qty × preço. */
   private fetchEtfCurrentPrices(): void {
     if (this.etfRendaFixaPositions.length === 0) return;
     const tickers = [...new Set(this.etfRendaFixaPositions.map(p => (p.asset_code || '').trim().toUpperCase()).filter(Boolean))];
@@ -316,15 +307,7 @@ export class FixedIncomeListComponent implements OnInit, OnChanges {
     return qty * price;
   }
 
-  /** Valor Líquido to show: for ETF with current price = quantity × price; else position.net_value. */
-  getDisplayNetValue(position: FixedIncomePosition): number {
-    if (!this.isEtfRendaFixaPosition(position) || !position.asset_code) return this.getPositionValue(position.net_value);
-    const price = this.etfCurrentPrices.get((position.asset_code || '').trim().toUpperCase());
-    if (price == null || price <= 0) return this.getPositionValue(position.net_value);
-    const qty = typeof position.quantity === 'number' ? position.quantity : parseInt(String(position.quantity), 10) || 0;
-    return qty * price;
-  }
-
+  /** Valor atual do cartão = soma dos valores brutos (Posição); ETF RF usa qty×preço quando disponível. */
   getValorAtual(): number {
     return this.groupedPositions.reduce((sum, group) => {
       if (group.type === 'etf_renda_fixa' && this.etfCurrentPrices.size > 0) {

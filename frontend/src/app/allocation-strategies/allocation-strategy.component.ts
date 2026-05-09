@@ -36,6 +36,13 @@ interface DraftTypeAllocation extends Omit<InvestmentTypeAllocation, 'id' | 'sub
   fii_allocations?: DraftFIIAllocation[];
 }
 
+/** Config subtype row or synthetic API-only bucket (e.g. não categorizado) for display so subtype valores somam ao total do tipo. */
+type AllocationSubTypeRow = InvestmentSubType & {
+  _allocationRowKey: string;
+  _apiOnly?: boolean;
+  _realSubTypeId?: number;
+};
+
 @Component({
   selector: 'app-allocation-strategy',
   standalone: true,
@@ -718,6 +725,114 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       }
     }
     return result;
+  }
+
+  /**
+   * Subtipos da tabela = configuração + buckets devolvidos pela API que não têm linha na config (ex.: sub_type_id null).
+   * Assim a soma dos "Valor atual" por subtipo alinha-se ao cartão / linha do tipo.
+   */
+  getSubTypesForAllocationTable(typeAlloc: DraftTypeAllocation): AllocationSubTypeRow[] {
+    const investmentTypeId = typeAlloc.investment_type_id;
+    const typeCode = typeAlloc.investment_type?.code;
+    const configSubs = this.getSubTypesForInvestmentType(investmentTypeId, typeCode);
+    const rows: AllocationSubTypeRow[] = configSubs.map((s) => ({
+      ...s,
+      _allocationRowKey: `cfg:${s.id}`,
+    }));
+
+    const typeData = this.currentAllocation?.current?.investment_types?.find(
+      (t: any) => t.investment_type_id === investmentTypeId
+    );
+    if (!typeData?.sub_types?.length) {
+      return rows;
+    }
+
+    const configIdSet = new Set(configSubs.map((s) => Number(s.id)));
+    const keysAdded = new Set(rows.map((r) => r._allocationRowKey));
+
+    for (const st of typeData.sub_types) {
+      const cv = Number(st.current_value || 0);
+      if (cv <= 0) {
+        continue;
+      }
+
+      const sid = st.sub_type_id;
+      if (sid == null || sid === undefined) {
+        const key = 'api:null';
+        if (!keysAdded.has(key)) {
+          keysAdded.add(key);
+          rows.push({
+            id: -987654321,
+            name: st.sub_type_name || 'Não categorizado',
+            code: 'API_UNCATEGORIZED',
+            display_order: 99998,
+            is_predefined: false,
+            is_active: true,
+            investment_type: investmentTypeId,
+            _allocationRowKey: key,
+            _apiOnly: true,
+          });
+        }
+        continue;
+      }
+
+      if (!configIdSet.has(Number(sid))) {
+        const key = `api:${sid}`;
+        if (!keysAdded.has(key)) {
+          keysAdded.add(key);
+          rows.push({
+            id: -987654320 - Number(sid),
+            name: st.sub_type_name || 'Subtipo (API)',
+            code: 'API_EXTRA',
+            display_order: 99999,
+            is_predefined: false,
+            is_active: true,
+            investment_type: investmentTypeId,
+            _allocationRowKey: key,
+            _apiOnly: true,
+            _realSubTypeId: Number(sid),
+          });
+        }
+      }
+    }
+
+    return rows.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+  }
+
+  allocationSubTypeTrackKey(subType: InvestmentSubType & { _allocationRowKey?: string }): string {
+    const key = (subType as AllocationSubTypeRow)._allocationRowKey;
+    return key ?? `cfg:${subType.id}`;
+  }
+
+  isApiOnlyAllocationRow(subType: InvestmentSubType): boolean {
+    return !!(subType as AllocationSubTypeRow)._apiOnly;
+  }
+
+  getCurrentUncategorizedSubTypeValue(typeId: number): number {
+    if (!this.currentAllocation?.current?.investment_types) {
+      return 0;
+    }
+    const typeData = this.currentAllocation.current.investment_types.find(
+      (t: any) => t.investment_type_id === typeId
+    );
+    if (!typeData?.sub_types) {
+      return 0;
+    }
+    const subTypeData = typeData.sub_types.find(
+      (st: any) => st.sub_type_id == null || st.sub_type_id === undefined
+    );
+    return subTypeData ? Number(subTypeData.current_value || 0) : 0;
+  }
+
+  getCurrentSubTypeValueForAllocationRow(typeId: number, subType: InvestmentSubType): number {
+    const row = subType as AllocationSubTypeRow;
+    if (row._allocationRowKey === 'api:null') {
+      return this.getCurrentUncategorizedSubTypeValue(typeId);
+    }
+    if (row._realSubTypeId != null) {
+      return this.getCurrentSubTypeValue(typeId, row._realSubTypeId);
+    }
+    return this.getCurrentSubTypeValue(typeId, subType.id, subType.name);
   }
 
   isFIIInvestmentType(typeAlloc: DraftTypeAllocation): boolean {
@@ -2222,26 +2337,6 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       (type: any) => type.investment_type_id === typeId
     );
     return typeData ? Number(typeData.current_value || 0) : 0;
-  }
-
-  /**
-   * When type has subtypes, return the sum of current values of the displayed subtypes
-   * so the type row Valor Atual equals the sum of subtype rows (same as Valor Alvo).
-   */
-  getCurrentTypeValueFromSubtypes(typeAlloc: any, typeIndex: number): number {
-    const typeId = typeAlloc?.investment_type_id;
-    const typeCode = typeAlloc?.investment_type?.code;
-    const subtypes = this.getSubTypesForInvestmentType(typeId, typeCode);
-    if (!subtypes?.length) return 0;
-    let sum = 0;
-    for (const subType of subtypes) {
-      if (this.isETFCryptoSubType(subType, typeCode)) {
-        sum += this.getCryptoSubTypeCurrentValueSum(typeId, typeIndex, subType.id);
-      } else {
-        sum += this.getCurrentSubTypeValue(typeId, subType.id, subType.name);
-      }
-    }
-    return sum;
   }
 
   getCurrentSubTypeValue(typeId: number, subTypeId: number, subTypeName?: string): number {

@@ -64,7 +64,7 @@
         <span class="value">{{ formatCurrency(getTotalInvestido()) }}</span>
       </div>
       <div class="summary-card">
-        <span class="label">Valor Atual:</span>
+        <span class="label">Valor atual (bruto):</span>
         <span class="value">{{ formatCurrency(getValorAtual()) }}</span>
       </div>
       <div class="summary-card">
@@ -104,7 +104,7 @@
                       <tr>
                         <th>Tipo</th>
                         <th>Ativo</th>
-                        <th>Posição</th>
+                        <th>Posição (bruto)</th>
                         <th>%</th>
                         <th>% Alocação</th>
                         <th>Total aplicado</th>
@@ -160,8 +160,7 @@
                     <th>Taxa</th>
                     <th>Quantidade</th>
                     <th>Valor Aplicado</th>
-                    <th>Posição</th>
-                    <th>Valor Líquido</th>
+                    <th>Posição (bruto)</th>
                     <th>%</th>
                   </tr>
                 </thead>
@@ -175,27 +174,25 @@
                             <strong>{{ position.asset_name }}</strong>
                           </td>
                           @if (isCaixaPosition(position)) {
-                            <!-- CAIXA: Only show Posição, Valor Líquido, and % -->
+                            <!-- CAIXA: saldo bruto (position_value) e % -->
                             <td colspan="5"></td>
                             <td>{{ formatCurrency(position.position_value) }}</td>
-                            <td>{{ formatCurrency(position.net_value) }}</td>
                             <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           } @else {
-                            <!-- Regular positions and ETF Renda Fixa: Valor Aplicado = invested; Posição/Valor Líquido = current (qty × price when available) -->
+                            <!-- Regular + ETF RF: valor bruto = Posição (qty × preço quando ETF) -->
                             <td>{{ formatDate(position.application_date) }}</td>
                             <td>{{ formatDate(position.maturity_date) }}</td>
                             <td>{{ position.rate || '-' }}</td>
                             <td>{{ position.quantity }}</td>
                             <td>{{ formatCurrency(position.applied_value) }}</td>
                             <td>{{ formatCurrency(getDisplayPositionValue(position)) }}</td>
-                            <td>{{ formatCurrency(getDisplayNetValue(position)) }}</td>
                             <td>{{ getSubtypePercentage(position).toFixed(2) }}%</td>
                           }
                         </tr>
                   }
                   @if (group.type === 'etf_renda_fixa' && group.positions.length === 0) {
                     <tr class="etf-renda-fixa-empty">
-                      <td colspan="10">Nenhuma posição em ETF Renda Fixa (ex.: AUPO11).</td>
+                      <td colspan="9">Nenhuma posição em ETF Renda Fixa (ex.: AUPO11).</td>
                     </tr>
                   }
                 </tbody>

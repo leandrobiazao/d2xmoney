@@ -11,6 +11,7 @@ from allocation_strategies.services import AllocationStrategyService
 from ambb_strategy.services import AMBBStrategyService
 from portfolio_operations.models import PortfolioPosition
 from configuration.models import InvestmentType, InvestmentSubType
+from fixed_income.models import FixedIncomePosition
 from .models import RebalancingRecommendation, RebalancingAction
 from stocks.models import Stock
 from django.db.models import Sum, Q
@@ -18,7 +19,35 @@ from django.db.models import Sum, Q
 
 class RebalancingService:
     """Service for generating rebalancing recommendations."""
-    
+
+    @staticmethod
+    def _current_value_etf_renda_fixa(
+        user: User, etf_stock: Stock, etf_position: PortfolioPosition | None
+    ) -> Decimal:
+        """
+        Valor atual do ETF de Renda Fixa alinhado à lista de RF e à alocação:
+        soma do position_value (bruto) em FixedIncomePosition; senão qty × preço;
+        senão custo em PortfolioPosition.
+        """
+        ticker = (etf_stock.ticker or "").strip()
+        if ticker:
+            fi_qs = FixedIncomePosition.objects.filter(
+                user_id=str(user.id), asset_code__iexact=ticker
+            )
+            if fi_qs.exists():
+                total = Decimal("0")
+                for pos in fi_qs:
+                    total += AllocationStrategyService._fixed_income_valor_bruto(pos)
+                if total > 0:
+                    return total
+        if etf_position:
+            qty = Decimal(str(etf_position.quantidade or 0))
+            price = etf_stock.current_price
+            if price and price > 0 and qty > 0:
+                return qty * Decimal(str(price))
+            return Decimal(str(etf_position.valor_total_investido or 0))
+        return Decimal("0")
+
     @staticmethod
     @transaction.atomic
     def generate_monthly_recommendations(user: User) -> RebalancingRecommendation:
@@ -480,12 +509,12 @@ class RebalancingService:
                                     ticker=etf_stock.ticker
                                 ).first()
                                 
-                                etf_current_value = Decimal('0')
-                                etf_current_quantity = 0
-                                
-                                if etf_position:
-                                    etf_current_value = Decimal(str(etf_position.valor_total_investido or 0))
-                                    etf_current_quantity = etf_position.quantidade or 0
+                                etf_current_value = RebalancingService._current_value_etf_renda_fixa(
+                                    user, etf_stock, etf_position
+                                )
+                                etf_current_quantity = (
+                                    (etf_position.quantidade or 0) if etf_position else 0
+                                )
                                 
                                 etf_difference = etf_target_value - etf_current_value
                                 

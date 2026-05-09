@@ -28,8 +28,8 @@ class FixedIncomePosition(models.Model):
     
     # Values
     applied_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Valor aplicado
-    position_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Posição
-    net_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Valor líquido
+    position_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Valor bruto / posição (saldo bruto)
+    net_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Valor líquido (IR/IOF); totais de UI usam bruto
     gross_yield = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Rendimento bruto
     net_yield = models.DecimalField(max_digits=15, decimal_places=2, default=0)  # Rendimento líquido
     

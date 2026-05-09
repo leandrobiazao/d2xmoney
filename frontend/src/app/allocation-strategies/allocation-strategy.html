@@ -141,11 +141,8 @@
                             </div>
                           </div>
                           <div class="value-column">
-                            @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0 && !isFIIInvestmentType(typeAlloc)) {
-                              <span class="value-text current-value">R$ {{ getCurrentTypeValueFromSubtypes(typeAlloc, typeIndex) | number:'1.2-2' }}</span>
-                            } @else {
-                              <span class="value-text current-value">R$ {{ getCurrentTypeValue(typeAlloc.investment_type_id) | number:'1.2-2' }}</span>
-                            }
+                            <!-- Valor atual do tipo = current_value da API (alinhado ao cartão Ações no portfólio). Subtipos são parcelas; podem existir posições fora das linhas (ex. não categorizado). -->
+                            <span class="value-text current-value">R$ {{ getCurrentTypeValue(typeAlloc.investment_type_id) | number:'1.2-2' }}</span>
                           </div>
                           <div class="value-column">
                             <span class="value-text target-value">R$ {{ getTargetTypeValue(typeAlloc) | number:'1.2-2' }}</span>
@@ -153,7 +150,7 @@
                         </div>
                       </div>
 
-                      @if (getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code).length > 0 && !isFIIInvestmentType(typeAlloc)) {
+                      @if (getSubTypesForAllocationTable(typeAlloc).length > 0 && !isFIIInvestmentType(typeAlloc)) {
                         <div class="sub-allocations">
                           @if (!isSubTypeTotalValid(typeAlloc)) {
                             <div class="validation-banner small invalid">
@@ -161,7 +158,7 @@
                               <span>Os subtipos precisam somar {{ typeAlloc.target_percentage | number:'1.0-2' }}% (mesmo valor do tipo)</span>
                             </div>
                           }
-                          @for (subType of getSubTypesForInvestmentType(typeAlloc.investment_type_id, typeAlloc.investment_type?.code); track subType.id; let subIndex = $index) {
+                          @for (subType of getSubTypesForAllocationTable(typeAlloc); track allocationSubTypeTrackKey(subType); let subIndex = $index) {
                             <div class="allocation-table-row">
                               <div class="allocation-name-col">
                                 <span class="subtype-name">
@@ -175,7 +172,9 @@
                               <div class="allocation-values-grid">
                                 <div class="value-column">
                                   <div class="percentage-input">
-                                    @if (isETFRendaFixaSubType(subType)) {
+                                    @if (isApiOnlyAllocationRow(subType)) {
+                                      <span class="value-text" title="Sem meta de % nesta linha na estratégia; valor reflete apenas o portfólio.">—</span>
+                                    } @else if (isETFRendaFixaSubType(subType)) {
                                       <!-- ETF Renda Fixa: readonly percentage reflecting ETF row -->
                                       <input
                                         type="number"
@@ -217,11 +216,13 @@
                                   @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
                                     <span class="value-text current-value">R$ {{ getCryptoSubTypeCurrentValueSum(typeAlloc.investment_type_id, typeIndex, subType.id) | number:'1.2-2' }}</span>
                                   } @else {
-                                    <span class="value-text current-value">R$ {{ getCurrentSubTypeValue(typeAlloc.investment_type_id, subType.id) | number:'1.2-2' }}</span>
+                                    <span class="value-text current-value">R$ {{ getCurrentSubTypeValueForAllocationRow(typeAlloc.investment_type_id, subType) | number:'1.2-2' }}</span>
                                   }
                                 </div>
                                 <div class="value-column">
-                                  @if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
+                                  @if (isApiOnlyAllocationRow(subType)) {
+                                    <span class="value-text target-value">—</span>
+                                  } @else if (isETFCryptoSubType(subType, typeAlloc.investment_type?.code)) {
                                     <span class="value-text target-value">R$ {{ getCryptoSubTypeTargetValueSum(typeAlloc, typeIndex, subType.id) | number:'1.2-2' }}</span>
                                   } @else {
                                     <span class="value-text target-value">R$ {{ getTargetSubTypeValue(typeAlloc, subType.id) | number:'1.2-2' }}</span>

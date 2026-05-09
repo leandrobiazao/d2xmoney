@@ -76,12 +76,8 @@
         }
       </div>
       <div class="header-cell">
-        <span class="label">Posição</span>
+        <span class="label">Posição (valor bruto)</span>
         <span class="value">{{ formatCurrency(getDisplayPositionValue()) }}</span>
-      </div>
-      <div class="header-cell">
-        <span class="label">Valor líquido</span>
-        <span class="value">{{ formatCurrency(getDisplayNetValue()) }}</span>
       </div>
     </div>
 
@@ -132,10 +128,6 @@
         <div class="detail-item">
           <span class="detail-label">IOF</span>
           <span class="detail-value">{{ formatCurrency(position.iof) }}</span>
-        </div>
-        <div class="detail-item">
-          <span class="detail-label">Valor líquido</span>
-          <span class="detail-value">{{ formatCurrency(getDisplayNetValue()) }}</span>
         </div>
         <div class="detail-item">
           <span class="detail-label">Rendimento bruto</span>

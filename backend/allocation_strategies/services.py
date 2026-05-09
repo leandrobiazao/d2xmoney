@@ -22,7 +22,18 @@ from stocks.models import Stock
 
 class AllocationStrategyService:
     """Service for managing allocation strategies."""
-    
+
+    @staticmethod
+    def _fixed_income_valor_bruto(pos: FixedIncomePosition) -> Decimal:
+        """
+        Valor bruto da posição (saldo/posição bruta). Usar sempre em alocações e totais;
+        não usar net_value aqui.
+        """
+        if pos.position_value is None:
+            return Decimal('0')
+        d = Decimal(str(pos.position_value))
+        return d if d > 0 else Decimal('0')
+
     @staticmethod
     def validate_percentage_sum(percentages: List[Decimal], expected_sum: Decimal = Decimal('100')) -> bool:
         """Validate that percentages sum to expected_sum."""
@@ -311,8 +322,8 @@ class AllocationStrategyService:
             asset_code__startswith='CAIXA_'
         )
         caixa_total_value = sum(
-            Decimal(str(pos.net_value)) if pos.net_value > 0 else Decimal(str(pos.position_value))
-            for pos in caixa_positions
+            (AllocationStrategyService._fixed_income_valor_bruto(pos) for pos in caixa_positions),
+            Decimal('0'),
         )
         
         # Get all Renda Fixa positions (including CAIXA)
@@ -332,8 +343,8 @@ class AllocationStrategyService:
         ) if renda_fixa_type else FixedIncomePosition.objects.none()
         
         renda_fixa_total_value = sum(
-            Decimal(str(pos.net_value)) if pos.net_value > 0 else Decimal(str(pos.position_value))
-            for pos in renda_fixa_positions
+            (AllocationStrategyService._fixed_income_valor_bruto(pos) for pos in renda_fixa_positions),
+            Decimal('0'),
         )
         
         # Get crypto positions for "Renda Variável em Dólares" type
@@ -498,7 +509,7 @@ class AllocationStrategyService:
                 
                 # Track Caixa positions that have subtype assigned
                 if fi_position.asset_code.startswith('CAIXA_'):
-                    caixa_processed_value += Decimal(str(fi_position.net_value)) if fi_position.net_value > 0 else Decimal(str(fi_position.position_value))
+                    caixa_processed_value += AllocationStrategyService._fixed_income_valor_bruto(fi_position)
                 
                 if subtype_id not in type_values[type_id]['sub_types']:
                     type_values[type_id]['sub_types'][subtype_id] = {
@@ -507,7 +518,7 @@ class AllocationStrategyService:
                         'current_value': Decimal('0')
                     }
                 
-                position_value = Decimal(str(fi_position.net_value)) if fi_position.net_value > 0 else Decimal(str(fi_position.position_value))
+                position_value = AllocationStrategyService._fixed_income_valor_bruto(fi_position)
                 type_values[type_id]['sub_types'][subtype_id]['current_value'] += position_value
             
             # Also add CAIXA positions that don't have a subtype assigned (legacy data)

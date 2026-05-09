@@ -92,7 +92,7 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
     return this.position?.price;
   }
 
-  /** Posição to show: when we have current price (e.g. ETF), quantity × price; else position.position_value. */
+  /** Valor bruto da posição: ETF com preço atual = qty × preço; senão position_value. */
   getDisplayPositionValue(): number {
     if (!this.position) return 0;
     if (this.currentPrice != null && this.currentPrice > 0) {
@@ -103,13 +103,9 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
     return typeof v === 'string' ? parseFloat(v) || 0 : (v ?? 0);
   }
 
-  /** Valor líquido to show: when we have current price (e.g. ETF), quantity × price; else position.net_value. */
-  getDisplayNetValue(): number {
+  /** Valor líquido armazenado (apenas para rendimento líquido vs aplicado). */
+  private getStoredNetValue(): number {
     if (!this.position) return 0;
-    if (this.currentPrice != null && this.currentPrice > 0) {
-      const qty = typeof this.position.quantity === 'number' ? this.position.quantity : parseInt(String(this.position.quantity), 10) || 0;
-      return qty * this.currentPrice;
-    }
     const v = this.position.net_value;
     return typeof v === 'string' ? parseFloat(v) || 0 : (v ?? 0);
   }
@@ -294,7 +290,7 @@ export class FixedIncomeDetailComponent implements OnInit, OnChanges {
   calculateNetYield(): number {
     if (!this.position) return 0;
     const appliedValue = typeof this.position.applied_value === 'string' ? parseFloat(this.position.applied_value) || 0 : (this.position.applied_value ?? 0);
-    return this.getDisplayNetValue() - appliedValue;
+    return this.getStoredNetValue() - appliedValue;
   }
 
   parseCurrencyInput(value: string): number {
