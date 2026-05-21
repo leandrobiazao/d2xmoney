@@ -15,6 +15,7 @@ import { HistoryListComponent } from '../brokerage-history/history-list/history-
 import { AllocationStrategyComponent } from '../allocation-strategies/allocation-strategy.component';
 import { CryptoComponent } from '../crypto/crypto.component';
 import { FIIListComponent } from '../fiis/fiis-list.component';
+import { TaxReportingComponent } from '../tax-reporting/tax-reporting.component';
 import { AllocationStrategyService } from '../allocation-strategies/allocation-strategy.service';
 import { StocksService } from '../configuration/stocks/stocks.service';
 import { HttpClient, HttpParams } from '@angular/common/http';
@@ -25,7 +26,7 @@ import { UserService } from '../users/user.service';
 @Component({
   selector: 'app-portfolio',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent, FIIListComponent],
+  imports: [CommonModule, FormsModule, UploadPdfComponent, FixedIncomeListComponent, HistoryListComponent, AllocationStrategyComponent, CryptoComponent, FIIListComponent, TaxReportingComponent],
   templateUrl: './portfolio.html',
   styleUrl: './portfolio.css'
 })
@@ -54,7 +55,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
 
   // View settings
   showPositions = true;
-  activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' = 'acoes';
+  activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' | 'irpf' = 'acoes';
 
   // Store bound event handler for cleanup
   private noteDeletedHandler = (event: Event) => this.onNoteDeleted(event);

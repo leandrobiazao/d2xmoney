@@ -23,6 +23,7 @@ urlpatterns = [
     path('api/fixed-income/', include('fixed_income.urls')),
     path('api/crypto/', include('crypto.urls')),
     path('', include('fiis.urls')),
+    path('', include('tax_reporting.urls')),
 ]
 
 # Serve media files in development

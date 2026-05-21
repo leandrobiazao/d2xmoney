@@ -25,6 +25,9 @@
     <button class="tab-button" [class.active]="activeTab === 'fiis'" (click)="activeTab = 'fiis'">
       Fundos Imobiliários
     </button>
+    <button class="tab-button" [class.active]="activeTab === 'irpf'" (click)="activeTab = 'irpf'">
+      IRPF
+    </button>
   </div>
 
   <!-- Ações Tab Content -->
@@ -144,6 +147,11 @@
   <!-- FIIs Tab Content -->
   @if (activeTab === 'fiis') {
   <app-fiis-list [userId]="userId" />
+  }
+
+  <!-- IRPF Tab Content -->
+  @if (activeTab === 'irpf') {
+  <app-tax-reporting [userId]="userId" [userName]="userName" />
   }
 </div>
 } @else {

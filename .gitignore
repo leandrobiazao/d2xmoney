@@ -188,3 +188,4 @@ backend/media/portafolio_wallet/*/*.xlsx
 backend/media/order_requests/*.xlsx
 backend/media/order_requests/*/*.xlsx
 .playwright-mcp/*.yml
+backend/media/Imposto de renda/*

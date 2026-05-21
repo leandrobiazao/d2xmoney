@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'fixed_income',
     'crypto',
     'fiis',
+    'tax_reporting',
 ]
 
 MIDDLEWARE = [

@@ -2,9 +2,9 @@
 Portfolio service for managing aggregated portfolio summaries.
 This service manages portfolio summaries per user per ticker, including realized profit calculations using FIFO method.
 """
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Callable, Set
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, date
 import re
 from django.db import transaction
 from .models import PortfolioPosition, CorporateEvent
@@ -472,6 +472,9 @@ class PortfolioService:
         operations: List[Dict],
         events_by_ticker: Dict[str, List[CorporateEvent]],
         current_user_id: Optional[str] = None,
+        cutoff_date: Optional[date] = None,
+        on_sale_callback: Optional[Callable[[Dict, float, date], None]] = None,
+        allowed_tickers: Optional[Set[str]] = None,
     ) -> Dict[str, Dict]:
         """
         Process operations chronologically and apply corporate events when appropriate.
@@ -483,11 +486,14 @@ class PortfolioService:
             operations: List of operations sorted chronologically
             events_by_ticker: Dict mapping ticker to list of CorporateEvent objects (sorted by ex_date)
             current_user_id: User id for SUBSCRIPTION events scoped with @user: in the event description
+            cutoff_date: If set, skip operations after this date (inclusive processing)
+            on_sale_callback: Called as callback(operation, realized_profit, operation_date) on each sale
+            allowed_tickers: If set, only process operations for these tickers (uppercase)
         
         Returns:
             Dict mapping ticker to summary: {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
         """
-        from datetime import datetime
+        from datetime import datetime as dt_module
         
         ticker_summaries = {}  # {ticker: {quantidade, precoMedio, valorTotalInvestido, lucroRealizado}}
         applied_events = {}  # Track which events have been applied per ticker: {ticker: [event_id, ...]}
@@ -495,6 +501,9 @@ class PortfolioService:
         for operation in operations:
             ticker = operation.get('titulo', '').strip().upper()
             if not ticker:
+                continue
+            
+            if allowed_tickers is not None and ticker not in allowed_tickers:
                 continue
             
             operation_date_str = operation.get('data', '')
@@ -506,11 +515,14 @@ class PortfolioService:
                 parts = operation_date_str.split('/')
                 if len(parts) == 3:
                     day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
-                    operation_date = datetime(year, month, day).date()
+                    operation_date = dt_module(year, month, day).date()
                 else:
                     operation_date = None
             except (ValueError, IndexError):
                 operation_date = None
+            
+            if cutoff_date is not None and operation_date is not None and operation_date > cutoff_date:
+                continue
             
             # Check for corporate events that should be applied before this operation
             if ticker in events_by_ticker and operation_date:
@@ -648,6 +660,9 @@ class PortfolioService:
                 # Update realized profit (cumulative)
                 summary['lucroRealizado'] += realized_profit
                 
+                if on_sale_callback is not None and operation_date is not None:
+                    on_sale_callback(operation, realized_profit, operation_date)
+                
                 # Update quantity - allow negative values
                 summary['quantidade'] = current_quantity - quantidade
                 
@@ -735,6 +750,42 @@ class PortfolioService:
                     applied_events[ticker_upper].append(event.id)
         
         return ticker_summaries
+    
+    @staticmethod
+    def replay_operations(
+        operations: List[Dict],
+        user_id: str,
+        cutoff_date: Optional[date] = None,
+        on_sale_callback: Optional[Callable[[Dict, float, date], None]] = None,
+        allowed_tickers: Optional[Set[str]] = None,
+    ) -> Dict[str, Dict]:
+        """
+        Replay brokerage operations chronologically with optional date cutoff and sale callbacks.
+        Loads corporate events from the database and applies average-cost processing.
+        """
+        corporate_events = CorporateEvent.objects.filter(applied=True).order_by('ex_date')
+        events_by_ticker: Dict[str, List[CorporateEvent]] = {}
+        for event in corporate_events:
+            ticker_key = event.ticker.upper()
+            if allowed_tickers is not None and ticker_key not in allowed_tickers:
+                continue
+            if ticker_key not in events_by_ticker:
+                events_by_ticker[ticker_key] = []
+            events_by_ticker[ticker_key].append(event)
+
+        sorted_ops = sorted(
+            operations,
+            key=lambda op: (PortfolioService.parse_date(op.get('data', '')), op.get('ordem', 0)),
+        )
+
+        return PortfolioService.process_operations_with_corporate_events(
+            sorted_ops,
+            events_by_ticker,
+            current_user_id=user_id,
+            cutoff_date=cutoff_date,
+            on_sale_callback=on_sale_callback,
+            allowed_tickers=allowed_tickers,
+        )
     
     @staticmethod
     def _apply_corporate_event_to_summary(summary: Dict, event: CorporateEvent) -> None:
