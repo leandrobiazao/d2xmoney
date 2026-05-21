@@ -3,10 +3,10 @@
  * BTG is detected before XP so values like "conta BTG na XP" still route to BTG
  * only if that substring order is intended; typical values are mutually exclusive.
  */
-export type PdfBrokerParam = 'xp' | 'btg' | 'auto';
+export type PdfBrokerParam = 'xp' | 'btg' | 'clear' | 'auto';
 
 /** Resolved broker used after auto-detect or user hint. */
-export type PdfBrokerResolved = 'xp' | 'btg';
+export type PdfBrokerResolved = 'xp' | 'btg' | 'clear';
 
 export function mapAccountProviderToPdfBroker(
   accountProvider: string | undefined | null
@@ -18,6 +18,9 @@ export function mapAccountProviderToPdfBroker(
   if (s.includes('btg')) {
     return 'btg';
   }
+  if (s.includes('clear')) {
+    return 'clear';
+  }
   if (s.includes('xp')) {
     return 'xp';
   }
@@ -25,5 +28,11 @@ export function mapAccountProviderToPdfBroker(
 }
 
 export function labelCorretoraForBroker(broker: PdfBrokerResolved): string {
-  return broker === 'btg' ? 'BTG Pactual' : 'XP Investimentos';
+  if (broker === 'btg') {
+    return 'BTG Pactual';
+  }
+  if (broker === 'clear') {
+    return 'CLEAR Corretora';
+  }
+  return 'XP Investimentos';
 }

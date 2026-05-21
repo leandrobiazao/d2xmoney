@@ -11,19 +11,35 @@ The Brokerage Note Processing app allows users to:
 - Handle missing ticker mappings with user input
 - Save extracted operations for portfolio tracking
 
-## Broker layouts (XP Investimentos vs BTG Pactual)
+## Broker layouts (XP Investimentos, BTG Pactual, CLEAR Corretora)
 
 Brazilian brokerage notes follow B3 rules, but **PDF text layout** differs by institution. The frontend must pick the right extraction rules.
 
-- **Who chooses the parser**: `User.account_provider` is mapped to `'xp' | 'btg' | 'auto'` in `frontend/src/app/brokerage-note/map-account-provider-to-pdf-broker.ts`. Substring **`btg`** → BTG branch; **`xp`** → XP branch; otherwise **`auto`** inspects the first pages for branding (`BTG` + `Pactual`, or `XP` + `invest`) and **defaults to XP** if unknown (with a debug warning).
-- **User vs PDF**: When `account_provider` resolves to XP or BTG explicitly, that choice is **not** overridden by PDF text. Auto-detect runs **only** for `auto`.
+- **Who chooses the parser**: `User.account_provider` is mapped to `'xp' | 'btg' | 'clear' | 'auto'` in `frontend/src/app/brokerage-note/map-account-provider-to-pdf-broker.ts`. Substring **`btg`** → BTG; **`clear`** or **grupo xp** (without forcing classic XP) → CLEAR; **`xp`** → classic XP (`N-BOVESPA`); otherwise **`auto`** inspects the first pages.
+- **Auto-detect order** (`resolveEffectiveBroker`, `pdfBroker === 'auto'` only): **BTG** (`btg` + `pactual`) → **CLEAR** (`clear` + `corretora`, or `grupo xp` without `invest`) → **XP Investimentos** (`xp` + `invest`) → default **XP** parser with a debug warning.
+- **User vs PDF**: BTG and CLEAR provider hints are fixed. **XP Investimentos** may still upload CLEAR (Grupo XP) PDFs: when the hint is `xp`, the parser upgrades to **CLEAR** if the file contains CLEAR branding (`clear` + `corretora`, or `grupo xp` without `invest`). Classic `N-BOVESPA` notes are unchanged. Full auto-detect runs when the mapped param is **`auto`**.
 - **UI wiring**: `app.html` passes `selectedUser.account_provider` into `PortfolioComponent`, then into `UploadPdfComponent` as `accountProvider`, which feeds `parsePdf(..., pdfBroker)`.
-- **`corretora` on operations**: `Operation.corretora` is set to **XP Investimentos** or **BTG Pactual** for all lines in that parse, matching the effective broker.
-- **Text extraction**: **Note boundaries** and **financial summary** use spatially sorted text per page (`extractPageText`). **Operations**: XP keeps stream-joined `extractPagesText` per page range; BTG uses **spatial** concatenation across the note’s operation pages so narrow column gaps still parse.
-- **Post-upload account check**: If the parser returns an account number, `PortfolioComponent` compares **digits only** (non-digits stripped) with `User.account_number`. Align what users store with what appears on the PDF.
+- **`corretora` on operations**: Set to **XP Investimentos**, **BTG Pactual**, or **CLEAR Corretora** for all lines in that parse, matching the effective broker.
+- **Text extraction**: **Note boundaries** and **financial summary** use spatially sorted text per page (`extractPageText`). **Operations**: classic XP uses stream-joined `extractPagesText`; **BTG** and **CLEAR** use **spatial** concatenation across operation pages so column gaps still parse.
+- **Post-upload account check**: If the parser returns an account number, `PortfolioComponent` compares **digits only** (non-digits stripped) with `User.account_number`. CLEAR notes list **`Código cliente`** (internal code, e.g. `0364175`) separately from **`Conta corrente`** (bank row, e.g. `260` / `0001` / `8770006`); validation uses **Conta corrente** only.
 - **Unsupported**: Scanned/image-only PDFs without a text layer are not supported (no OCR in app).
 
-The example figure below is **XP-style**; BTG notes use the same logical fields (`nomeAcaoCompleto`, multi-note headers, etc.) with broker-specific header and line patterns where needed.
+The example figure below is **XP-style** (`N-BOVESPA` operation lines). BTG and CLEAR use the same logical `Operation` fields with broker-specific headers and row patterns.
+
+### CLEAR Corretora (Grupo XP / XPINC)
+
+Notes branded **CLEAR CORRETORA - GRUPO XP** (often filenames `XPINC_NOTA_NEGOCIACAO_B3_*.pdf`) are **not** classic XP `N-BOVESPA` layout.
+
+| Field | Classic XP | CLEAR |
+|--------|------------|--------|
+| Operation rows | `\d+-BOVESPA` + columns | **`B3 RV LISTADO`** (C/V, VISTA/FRACIONARIO, nome + class, qty, price, value, D/C) |
+| Note number | `Nr. nota` + 8+ digits on same line | Often **next line** after `Nr. nota`, **4–10 digits** (e.g. `8512`, `4011558`) |
+| Account | C/C / Conta patterns | **`Conta corrente`** (Banco/Agência/Conta row); not `Código cliente` |
+| Parser entry | `parseOperationsFromText` → `N-BOVESPA` regex | `parseClearOperationsFromText` (spatial state machine + inline fallback) |
+
+Multi-page notes deduplicate repeated headers by `noteNumber|noteDate`. Financial summary labels (*Resumo Financeiro*, *Líquido para*) reuse the existing extractor on the note’s last page.
+
+**Tests / fixtures**: `frontend/public/fixtures/clear/` (see `frontend/e2e/fixtures/README-clear-brokerage-notes.md`); unit tests in `pdf-parser.clear.spec.ts`.
 
 ## Brokerage Note Example
 

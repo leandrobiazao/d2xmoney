@@ -73,9 +73,9 @@ export class PdfParserService {
       const boundaries = await this.detectNoteBoundaries(pdf, effectiveBroker);
       this.debug.log(`📑 Detected ${boundaries.length} note boundary(ies):`, boundaries);
 
-      const accountPagesEnd = Math.min(effectiveBroker === 'btg' ? 2 : 3, pdf.numPages);
+      const accountPagesEnd = Math.min(effectiveBroker === 'btg' || effectiveBroker === 'clear' ? 2 : 3, pdf.numPages);
       const accountSourceText =
-        effectiveBroker === 'btg'
+        effectiveBroker === 'btg' || effectiveBroker === 'clear'
           ? await this.extractSpatialPagesText(pdf, 1, accountPagesEnd)
           : await this.extractPagesText(pdf, 1, accountPagesEnd);
       const accountNumber = this.extractAccountNumber(accountSourceText, effectiveBroker);
@@ -111,15 +111,33 @@ export class PdfParserService {
       this.debug.error('Error parsing PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual ou layout B3 compatível) com camada de texto. PDFs somente imagem não são suportados.`
+        `Erro ao processar o PDF: ${errorMessage}. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual, CLEAR Corretora ou layout B3 compatível) com camada de texto. PDFs somente imagem não são suportados.`
       );
     }
   }
 
   private async resolveEffectiveBroker(pdf: PDFDocumentProxy, param: PdfBrokerParam): Promise<PdfBrokerResolved> {
-    if (param === 'xp' || param === 'btg') {
+    if (param === 'btg' || param === 'clear') {
       return param;
     }
+    const detected = await this.detectBrokerFromPdfContent(pdf);
+    if (param === 'xp') {
+      // XP Investimentos users may upload CLEAR (Grupo XP) notes — layout wins over provider hint
+      if (detected === 'clear') {
+        this.debug.log('🔎 Provider XP hint overridden: CLEAR Corretora layout in PDF');
+        return 'clear';
+      }
+      return 'xp';
+    }
+    if (detected) {
+      return detected;
+    }
+    this.debug.warn('⚠️ Could not detect broker from PDF; using XP-compatible parser.');
+    return 'xp';
+  }
+
+  /** Inspects first pages for broker branding (BTG, CLEAR, classic XP Investimentos). */
+  private async detectBrokerFromPdfContent(pdf: PDFDocumentProxy): Promise<PdfBrokerResolved | null> {
     const streamSample = await this.extractPagesText(pdf, 1, Math.min(2, pdf.numPages));
     const page1Spatial = await this.extractPageText(pdf, 1);
     const blob = (streamSample + '\n' + page1Spatial).toLowerCase();
@@ -127,12 +145,18 @@ export class PdfParserService {
       this.debug.log('🔎 Auto-detected broker: BTG Pactual');
       return 'btg';
     }
+    if (
+      (blob.includes('clear') && blob.includes('corretora')) ||
+      (blob.includes('grupo xp') && !blob.includes('invest'))
+    ) {
+      this.debug.log('🔎 Auto-detected broker: CLEAR Corretora');
+      return 'clear';
+    }
     if (blob.includes('xp') && blob.includes('invest')) {
       this.debug.log('🔎 Auto-detected broker: XP Investimentos');
       return 'xp';
     }
-    this.debug.warn('⚠️ Could not detect broker from PDF; using XP-compatible parser.');
-    return 'xp';
+    return null;
   }
 
   private async extractSpatialPagesText(pdf: PDFDocumentProxy, start: number, end: number): Promise<string> {
@@ -149,7 +173,7 @@ export class PdfParserService {
     end: number,
     broker: PdfBrokerResolved
   ): Promise<string> {
-    if (broker === 'btg') {
+    if (broker === 'btg' || broker === 'clear') {
       return this.extractSpatialPagesText(pdf, start, end);
     }
     return this.extractPagesText(pdf, start, end);
@@ -161,6 +185,24 @@ export class PdfParserService {
       const d = raw.replace(/\D/g, '');
       return d.length >= 5 ? d : null;
     };
+
+    if (broker === 'clear') {
+      // Banco / Agência / Conta corrente row (e.g. 260 0001 8770006) — not Código cliente (internal code)
+      const clearPatterns: RegExp[] = [
+        /Conta\s+corrente[\s\S]{0,200}?\b\d{1,4}\s+\d{1,6}\s+(\d{5,})\b/i,
+        /Banco\s+Ag[eê]ncia\s+Conta\s+corrente[\s\S]{0,200}?\b\d{1,4}\s+\d{1,6}\s+(\d{5,})\b/i
+      ];
+      for (const re of clearPatterns) {
+        const m = normalizedText.match(re);
+        if (m?.[1]) {
+          const d = digits(m[1]);
+          if (d) {
+            this.debug.log(`📋 Extracted account number (CLEAR Conta corrente): ${d}`);
+            return d;
+          }
+        }
+      }
+    }
 
     if (broker === 'btg') {
       const btgPatterns: RegExp[] = [
@@ -359,7 +401,66 @@ export class PdfParserService {
   }
 
   /**
-   * Scans each page for note identity. BTG deduplicates repeated headers on continuation pages.
+   * CLEAR (Grupo XP): note number often on the line after "Nr. nota" (4–10 digits).
+   */
+  private extractClearNoteIdentityFromHeaderBlock(pageText: string): { noteNumber: string; noteDate: string } {
+    const rawLines = pageText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
+
+    let noteNumber = '';
+    let noteDate = '';
+
+    const notaLineIdx = lines.findIndex(l => /nr\.?\s*nota/i.test(l));
+    if (notaLineIdx >= 0) {
+      const prev = notaLineIdx > 0 ? lines[notaLineIdx - 1] : '';
+      const next = notaLineIdx + 1 < lines.length ? lines[notaLineIdx + 1] : '';
+      const inline = lines[notaLineIdx].match(/nr\.?\s*nota\s*:?\s*(\d{4,10})/i);
+      if (inline?.[1]) {
+        noteNumber = inline[1];
+      }
+      const prevMatch = prev.match(/^(\d{4,10})$/);
+      if (!noteNumber && prevMatch) {
+        noteNumber = prevMatch[1];
+      }
+      const nextMatch = next.match(/^(\d{4,10})$/);
+      if (!noteNumber && nextMatch) {
+        noteNumber = nextMatch[1];
+      }
+    }
+
+    if (!noteDate) {
+      const pregIdx = lines.findIndex(l => /data\s+(?:do\s+)?preg[aã]o/i.test(l));
+      if (pregIdx >= 0) {
+        for (const delta of [-1, 1]) {
+          const j = pregIdx + delta;
+          if (j >= 0 && j < lines.length) {
+            const dm = lines[j].match(/(\d{2}\/\d{2}\/\d{4})/);
+            if (dm) {
+              noteDate = dm[1];
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (!noteDate) {
+      const dm = pageText.match(/Data\s+(?:do\s+)?preg[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+      if (dm?.[1]) {
+        noteDate = dm[1];
+      }
+    }
+    if (!noteDate) {
+      const dateBefore = pageText.match(/(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i);
+      if (dateBefore?.[1]) {
+        noteDate = dateBefore[1];
+      }
+    }
+
+    return { noteNumber, noteDate };
+  }
+
+  /**
+   * Scans each page for note identity. BTG/CLEAR deduplicate repeated headers on continuation pages.
    * Returns one boundary per note; if none found, returns a single boundary for the whole document.
    */
   private async detectNoteBoundaries(pdf: PDFDocumentProxy, broker: PdfBrokerResolved): Promise<NoteBoundary[]> {
@@ -371,12 +472,14 @@ export class PdfParserService {
     const nrNotaPattern =
       broker === 'btg'
         ? /(?:Nr\.?\s*[Nn]ota|N[uú]mero\s+da\s+[Nn]ota)\s*:?\s*(\d{6,})/i
-        : /Nr\.?\s*nota\s*:?\s*(\d{8,})/i;
+        : broker === 'clear'
+          ? /Nr\.?\s*nota\s*:?\s*(\d{4,10})/i
+          : /Nr\.?\s*nota\s*:?\s*(\d{8,})/i;
     const dataPregaoPattern = /Data\s+(?:do\s+)?preg[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i;
     const dataBeforePregaoPattern = /(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i;
 
     const headers: Array<{ pageNum: number; noteNumber: string; noteDate: string }> = [];
-    let lastBtgKey = '';
+    let lastDedupeKey = '';
 
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       const pageText = await this.extractPageText(pdf, pageNum);
@@ -393,9 +496,26 @@ export class PdfParserService {
         }
         if (noteNumber) {
           const key = `${noteNumber}|${noteDate}`;
-          if (key !== lastBtgKey) {
+          if (key !== lastDedupeKey) {
             headers.push({ pageNum, noteNumber, noteDate });
-            lastBtgKey = key;
+            lastDedupeKey = key;
+          }
+        }
+      } else if (broker === 'clear') {
+        let { noteNumber, noteDate } = this.extractClearNoteIdentityFromHeaderBlock(pageText);
+        if (!noteNumber) {
+          const notaMatch = pageText.match(nrNotaPattern);
+          if (notaMatch?.[1]) noteNumber = notaMatch[1];
+        }
+        if (!noteDate) {
+          const dm = pageText.match(dataPregaoPattern) ?? pageText.match(dataBeforePregaoPattern);
+          if (dm?.[1]) noteDate = dm[1];
+        }
+        if (noteNumber) {
+          const key = `${noteNumber}|${noteDate}`;
+          if (key !== lastDedupeKey) {
+            headers.push({ pageNum, noteNumber, noteDate });
+            lastDedupeKey = key;
           }
         }
       } else {
@@ -431,6 +551,24 @@ export class PdfParserService {
           ];
         }
       }
+      if (broker === 'clear') {
+        const clearId = this.extractClearNoteIdentityFromHeaderBlock(combined);
+        if (clearId.noteNumber) {
+          let noteDate = clearId.noteDate;
+          if (!noteDate) {
+            const dm = combined.match(dataPregaoPattern) ?? combined.match(dataBeforePregaoPattern);
+            if (dm?.[1]) noteDate = dm[1];
+          }
+          return [
+            {
+              noteNumber: clearId.noteNumber,
+              noteDate,
+              pageStart: 1,
+              pageEnd: totalPages
+            }
+          ];
+        }
+      }
       const dateMatch = combined.match(dataPregaoPattern) ?? combined.match(dataBeforePregaoPattern);
       const notaMatch = combined.match(nrNotaPattern);
       return [
@@ -455,6 +593,51 @@ export class PdfParserService {
       });
     }
     return boundaries;
+  }
+
+  /**
+   * IRRF on CLEAR/B3 notes is often one line: "I.R.R.F. s/ operações, base R$224,99  0,01".
+   * Generic "value before label" matching wrongly picks vendas/base (224,99) from the previous line.
+   */
+  private extractIrrfFields(
+    text: string,
+    parseNumber: (value: string) => number | undefined
+  ): { operacoes?: number; base?: number } {
+    const result: { operacoes?: number; base?: number } = {};
+
+    const clearLine = text.match(
+      /I\.R\.R\.F\.\s+s\/\s*opera[cç][õo]es,\s*base\s*R?\$?\s*([\d.,]+)\s+([\d.,]+)\s*[CD]?\b/im
+    );
+    if (clearLine) {
+      result.base = parseNumber(clearLine[1]);
+      result.operacoes = parseNumber(clearLine[2]);
+      return result;
+    }
+
+    const lineTax = text.match(
+      /I\.R\.R\.F\.\s+s\/\s*opera[cç][õo]es[^0-9]*(?:base\s*R?\$?\s*[\d.,]+)?\s+([\d.,]+)\s*[CD]?\b/im
+    );
+    if (lineTax?.[1]) {
+      result.operacoes = parseNumber(lineTax[1]);
+    }
+
+    const baseInLabel = text.match(
+      /I\.R\.R\.F\.\s+s\/\s*opera[cç][õo]es[^0-9]*base\s*R?\$?\s*([\d.,]+)/im
+    );
+    if (baseInLabel?.[1]) {
+      result.base = parseNumber(baseInLabel[1]);
+    }
+
+    if (result.operacoes === undefined) {
+      const labelAfter = text.match(
+        /I\.R\.R\.F\.\s+s\/\s*opera[cç][õo]es\s*[:]?\s*([\d.,]+)\s*[CD]?\b/im
+      );
+      if (labelAfter?.[1]) {
+        result.operacoes = parseNumber(labelAfter[1]);
+      }
+    }
+
+    return result;
   }
 
   private extractFinancialSummary(lastPageText: string, _broker: PdfBrokerResolved): FinancialSummary | null {
@@ -565,19 +748,18 @@ export class PdfParserService {
                               extractValue('Taxa de custódia', normalizedText) ||
                               extractValue('Taxa de custodia', normalizedText);
       summary.impostos = extractValue('Impostos', normalizedText);
-      summary.irrf_operacoes = extractValue('I.R.R.F. s/ operações', normalizedText) ||
-                               extractValue('IRRF s/ operacoes', normalizedText) ||
-                               extractValue('IRRF s/ operações', normalizedText);
-      if (summary.irrf_operacoes === undefined) {
-        const irrfM = normalizedText.match(
-          /I\.R\.R\.F\.\s+s\/\s*opera.{0,6}es[^0-9]*(?:R\$\s*[\d.,\s]+)?\s*([\d.,]+)\s*[CD]?\b/i
-        );
-        if (irrfM && irrfM[1]) {
-          summary.irrf_operacoes = parseBrazilianNumber(irrfM[1]);
-        }
+      const irrf = this.extractIrrfFields(normalizedText, parseBrazilianNumber);
+      if (irrf.operacoes !== undefined) {
+        summary.irrf_operacoes = irrf.operacoes;
       }
-      summary.irrf_base = extractValue('I.R.R.F. s/ base', normalizedText) ||
-                         extractValue('IRRF s/ base', normalizedText);
+      if (irrf.base !== undefined) {
+        summary.irrf_base = irrf.base;
+      }
+      if (summary.irrf_base === undefined) {
+        summary.irrf_base =
+          extractValue('I.R.R.F. s/ base', normalizedText) ||
+          extractValue('IRRF s/ base', normalizedText);
+      }
       summary.outros_custos = extractValue('Outros', normalizedText);
       
       // Líquido para - matches "Líquido para DD/MM/YYYY" or "Value Líquido para DD/MM/YYYY"
@@ -646,12 +828,267 @@ export class PdfParserService {
     }
   }
 
+  /** CLEAR B3 RV LISTADO — one-line fallback when spatial layout joins columns. */
+  private readonly clearInlineOpPattern =
+    /B3\s+RV\s+LISTADO\s+([CV])\s+(\S+)\s+(.+?)\s+#?\s*(\d+)\s+([\d,.]+)\s+([\d,.]+)\s+([DC])\s*$/i;
+
+  private isClearOpAnchor(line: string): boolean {
+    return /^B3\s+RV\s+LISTADO/i.test(line.trim());
+  }
+
+  private isClearNoiseLine(line: string): boolean {
+    const t = line.trim();
+    if (!t || /^#+$/.test(t)) {
+      return true;
+    }
+    if (/^(ER|CI|OF|IR|DD|A|B|C|D|F|H|I|P|X|Y)$/i.test(t)) {
+      return true;
+    }
+    if (/^NOTA\s+DE\s+NEGOCI/i.test(t)) {
+      return true;
+    }
+    return false;
+  }
+
+  private tryParseClearInlineLine(line: string): RegExpMatchArray | null {
+    const m = line.trim().match(this.clearInlineOpPattern);
+    return m;
+  }
+
+  /**
+   * Parse CLEAR Corretora rows (B3 RV LISTADO) from spatially extracted text.
+   */
+  private parseClearOperationBlocks(lines: string[]): Array<{
+    cv: string;
+    market: string;
+    nome: string;
+    qty: number;
+    precoStr: string;
+    valorStr: string;
+    dc: string;
+    rawLine: string;
+  }> {
+    const blocks: Array<{
+      cv: string;
+      market: string;
+      nome: string;
+      qty: number;
+      precoStr: string;
+      valorStr: string;
+      dc: string;
+      rawLine: string;
+    }> = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!this.isClearOpAnchor(line)) {
+        continue;
+      }
+
+      const inline = this.tryParseClearInlineLine(line);
+      if (inline) {
+        blocks.push({
+          cv: inline[1].toUpperCase(),
+          market: inline[2].trim(),
+          nome: inline[3].trim().replace(/\s+/g, ' '),
+          qty: parseInt(inline[4], 10),
+          precoStr: inline[5],
+          valorStr: inline[6],
+          dc: inline[7].toUpperCase(),
+          rawLine: line
+        });
+        continue;
+      }
+
+      let j = i + 1;
+      if (j >= lines.length) {
+        continue;
+      }
+      const cv = lines[j].trim();
+      if (!/^[CV]$/i.test(cv)) {
+        continue;
+      }
+      j++;
+      if (j >= lines.length) {
+        continue;
+      }
+      const market = lines[j].trim();
+      j++;
+
+      const nameParts: string[] = [];
+      while (j < lines.length) {
+        const t = lines[j].trim();
+        if (this.isClearOpAnchor(t) || /^NOTA\s+DE\s+NEGOCI/i.test(t)) {
+          break;
+        }
+        if (/^\d+$/.test(t)) {
+          break;
+        }
+        if (this.isClearNoiseLine(t)) {
+          j++;
+          continue;
+        }
+        nameParts.push(t);
+        j++;
+      }
+
+      if (j >= lines.length || !/^\d+$/.test(lines[j].trim())) {
+        continue;
+      }
+      const qty = parseInt(lines[j].trim(), 10);
+      j++;
+      if (j >= lines.length) {
+        continue;
+      }
+      const precoStr = lines[j].trim();
+      j++;
+      if (j >= lines.length) {
+        continue;
+      }
+      const valorStr = lines[j].trim();
+      j++;
+      if (j >= lines.length) {
+        continue;
+      }
+      const dc = lines[j].trim().toUpperCase();
+      if (!/^[DC]$/.test(dc)) {
+        continue;
+      }
+
+      const nome = nameParts.join(' ').replace(/\s+/g, ' ').trim();
+      const preco = this.parseCurrency(precoStr);
+      const valor = this.parseCurrency(valorStr);
+      if (!nome || !qty || preco <= 0 || valor <= 0) {
+        continue;
+      }
+
+      blocks.push({
+        cv,
+        market,
+        nome,
+        qty,
+        precoStr,
+        valorStr,
+        dc,
+        rawLine: `B3 RV LISTADO ${cv} ${market} ${nome} ${qty} ${precoStr} ${valorStr} ${dc}`
+      });
+    }
+
+    return blocks;
+  }
+
+  private async parseClearOperationsFromText(
+    text: string,
+    onTickerRequired: ((nome: string, operationData: any) => Promise<string | null>) | undefined,
+    corretoraLabel: string
+  ): Promise<{ operations: Operation[]; expectedOperationsCount: number | null }> {
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const allLines = normalizedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    let pdfDate = '';
+    const clearHeader = this.extractClearNoteIdentityFromHeaderBlock(allLines.slice(0, 80).join('\n'));
+    if (clearHeader.noteDate) {
+      pdfDate = clearHeader.noteDate;
+    }
+    const dateMatch = normalizedText.match(/Data\s+(?:do\s+)?preg[aã]o\s*:?\s*(\d{2}\/\d{2}\/\d{4})/i);
+    if (dateMatch?.[1] && !pdfDate) {
+      pdfDate = dateMatch[1];
+    }
+    if (!pdfDate) {
+      const dateBefore = normalizedText.match(/(\d{2}\/\d{2}\/\d{4})[\s\S]{0,24}Data\s+(?:do\s+)?preg[aã]o/i);
+      if (dateBefore?.[1]) {
+        pdfDate = dateBefore[1];
+      }
+    }
+
+    let pdfNota = clearHeader.noteNumber || '';
+    if (!pdfNota) {
+      const notaMatch = normalizedText.match(/Nr\.?\s*nota\s*:?\s*(\d{4,10})/i);
+      if (notaMatch?.[1]) {
+        pdfNota = notaMatch[1];
+      }
+    }
+
+    const blocks = this.parseClearOperationBlocks(allLines);
+    const expectedOperationsCount = blocks.length > 0 ? blocks.length : null;
+    this.debug.log(`📊 CLEAR: found ${blocks.length} B3 RV LISTADO operation(s)`);
+
+    const operations: Operation[] = [];
+    const skippedOperations: string[] = [];
+
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const tipoOperacao = block.cv.toUpperCase() as 'C' | 'V';
+      const tipoMercado = block.market;
+      const nomeAcaoCompleto = block.nome;
+      const quantidade = block.qty;
+      const dc = block.dc as 'D' | 'C';
+
+      const syntheticMatch = [
+        '',
+        tipoOperacao,
+        tipoMercado,
+        nomeAcaoCompleto,
+        String(quantidade),
+        block.precoStr,
+        block.valorStr,
+        dc
+      ] as RegExpMatchArray;
+
+      try {
+        const operation = await this.parseBovespaLine(
+          syntheticMatch,
+          block.rawLine,
+          i + 1,
+          pdfDate,
+          pdfNota,
+          nomeAcaoCompleto,
+          corretoraLabel,
+          onTickerRequired
+        );
+        if (operation) {
+          operation.notaTipo = 'B3 RV LISTADO';
+          operations.push(operation);
+        } else {
+          skippedOperations.push(`Linha CLEAR ${i + 1}: "${nomeAcaoCompleto}"`);
+        }
+      } catch (error) {
+        skippedOperations.push(
+          `Linha CLEAR ${i + 1}: ${error instanceof Error ? error.message : 'Erro'}`
+        );
+      }
+    }
+
+    if (operations.length === 0) {
+      if (skippedOperations.length > 0) {
+        throw new Error(
+          `Nenhuma operação foi processada. ${skippedOperations.length} operação(ões) ignoradas:\n\n${skippedOperations.join('\n')}`
+        );
+      }
+      throw new Error(
+        'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota CLEAR Corretora (B3 RV LISTADO) com camada de texto.'
+      );
+    }
+
+    if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
+      throw new Error(
+        `Validação falhou: O PDF contém ${expectedOperationsCount} operação(ões) CLEAR, mas apenas ${operations.length} foram processadas.`
+      );
+    }
+
+    return { operations, expectedOperationsCount };
+  }
+
   private async parseOperationsFromText(
     text: string,
     onTickerRequired: ((nome: string, operationData: any) => Promise<string | null>) | undefined,
     broker: PdfBrokerResolved,
     corretoraLabel: string
   ): Promise<{ operations: Operation[]; expectedOperationsCount: number | null }> {
+    if (broker === 'clear') {
+      return this.parseClearOperationsFromText(text, onTickerRequired, corretoraLabel);
+    }
+
     const operations: Operation[] = [];
     const skippedOperations: string[] = [];
     const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -932,7 +1369,7 @@ export class PdfParserService {
     
     if (operations.length === 0) {
       throw new Error(
-        'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual ou layout B3 compatível) e se contém operações no formato esperado.'
+        'Nenhuma operação foi encontrada no PDF. Verifique se o arquivo é uma nota de corretagem válida (XP Investimentos, BTG Pactual, CLEAR Corretora ou layout B3 compatível) e se contém operações no formato esperado.'
       );
     }
     

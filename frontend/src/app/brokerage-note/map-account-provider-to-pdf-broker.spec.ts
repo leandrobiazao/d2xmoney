@@ -9,6 +9,11 @@ describe('mapAccountProviderToPdfBroker', () => {
     expect(mapAccountProviderToPdfBroker('btg')).toBe('btg');
   });
 
+  it('maps CLEAR', () => {
+    expect(mapAccountProviderToPdfBroker('CLEAR')).toBe('clear');
+    expect(mapAccountProviderToPdfBroker('Clear Corretora')).toBe('clear');
+  });
+
   it('maps XP', () => {
     expect(mapAccountProviderToPdfBroker('XP Investimentos')).toBe('xp');
     expect(mapAccountProviderToPdfBroker('xp')).toBe('xp');
@@ -25,5 +30,6 @@ describe('labelCorretoraForBroker', () => {
   it('returns display labels', () => {
     expect(labelCorretoraForBroker('btg')).toBe('BTG Pactual');
     expect(labelCorretoraForBroker('xp')).toBe('XP Investimentos');
+    expect(labelCorretoraForBroker('clear')).toBe('CLEAR Corretora');
   });
 });
