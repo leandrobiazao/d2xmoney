@@ -531,11 +531,11 @@
                               </td>
                               <td>
                                 @if (action.quantity_to_buy) {
-                                  <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                  <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                 } @else if (action.quantity_to_sell) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else if (action.difference > 0) {
-                                  <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                  <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                 } @else if (action.difference < 0) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else {
@@ -572,11 +572,11 @@
                                     </td>
                                     <td>
                                       @if (action.quantity_to_buy) {
-                                        <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                        <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                       } @else if (action.quantity_to_sell) {
                                         <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                       } @else if (action.difference > 0) {
-                                        <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                        <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                       } @else if (action.difference < 0) {
                                         <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                       } @else {
@@ -616,11 +616,11 @@
                                 </td>
                                 <td>
                                   @if (action.quantity_to_buy) {
-                                    <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                    <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                   } @else if (action.quantity_to_sell) {
                                     <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                   } @else if (action.difference > 0) {
-                                    <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                    <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                   } @else if (action.difference < 0) {
                                     <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                   } @else {
@@ -666,7 +666,7 @@
                                 } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
                                   <span class="badge badge-sell">Vender {{ action.quantity_to_sell }}</span>
                                 } @else if (action.difference > 0) {
-                                  <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                  <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                 } @else if (action.difference < 0) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else {
@@ -715,7 +715,7 @@
                                 } @else if (action.quantity_to_sell) {
                                   <span class="badge badge-sell">Vender</span>
                                 } @else if (action.difference > 0) {
-                                  <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                  <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                 } @else if (action.difference < 0) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else {
@@ -760,7 +760,7 @@
                                       } @else if (action.quantity_to_sell) {
                                         <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
                                       } @else if (action.difference > 0) {
-                                        <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                        <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                       } @else if (action.difference < 0) {
                                         <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                       } @else {
@@ -808,7 +808,7 @@
                                           } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
                                             <span class="badge badge-sell">Vender {{ action.quantity_to_sell }} {{ action.stock.ticker }}</span>
                                           } @else if (action.difference > 0) {
-                                            <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }} {{ action.stock.ticker }}</span>
+                                            <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }} {{ action.stock.ticker }}</span>
                                           } @else if (action.difference < 0) {
                                             <span class="badge badge-sell">{{ rebalanceSellLabel(action) }} {{ action.stock.ticker }}</span>
                                           } @else {
@@ -856,11 +856,11 @@
                                         </td>
                                         <td>
                                           @if (action.quantity_to_buy) {
-                                            <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                            <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                           } @else if (action.quantity_to_sell) {
                                             <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                           } @else if (action.difference > 0) {
-                                            <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                            <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                           } @else if (action.difference < 0) {
                                             <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                           } @else {
@@ -903,14 +903,14 @@
                           <td><strong>Renda Variável em Reais</strong></td>
                           <td>R$ {{ (getRendaVarReaisTotal()?.value || 0) | number:'1.2-2' }}</td>
                           <td>R$ {{ getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') | number:'1.2-2' }}</td>
-                          <td [class.positive]="(getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) > 0" 
-                              [class.negative]="(getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) < 0">
-                            R$ {{ (getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) | number:'1.2-2' }}
+                          <td [class.positive]="getRendaVarReaisStrategicTypeGap() > 0" 
+                              [class.negative]="getRendaVarReaisStrategicTypeGap() < 0">
+                            R$ {{ getRendaVarReaisStrategicTypeGap() | number:'1.2-2' }}
                           </td>
                           <td>
-                            @if ((getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) > 100) {
+                            @if (getRendaVarReaisStrategicTypeGap() > 100) {
                               <span class="badge badge-buy">Comprar</span>
-                            } @else if ((getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (getRendaVarReaisTotal()?.value || 0)) < -100) {
+                            } @else if (getRendaVarReaisStrategicTypeGap() < -100) {
                               <span class="badge badge-sell rebalancing-type-level-summary">Vender</span>
                             } @else {
                               <span class="badge badge-maintain">Manter</span>
@@ -1074,7 +1074,7 @@
                                   } @else if (action.quantity_to_sell) {
                                     <span class="badge badge-sell">Vender {{ Math.abs(action.quantity_to_sell) }}</span>
                                   } @else if (action.difference > 0) {
-                                    <span class="badge badge-buy">{{ rebalanceBuyLabel(action) }}</span>
+                                    <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                   } @else if (action.difference < 0) {
                                     <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                   } @else {
@@ -1096,6 +1096,22 @@
                             <span class="sales-limit-card-label">Limite de Vendas Restante</span>
                             <span class="sales-limit-card-value" [class.warning]="currentRecommendation.sales_limit_remaining < 2000">
                               R$ {{ currentRecommendation.sales_limit_remaining | number:'1.2-2' }}
+                            </span>
+                          </div>
+                          <div class="sales-limit-card sales-limit-card-flow">
+                            <span class="sales-limit-card-label">Fluxo Líquido Recomendado</span>
+                            <span class="sales-limit-card-value"
+                                  [class.positive-flow]="getRendaVarReaisRecommendedNetCashFlow() > 0"
+                                  [class.negative-flow]="getRendaVarReaisRecommendedNetCashFlow() < 0"
+                                  [class.highlight]="getRendaVarReaisRecommendedNetCashFlow() === 0">
+                              R$ {{ getRendaVarReaisRecommendedNetCashFlow() | number:'1.2-2' }}
+                            </span>
+                            <span class="sales-limit-card-sublabel">
+                              Compras R$ {{ getRendaVarReaisRecommendedTotalBuys() | number:'1.2-2' }}
+                              · Vendas R$ {{ getRendaVarReaisRecommendedTotalSells() | number:'1.2-2' }}
+                            </span>
+                            <span class="sales-limit-card-sublabel">
+                              Vender (liquidadas) + Comprar (novas) + Rebalancear
                             </span>
                           </div>
                         </div>

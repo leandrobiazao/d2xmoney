@@ -2353,51 +2353,92 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Buy-side badge when quantity_to_buy is missing but difference is positive (indicative ~qty from R$ gap / price).
+   * Buy-side badge: explicit quantity_to_buy only; otherwise Manter (no ~ estimate from Dif.).
    */
   rebalanceBuyLabel(action: RebalancingAction): string {
     const qBuy = action.quantity_to_buy != null ? Math.abs(Number(action.quantity_to_buy)) : 0;
     if (qBuy > 0) {
       return `Comprar ${qBuy}`;
     }
-    const price = action.stock?.current_price;
-    if (action.difference <= 0) {
-      return 'Comprar';
-    }
-    if (price != null && price > 0) {
-      const qty = Math.floor(Math.abs(action.difference) / price);
-      if (qty > 0) {
-        return `Comprar ~${qty}`;
-      }
-    }
-    return 'Comprar';
+    return 'Manter';
+  }
+
+  rebalanceBuyBadgeClass(action: RebalancingAction): string {
+    return this.rebalanceBuyLabel(action).startsWith('Comprar') ? 'badge badge-buy' : 'badge badge-maintain';
   }
 
   /**
-   * Quantidades para o Excel alinhadas ao ecrã: lotes explícitos ou floor(|diff|/preço).
+   * Excel/export qty — only explicit recommendation lots (same as Comprar/Vender badges).
    */
   rebalanceExcelSellQuantity(action: RebalancingAction): number {
     const explicit = action.quantity_to_sell != null ? Math.abs(Number(action.quantity_to_sell)) : 0;
-    if (explicit > 0) {
-      return Math.floor(explicit);
-    }
-    const price = action.stock?.current_price;
-    if (action.difference < 0 && price != null && price > 0) {
-      return Math.floor(Math.abs(action.difference) / price);
-    }
-    return 0;
+    return explicit > 0 ? Math.floor(explicit) : 0;
   }
 
   rebalanceExcelBuyQuantity(action: RebalancingAction): number {
     const explicit = action.quantity_to_buy != null ? Math.abs(Number(action.quantity_to_buy)) : 0;
-    if (explicit > 0) {
-      return Math.floor(explicit);
+    return explicit > 0 ? Math.floor(explicit) : 0;
+  }
+
+  /**
+   * R$ delta for one action: preço × quantidade, or valor atual for liquidação total (sell sem qty).
+   */
+  private getActionRecommendedCashFlow(action: RebalancingAction): number {
+    if (!action.stock) {
+      return 0;
     }
-    const price = action.stock?.current_price;
-    if (action.difference > 0 && price != null && price > 0) {
-      return Math.floor(Math.abs(action.difference) / price);
+    const price = Number(action.stock.current_price ?? 0);
+    const qSell = action.quantity_to_sell != null ? Math.abs(Number(action.quantity_to_sell)) : 0;
+    const qBuy = action.quantity_to_buy != null ? Math.abs(Number(action.quantity_to_buy)) : 0;
+    let delta = 0;
+    if (qSell > 0 && price > 0) {
+      delta -= qSell * price;
+    } else if (action.action_type === 'sell') {
+      const cv = Number(action.current_value ?? 0);
+      if (cv > 0) {
+        delta -= cv;
+      }
     }
-    return 0;
+    if (qBuy > 0 && price > 0) {
+      delta += qBuy * price;
+    }
+    return delta;
+  }
+
+  /** Compras − vendas: Vender (liquidadas) + Comprar (novas) + Rebalancear. */
+  getRendaVarReaisRecommendedNetCashFlow(): number {
+    const all = [
+      ...this.getAcoesReaisSellActions(),
+      ...this.getAcoesReaisBuyActions(),
+      ...this.getAcoesReaisRebalanceActions(),
+    ];
+    return all.reduce((sum, action) => sum + this.getActionRecommendedCashFlow(action), 0);
+  }
+
+  getRendaVarReaisRecommendedTotalBuys(): number {
+    const all = [
+      ...this.getAcoesReaisBuyActions(),
+      ...this.getAcoesReaisRebalanceActions(),
+    ];
+    return all.reduce((sum, action) => {
+      const d = this.getActionRecommendedCashFlow(action);
+      return d > 0 ? sum + d : sum;
+    }, 0);
+  }
+
+  getRendaVarReaisRecommendedTotalSells(): number {
+    const all = [
+      ...this.getAcoesReaisSellActions(),
+      ...this.getAcoesReaisRebalanceActions(),
+    ];
+    return all.reduce((sum, action) => {
+      const d = this.getActionRecommendedCashFlow(action);
+      return d < 0 ? sum + Math.abs(d) : sum;
+    }, 0);
+  }
+
+  getRendaVarReaisStrategicTypeGap(): number {
+    return this.getTargetTypeValueByCode('RENDA_VARIAVEL_REAIS') - (this.getRendaVarReaisTotal()?.value || 0);
   }
 
   // Expose Math for template

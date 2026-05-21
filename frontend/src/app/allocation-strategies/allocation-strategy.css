@@ -816,6 +816,7 @@
 /* Sales Limit Cards - Matching Documentation Design */
 .sales-limit-cards {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   margin-top: 1rem;
   margin-bottom: 1rem;
@@ -823,6 +824,7 @@
 
 .sales-limit-card {
   flex: 1;
+  min-width: 220px;
   max-width: 280px;
   padding: 1rem;
   background: #f8f9fa;
@@ -851,6 +853,24 @@
 
 .sales-limit-card-value.highlight {
   color: #007bff;
+}
+
+.sales-limit-card-value.positive-flow {
+  color: #28a745;
+}
+
+.sales-limit-card-value.negative-flow {
+  color: #dc3545;
+}
+
+.sales-limit-card-sublabel {
+  font-size: 0.75rem;
+  color: #6c757d;
+  line-height: 1.35;
+}
+
+.sales-limit-card-flow {
+  max-width: 320px;
 }
 
 /* Legacy sales-limit-summary (kept for backwards compatibility) */
@@ -926,6 +946,19 @@
 .type-action-group {
   margin-bottom: 1.5rem;
   margin-top: 1rem;
+}
+
+.type-gap-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+.type-gap-flow {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
 }
 
 .subtype-level-summary {

@@ -718,11 +718,10 @@ class RebalancingService:
                         # Respect AMBB buy-budget cap; do not expand to full strategic shares.
                         quantity_to_adjust = min(quantity_to_adjust, max_slot_shares)
                     elif action_type == 'rebalance':
-                        diff_brl = Decimal(str(stock_data.get('difference', 0)))
-                        if diff_brl > Decimal('0.01'):
-                            quantity_to_adjust = int(diff_brl / catalog_price)
-                        else:
-                            quantity_to_adjust = 0
+                        # difference = strategic gap (target − current); qty already buy-budget capped in AMBB
+                        tv = Decimal(str(stock_data.get('target_value', 0)))
+                        max_slot_shares = int(tv / catalog_price) if tv > Decimal('0.01') else quantity_to_adjust
+                        quantity_to_adjust = min(quantity_to_adjust, max_slot_shares)
 
                 RebalancingAction.objects.create(
                     recommendation=recommendation,

@@ -17,6 +17,70 @@ class AMBBStrategyService:
     MAX_STOCKS = 20
     RANK_THRESHOLD = 30
     SALES_LIMIT = Decimal('19000.00')  # 19,000 Reais per month
+
+    @staticmethod
+    def _apply_rank_priority_buy_cap(
+        buy_budget: Decimal,
+        strategic: Decimal,
+        stocks_to_balance: List[Dict],
+        formatted_buys: List[Dict],
+    ) -> None:
+        """
+        When recommended buys exceed buy_budget, allocate budget to best AMBB ranks first
+        (lowest rank number = highest priority). Lower-ranked tickers get quantity 0 once
+        the cap is exhausted — total spend never exceeds buy_budget.
+        """
+        purchases = []
+        for i, item in enumerate(stocks_to_balance):
+            orig_qty = int(item.get('quantity_to_adjust') or 0)
+            if orig_qty <= 0:
+                continue
+            price = Decimal(str(item.get('current_price', 0)))
+            if price <= 0:
+                continue
+            cv = Decimal(str(item.get('current_value', 0)))
+            headroom = max(Decimal('0'), strategic - cv)
+            requested = min(Decimal(str(orig_qty)) * price, headroom)
+            if requested <= 0:
+                continue
+            purchases.append({
+                'index': i,
+                'ticker': item.get('ticker', ''),
+                'ranking': int(item.get('ranking', 999)),
+                'price': price,
+                'headroom': headroom,
+                'requested': requested,
+            })
+
+        purchases.sort(key=lambda p: (p['ranking'], p['ticker']))
+
+        formatted_by_ticker = {fb['ticker']: fb for fb in formatted_buys}
+        remaining = buy_budget
+
+        for p in purchases:
+            item = stocks_to_balance[p['index']]
+            cv = Decimal(str(item.get('current_value', 0)))
+            item['target_value'] = float(strategic)
+            item['difference'] = float(strategic - cv)
+
+            if remaining <= Decimal('0.01'):
+                item['quantity_to_adjust'] = 0
+                ticker = p['ticker']
+                if ticker in formatted_by_ticker:
+                    formatted_by_ticker[ticker]['target_value'] = float(strategic)
+                    formatted_by_ticker[ticker]['target_quantity'] = 0
+                continue
+
+            spend_cap = min(p['requested'], p['headroom'], remaining)
+            qty = int(spend_cap / p['price']) if p['price'] > 0 else 0
+            cost = Decimal(str(qty)) * p['price']
+            item['quantity_to_adjust'] = qty
+            remaining -= cost
+
+            ticker = p['ticker']
+            if ticker in formatted_by_ticker:
+                formatted_by_ticker[ticker]['target_value'] = float(strategic)
+                formatted_by_ticker[ticker]['target_quantity'] = qty
     
     @staticmethod
     def generate_rebalancing_recommendations(user: User, remaining_monthly_limit: Decimal = None) -> Dict:
@@ -37,7 +101,8 @@ class AMBBStrategyService:
         7. Equal nominal slice among up to 20 lines: target per name =
            («Meta» para Renda Variável em Reais no cartão de alocação = tipo % × valor total carteira)
            divided by MAX_STOCKS (20).
-        8. Priority: Balance existing portfolio stocks over selling bad stocks completely
+        8. Buy-budget cap: fund purchases by best AMBB rank first; skip lower ranks when cap is exhausted.
+        9. Priority: Balance existing portfolio stocks over selling bad stocks completely
         
         Returns:
         {
@@ -185,9 +250,8 @@ class AMBBStrategyService:
                         'ambb_data': current_ambb_tickers[ticker]
                     }
         
-        # NEW PRIORITY: Sell bad stocks (ranking > 30) COMPLETELY FIRST, then partially if limit allows
-        # Strategy: Use ALL available limit to sell bad stocks completely first
-        # NO reserve for rebalancing good stocks - they will be kept without selling
+        # NEW PRIORITY: Sell bad stocks (ranking > 30) COMPLETELY FIRST, then partially if limit allows.
+        # Any remaining limit may rebalance good stocks (rank <= 30) that are above target.
         
         # Use ALL remaining monthly limit to sell bad stocks completely
         # We prioritize selling bad stocks completely over rebalancing good stocks
@@ -360,11 +424,8 @@ class AMBBStrategyService:
             target_value_per_stock = Decimal('0')
         
         # Generate balance actions for stocks to keep and new buys
-        # IMPORTANT: Good stocks (ranking <= 30) should NOT be sold partially
-        # They should be kept without selling, even if above target
         stocks_to_balance = []
-        # remaining_sales_limit is now only for partial sales of bad stocks (ranking > 30)
-        # This is the limit that remains after selling bad stocks completely
+        # Tracks limit remaining after complete sales (updated by partial bad/good sells)
         remaining_sales_limit = remaining_limit_after_complete_sales
         
         # For stocks to keep - include ALL stocks that will be in final portfolio
@@ -386,15 +447,8 @@ class AMBBStrategyService:
             stock_ranking = stocks_to_keep[ticker]['ranking']
             
             if difference < Decimal('0'):  # Need to sell (current value > target)
-                # CRITICAL: For stocks with good ranking (<= 30), DO NOT sell partially
-                # Priority is to keep good stocks and sell bad stocks (ranking > 30) first
-                # Only if we have exhausted selling bad stocks and still have limit, then consider rebalancing good stocks
-                # For now, keep good stocks without selling - prioritize selling bad stocks
+                # Partial sell for good stocks is applied after bad-stock sales (see good_above_target pass)
                 quantity_diff = 0
-                # Don't use remaining_sales_limit for good stocks - save it for bad stocks
-                
-                # IMPORTANT: Don't recalculate difference - it should always be target - current
-                # The difference shows the gap between target and current, not after partial sale
             elif difference > Decimal('0.01'):  # Need to buy
                 # NEVER recommend buying more of stocks with ranking > 30
                 # Stocks in stocks_to_keep should have ranking <= 30, but double-check
@@ -519,6 +573,36 @@ class AMBBStrategyService:
                         'quantity_to_adjust': quantity_diff,
                         'current_price': float(current_price)
                     })
+        
+        # Use remaining sales limit to rebalance good stocks (rank <= 30) above target.
+        # Bad stocks are processed first; then fund partial sells by best rank until limit is gone.
+        good_above_target = [
+            item for item in stocks_to_balance
+            if item.get('ticker') in stocks_to_keep
+            and Decimal(str(item.get('difference', 0))) < Decimal('-0.01')
+            and int(item.get('quantity_to_adjust') or 0) == 0
+        ]
+        good_above_target.sort(key=lambda x: (int(x.get('ranking', 999)), x.get('ticker', '')))
+        for item in good_above_target:
+            if remaining_limit_after_complete_sales <= Decimal('0.01'):
+                break
+            current_price = Decimal(str(item.get('current_price', 0)))
+            if current_price <= 0:
+                continue
+            current_value = Decimal(str(item.get('current_value', 0)))
+            over_target = max(Decimal('0'), current_value - target_value_per_stock)
+            if over_target <= Decimal('0.01'):
+                continue
+            qty_needed = int(over_target / current_price)
+            if qty_needed <= 0:
+                continue
+            sale_value_needed = Decimal(str(qty_needed)) * current_price
+            max_sale_value = min(sale_value_needed, remaining_limit_after_complete_sales, current_value)
+            qty_to_sell = int(max_sale_value / current_price)
+            if qty_to_sell <= 0:
+                continue
+            item['quantity_to_adjust'] = -qty_to_sell
+            remaining_limit_after_complete_sales -= Decimal(str(qty_to_sell)) * current_price
         
         # For new stocks to buy
         # Double-check: NEVER add stocks with ranking > 30 to balance list
@@ -682,97 +766,13 @@ class AMBBStrategyService:
                         balance_item['target_value'] = 0.0
                         balance_item['difference'] = 0.0
         elif total_recommended_buys > buy_budget and buy_budget > 0:
-            # Buy budget scales *quantities*, not strategic «Valor Alvo» (must stay meta/20 for every line).
-            strategic = target_value_per_stock
-            # Step 1: Distribute buy_budget among new-stock lines, capped per name at strategic slice
-            N_new = len(formatted_buys)
-            if N_new > 0:
-                slice_new = buy_budget / Decimal(N_new)
-                total_spent_on_new = Decimal('0')
-                for b in formatted_buys:
-                    price = Decimal(str(b['current_price'])) if b.get('current_price') else Decimal('0')
-                    if price <= 0:
-                        b['target_value'] = float(strategic)
-                        b['target_quantity'] = 0
-                        continue
-                    per_name_budget = min(slice_new, strategic)
-                    qty = int(per_name_budget / price)
-                    buy_amount = Decimal(str(qty)) * price
-                    b['target_value'] = float(strategic)
-                    b['target_quantity'] = qty
-                    total_spent_on_new += buy_amount
-                
-                # Sync stocks_to_balance entries for new stocks (current_value == 0)
-                formatted_buys_by_ticker = {fb['ticker']: fb for fb in formatted_buys}
-                for balance_item in stocks_to_balance:
-                    cv = balance_item.get('current_value', 0)
-                    if cv != 0 and not (
-                        isinstance(cv, (int, float)) and cv <= 0.01
-                    ):
-                        continue
-                    ticker = balance_item.get('ticker')
-                    if ticker in formatted_buys_by_ticker:
-                        fb = formatted_buys_by_ticker[ticker]
-                        price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
-                        qty = int(fb['target_quantity'] or 0)
-                        buy_amount = (Decimal(str(qty)) * price) if price > 0 else Decimal('0')
-                        balance_item['target_value'] = float(strategic)
-                        balance_item['difference'] = float(buy_amount)
-                        balance_item['quantity_to_adjust'] = qty
-                
-                # Step 2: Remaining budget for Rebalancear (buy more for existing stocks)
-                remaining_budget = buy_budget - total_spent_on_new
-                keep_buy_more = [
-                    (i, balance_item) for i, balance_item in enumerate(stocks_to_balance)
-                    if (balance_item.get('current_value') or 0) > 0.01 and (balance_item.get('quantity_to_adjust') or 0) > 0
-                ]
-                if remaining_budget > 0 and keep_buy_more:
-                    n_keep = len(keep_buy_more)
-                    slice_keep = remaining_budget / Decimal(n_keep)
-                    for i, balance_item in keep_buy_more:
-                        price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
-                        if price <= 0:
-                            stocks_to_balance[i]['quantity_to_adjust'] = 0
-                            continue
-                        current_val = Decimal(str(balance_item['current_value']))
-                        headroom = max(Decimal('0'), strategic - current_val)
-                        per_line_budget = min(slice_keep, headroom)
-                        qty = int(per_line_budget / price)
-                        if qty <= 0:
-                            stocks_to_balance[i]['quantity_to_adjust'] = 0
-                            continue
-                        buy_amount = Decimal(str(qty)) * price
-                        stocks_to_balance[i]['target_value'] = float(strategic)
-                        stocks_to_balance[i]['difference'] = float(buy_amount)
-                        stocks_to_balance[i]['quantity_to_adjust'] = qty
-                elif keep_buy_more:
-                    for i, balance_item in keep_buy_more:
-                        stocks_to_balance[i]['quantity_to_adjust'] = 0
-            else:
-                # No new stocks: distribute full buy_budget to Rebalancear buy-more
-                keep_buy_more = [
-                    (i, balance_item) for i, balance_item in enumerate(stocks_to_balance)
-                    if (balance_item.get('current_value') or 0) > 0.01 and (balance_item.get('quantity_to_adjust') or 0) > 0
-                ]
-                if keep_buy_more:
-                    n_keep = len(keep_buy_more)
-                    slice_keep = buy_budget / Decimal(n_keep)
-                    for i, balance_item in keep_buy_more:
-                        price = Decimal(str(balance_item['current_price'])) if balance_item.get('current_price') else Decimal('0')
-                        if price <= 0:
-                            stocks_to_balance[i]['quantity_to_adjust'] = 0
-                            continue
-                        current_val = Decimal(str(balance_item['current_value']))
-                        headroom = max(Decimal('0'), strategic - current_val)
-                        per_line_budget = min(slice_keep, headroom)
-                        qty = int(per_line_budget / price)
-                        if qty <= 0:
-                            stocks_to_balance[i]['quantity_to_adjust'] = 0
-                            continue
-                        buy_amount = Decimal(str(qty)) * price
-                        stocks_to_balance[i]['target_value'] = float(strategic)
-                        stocks_to_balance[i]['difference'] = float(buy_amount)
-                        stocks_to_balance[i]['quantity_to_adjust'] = qty
+            # Scale quantities only; Valor Alvo / Dif. stay strategic. Best ranks funded first.
+            AMBBStrategyService._apply_rank_priority_buy_cap(
+                buy_budget,
+                target_value_per_stock,
+                stocks_to_balance,
+                formatted_buys,
+            )
         
         return {
             'stocks_to_sell': formatted_sells,
