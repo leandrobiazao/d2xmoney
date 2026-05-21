@@ -648,14 +648,19 @@ class RebalancingService:
             if ticker and ticker not in stocks_in_balance:
                 try:
                     stock = Stock.objects.get(ticker=ticker, is_active=True)
+                    tv = Decimal(str(stock_data.get('target_value', 0)))
+                    cp = stock.current_price if stock.current_price > 0 else Decimal('0')
+                    qty_buy = int(tv / cp) if cp > Decimal('0') and tv > Decimal('0.01') else int(
+                        stock_data.get('target_quantity') or 0
+                    )
                     RebalancingAction.objects.create(
                         recommendation=recommendation,
                         action_type='buy',
                         stock=stock,
                         current_value=Decimal('0'),
-                        target_value=Decimal(str(stock_data['target_value'])),
-                        difference=Decimal(str(stock_data['target_value'])),
-                        quantity_to_buy=stock_data.get('target_quantity', 0),
+                        target_value=tv,
+                        difference=tv,
+                        quantity_to_buy=qty_buy,
                         display_order=stock_data.get('ranking', 999)  # Use ranking from AMBB 2.0
                     )
                     action_order += 1
@@ -673,7 +678,7 @@ class RebalancingService:
             
             try:
                 stock = Stock.objects.get(ticker=ticker, is_active=True)
-                quantity_to_adjust = stock_data.get('quantity_to_adjust', 0)
+                quantity_to_adjust = int(stock_data.get('quantity_to_adjust') or 0)
                 # Get ranking from stock_data (AMBB 2.0 ranking) - this is the source of truth
                 ranking = stock_data.get('ranking', 999)
                 
@@ -701,7 +706,24 @@ class RebalancingService:
                         continue
                     # Otherwise, it becomes a rebalance action with no buy
                     action_type = 'rebalance'
-                
+
+                # Recompute whole-share buy qty from BRL bands using catalog price now.
+                # AMBB often uses stale stock_data['current_price']; UI shows Stock.current_price
+                # which made qty × "Preço atual" blow past "Valor Alvo".
+                catalog_price = stock.current_price if stock.current_price > 0 else Decimal('0')
+                if quantity_to_adjust > 0 and catalog_price > 0:
+                    if action_type == 'buy':
+                        tv = Decimal(str(stock_data.get('target_value', 0)))
+                        max_slot_shares = int(tv / catalog_price) if tv > Decimal('0.01') else quantity_to_adjust
+                        # Respect AMBB buy-budget cap; do not expand to full strategic shares.
+                        quantity_to_adjust = min(quantity_to_adjust, max_slot_shares)
+                    elif action_type == 'rebalance':
+                        diff_brl = Decimal(str(stock_data.get('difference', 0)))
+                        if diff_brl > Decimal('0.01'):
+                            quantity_to_adjust = int(diff_brl / catalog_price)
+                        else:
+                            quantity_to_adjust = 0
+
                 RebalancingAction.objects.create(
                     recommendation=recommendation,
                     action_type=action_type,
