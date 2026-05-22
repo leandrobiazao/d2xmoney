@@ -832,8 +832,14 @@ export class PdfParserService {
   private readonly clearInlineOpPattern =
     /B3\s+RV\s+LISTADO\s+([CV])\s+(\S+)\s+(.+?)\s+#?\s*(\d+)\s+([\d,.]+)\s+([\d,.]+)\s+([DC])\s*$/i;
 
-  private isClearOpAnchor(line: string): boolean {
-    return /^B3\s+RV\s+LISTADO/i.test(line.trim());
+  /** Classic B3 layout (1-BOVESPA, 7-BOVESPA, …) — inline when columns join on one line. */
+  private readonly classicBovespaInlineOpPattern =
+    /^\d+-BOVESPA\s+([CV])\s+(\S+)\s+(.+?)\s+#?\s*(\d+)\s+([\d,.]+)\s+([\d,.]+)\s+([DC])\s*$/i;
+
+  /** Spatial block anchor: new CLEAR (B3 RV LISTADO) or classic N-BOVESPA on its own line. */
+  private isBovespaBlockAnchor(line: string): boolean {
+    const t = line.trim();
+    return /^B3\s+RV\s+LISTADO/i.test(t) || /^\d+-BOVESPA$/i.test(t);
   }
 
   private isClearNoiseLine(line: string): boolean {
@@ -841,7 +847,7 @@ export class PdfParserService {
     if (!t || /^#+$/.test(t)) {
       return true;
     }
-    if (/^(ER|CI|OF|IR|DD|A|B|C|D|F|H|I|P|X|Y)$/i.test(t)) {
+    if (/^(ER|CI|OF|IR|DD|A|B|C|D|F|H|I|P|X|Y|#)$/i.test(t)) {
       return true;
     }
     if (/^NOTA\s+DE\s+NEGOCI/i.test(t)) {
@@ -851,12 +857,16 @@ export class PdfParserService {
   }
 
   private tryParseClearInlineLine(line: string): RegExpMatchArray | null {
-    const m = line.trim().match(this.clearInlineOpPattern);
-    return m;
+    const trimmed = line.trim();
+    return trimmed.match(this.clearInlineOpPattern) ?? trimmed.match(this.classicBovespaInlineOpPattern);
+  }
+
+  private notaTipoFromRawLine(rawLine: string): string {
+    return /^\d+-BOVESPA/i.test(rawLine.trim()) ? '1-BOVESPA' : 'B3 RV LISTADO';
   }
 
   /**
-   * Parse CLEAR Corretora rows (B3 RV LISTADO) from spatially extracted text.
+   * Parse CLEAR / classic B3 rows (B3 RV LISTADO or N-BOVESPA) from spatially extracted text.
    */
   private parseClearOperationBlocks(lines: string[]): Array<{
     cv: string;
@@ -881,7 +891,10 @@ export class PdfParserService {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!this.isClearOpAnchor(line)) {
+      const isBlockAnchor = this.isBovespaBlockAnchor(line);
+      const isOpLineStart =
+        isBlockAnchor || /^B3\s+RV\s+LISTADO/i.test(line) || /^\d+-BOVESPA\b/i.test(line);
+      if (!isOpLineStart) {
         continue;
       }
 
@@ -897,6 +910,10 @@ export class PdfParserService {
           dc: inline[7].toUpperCase(),
           rawLine: line
         });
+        continue;
+      }
+
+      if (!isBlockAnchor) {
         continue;
       }
 
@@ -918,7 +935,7 @@ export class PdfParserService {
       const nameParts: string[] = [];
       while (j < lines.length) {
         const t = lines[j].trim();
-        if (this.isClearOpAnchor(t) || /^NOTA\s+DE\s+NEGOCI/i.test(t)) {
+        if (this.isBovespaBlockAnchor(t) || /^NOTA\s+DE\s+NEGOCI/i.test(t)) {
           break;
         }
         if (/^\d+$/.test(t)) {
@@ -970,7 +987,7 @@ export class PdfParserService {
         precoStr,
         valorStr,
         dc,
-        rawLine: `B3 RV LISTADO ${cv} ${market} ${nome} ${qty} ${precoStr} ${valorStr} ${dc}`
+        rawLine: `${line.trim().split(/\s+/)[0]} ${cv} ${market} ${nome} ${qty} ${precoStr} ${valorStr} ${dc}`
       });
     }
 
@@ -1011,7 +1028,7 @@ export class PdfParserService {
 
     const blocks = this.parseClearOperationBlocks(allLines);
     const expectedOperationsCount = blocks.length > 0 ? blocks.length : null;
-    this.debug.log(`📊 CLEAR: found ${blocks.length} B3 RV LISTADO operation(s)`);
+    this.debug.log(`📊 CLEAR/B3: found ${blocks.length} operation(s) (B3 RV LISTADO or N-BOVESPA)`);
 
     const operations: Operation[] = [];
     const skippedOperations: string[] = [];
@@ -1047,7 +1064,7 @@ export class PdfParserService {
           onTickerRequired
         );
         if (operation) {
-          operation.notaTipo = 'B3 RV LISTADO';
+          operation.notaTipo = this.notaTipoFromRawLine(block.rawLine);
           operations.push(operation);
         } else {
           skippedOperations.push(`Linha CLEAR ${i + 1}: "${nomeAcaoCompleto}"`);

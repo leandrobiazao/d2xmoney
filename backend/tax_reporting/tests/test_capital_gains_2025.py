@@ -1,5 +1,5 @@
 """
-Tests for capital gains (IRPF) reporting — ações à vista.
+Tests for capital gains (IRPF) reporting — ações, FIIs, ETFs, and BDRs.
 """
 from decimal import Decimal
 
@@ -7,7 +7,6 @@ from django.test import TestCase
 
 from brokerage_notes.models import BrokerageNote, Operation
 from configuration.models import InvestmentType, InvestmentSubType
-from portfolio_operations.models import CorporateEvent
 from portfolio_operations.services import PortfolioService
 from stocks.models import Stock
 from tax_reporting.services import CapitalGainsService, EXEMPT_SALES_LIMIT
@@ -85,14 +84,23 @@ class CapitalGainsTestCase(TestCase):
             )
         return note
 
+    def _acoes_months(self, report):
+        return report['acoes']['months']
+
+    def _fii_months(self, report):
+        return report['fii']['months']
+
+    def _etf_bdr_months(self, report):
+        return report['etf_bdr']['months']
+
     def test_month_with_only_buys_not_in_report(self):
         self._persist_note(
             '15/03/2025', 'n1',
             [_op('op1', 'C', 'PETR4', 100, 10.0, '15/03/2025')],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        self.assertEqual(report['months_with_sales_count'], 0)
-        self.assertEqual(report['months'], [])
+        self.assertEqual(report['acoes']['months_with_sales_count'], 0)
+        self.assertEqual(self._acoes_months(report), [])
 
     def test_exempt_month_with_sale_appears(self):
         self._persist_note(
@@ -103,15 +111,15 @@ class CapitalGainsTestCase(TestCase):
             ],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        self.assertEqual(len(report['months']), 1)
-        month = report['months'][0]
+        months = self._acoes_months(report)
+        self.assertEqual(len(months), 1)
+        month = months[0]
         self.assertEqual(month['month'], 4)
         self.assertTrue(month['is_exempt'])
         self.assertEqual(month['gross_gain'], 100.0)  # (12-10)*50
         self.assertEqual(month['tax_due'], 0.0)
 
     def test_taxable_month(self):
-        # Buy 1000 @ 10, sell 1000 @ 35 => 25000 sales, 25000 gain
         self._persist_note(
             '20/05/2025', 'n3',
             [
@@ -120,14 +128,13 @@ class CapitalGainsTestCase(TestCase):
             ],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        month = report['months'][0]
+        month = self._acoes_months(report)[0]
         self.assertFalse(month['is_exempt'])
         self.assertEqual(month['total_sales'], 35000.0)
         self.assertEqual(month['taxable_gain'], 25000.0)
         self.assertEqual(month['tax_due'], 3750.0)
 
     def test_sparse_months_loss_compensation(self):
-        # June: loss with sale (exempt)
         self._persist_note(
             '15/06/2025', 'n4',
             [
@@ -135,8 +142,6 @@ class CapitalGainsTestCase(TestCase):
                 _op('op2', 'V', 'PETR4', 100, 15.0, '15/06/2025', ordem=2),
             ],
         )
-        # July/August: no sales
-        # September: taxable gain
         self._persist_note(
             '10/09/2025', 'n5',
             [
@@ -145,13 +150,14 @@ class CapitalGainsTestCase(TestCase):
             ],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        self.assertEqual(len(report['months']), 2)
-        self.assertEqual(report['months'][0]['month'], 6)
-        self.assertEqual(report['months'][0]['net_result'], -500.0)
-        self.assertEqual(report['months'][1]['month'], 9)
-        self.assertEqual(report['months'][1]['loss_carryforward_in'], 500.0)
-        self.assertEqual(report['months'][1]['taxable_gain'], 4500.0)  # 5000 - 500
-        self.assertEqual(report['months'][1]['tax_due'], 675.0)
+        months = self._acoes_months(report)
+        self.assertEqual(len(months), 2)
+        self.assertEqual(months[0]['month'], 6)
+        self.assertEqual(months[0]['net_result'], -500.0)
+        self.assertEqual(months[1]['month'], 9)
+        self.assertEqual(months[1]['loss_carryforward_in'], 500.0)
+        self.assertEqual(months[1]['taxable_gain'], 4500.0)  # 5000 - 500
+        self.assertEqual(months[1]['tax_due'], 675.0)
 
     def test_year_without_sales_empty_months(self):
         self._persist_note(
@@ -159,7 +165,7 @@ class CapitalGainsTestCase(TestCase):
             [_op('op1', 'C', 'PETR4', 200, 10.0, '01/06/2025')],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        self.assertEqual(report['months'], [])
+        self.assertEqual(self._acoes_months(report), [])
         self.assertEqual(len(report['position_at_year_end']), 1)
         self.assertEqual(report['position_at_year_end'][0]['quantidade'], 200)
 
@@ -201,7 +207,7 @@ class CapitalGainsTestCase(TestCase):
             ],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        self.assertTrue(report['months'][0]['is_exempt'])
+        self.assertTrue(self._acoes_months(report)[0]['is_exempt'])
 
     def test_irrf_subtracted_from_darf(self):
         self._persist_note(
@@ -213,7 +219,7 @@ class CapitalGainsTestCase(TestCase):
             irrf=100.0,
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        month = report['months'][0]
+        month = self._acoes_months(report)[0]
         self.assertEqual(month['irrf_withheld'], 100.0)
         self.assertEqual(month['darf_amount'], month['tax_due'] - 100.0)
 
@@ -236,7 +242,6 @@ class CapitalGainsTestCase(TestCase):
             current_price=Decimal('130.00'),
             is_active=True,
         )
-        # Small sale under R$ 20k but BDR gain => still taxed
         self._persist_note(
             '10/07/2025', 'n10',
             [
@@ -245,9 +250,141 @@ class CapitalGainsTestCase(TestCase):
             ],
         )
         report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
-        month = report['months'][0]
+        month = self._etf_bdr_months(report)[0]
         self.assertEqual(month['bdr_sales'], 1200.0)
-        self.assertFalse(month['is_exempt'])
         self.assertEqual(month['taxable_gain'], 200.0)
         self.assertEqual(month['tax_due'], 30.0)
         self.assertIn('BERK34', CapitalGainsService.get_bdr_tickers())
+        self.assertEqual(self._acoes_months(report), [])
+
+    def test_bdr_no_loss_carryforward(self):
+        dolares_type, _ = InvestmentType.objects.get_or_create(
+            code='RENDA_VARIAVEL_DOLARES',
+            defaults={'name': 'Renda Variável em Dólares', 'is_active': True},
+        )
+        bdrs_subtype, _ = InvestmentSubType.objects.get_or_create(
+            investment_type=dolares_type,
+            code='BDRS',
+            defaults={'name': 'BDRs', 'is_active': True},
+        )
+        Stock.objects.create(
+            ticker='BERK34',
+            name='Berkshire Hathaway BDR',
+            investment_type=dolares_type,
+            investment_subtype=bdrs_subtype,
+            stock_class='BDR',
+            current_price=Decimal('130.00'),
+            is_active=True,
+        )
+        self._persist_note(
+            '15/06/2025', 'n11',
+            [
+                _op('op1', 'C', 'BERK34', 10, 100.0, '01/06/2025'),
+                _op('op2', 'V', 'BERK34', 10, 50.0, '15/06/2025', ordem=2),
+            ],
+        )
+        self._persist_note(
+            '10/09/2025', 'n12',
+            [
+                _op('op3', 'C', 'BERK34', 10, 50.0, '01/09/2025'),
+                _op('op4', 'V', 'BERK34', 10, 70.0, '10/09/2025', ordem=2),
+            ],
+        )
+        report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
+        months = self._etf_bdr_months(report)
+        self.assertEqual(len(months), 2)
+        self.assertEqual(months[0]['tax_due'], 0.0)
+        self.assertEqual(months[1]['taxable_gain'], 200.0)
+        self.assertEqual(months[1]['tax_due'], 30.0)
+
+    def test_etf_excluded_from_acoes_exemption(self):
+        Stock.objects.create(
+            ticker='BOVA11',
+            name='ETF Ibovespa',
+            investment_type=self.investment_type,
+            stock_class='ETF',
+            current_price=Decimal('100.00'),
+            is_active=True,
+        )
+        self._persist_note(
+            '10/07/2025', 'n13',
+            [
+                _op('op1', 'C', 'BOVA11', 10, 100.0, '01/07/2025'),
+                _op('op2', 'V', 'BOVA11', 10, 120.0, '10/07/2025', ordem=2),
+            ],
+        )
+        report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
+        self.assertEqual(self._acoes_months(report), [])
+        month = self._etf_bdr_months(report)[0]
+        self.assertEqual(month['etf_sales'], 1200.0)
+        self.assertEqual(month['taxable_gain'], 200.0)
+        self.assertEqual(month['tax_due'], 30.0)
+
+    def test_fii_loss_carryforward(self):
+        fiis_type, _ = InvestmentType.objects.get_or_create(
+            code='FIIS',
+            defaults={'name': 'Fundos Imobiliários', 'is_active': True},
+        )
+        Stock.objects.create(
+            ticker='HGLG11',
+            name='CSHG Logística FII',
+            investment_type=fiis_type,
+            stock_class='FII',
+            current_price=Decimal('160.00'),
+            is_active=True,
+        )
+        self._persist_note(
+            '15/06/2025', 'n14',
+            [
+                _op('op1', 'C', 'HGLG11', 100, 160.0, '01/06/2025'),
+                _op('op2', 'V', 'HGLG11', 100, 150.0, '15/06/2025', ordem=2),
+            ],
+        )
+        self._persist_note(
+            '10/09/2025', 'n15',
+            [
+                _op('op3', 'C', 'HGLG11', 100, 150.0, '01/09/2025'),
+                _op('op4', 'V', 'HGLG11', 100, 170.0, '10/09/2025', ordem=2),
+            ],
+        )
+        report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
+        months = self._fii_months(report)
+        self.assertEqual(len(months), 2)
+        self.assertEqual(months[0]['total_sales'], 15000.0)
+        self.assertEqual(months[0]['net_result'], -1000.0)
+        self.assertEqual(months[1]['loss_carryforward_in'], 1000.0)
+        self.assertEqual(months[1]['taxable_gain'], 1000.0)  # 2000 - 1000
+        self.assertEqual(months[1]['tax_due'], 150.0)
+        self.assertEqual(self._acoes_months(report), [])
+
+    def test_acoes_and_fii_separate_monthly_accumulators(self):
+        fiis_type, _ = InvestmentType.objects.get_or_create(
+            code='FIIS',
+            defaults={'name': 'Fundos Imobiliários', 'is_active': True},
+        )
+        Stock.objects.create(
+            ticker='HGLG11',
+            name='CSHG Logística FII',
+            investment_type=fiis_type,
+            stock_class='FII',
+            current_price=Decimal('160.00'),
+            is_active=True,
+        )
+        # Same month: acoes loss, fii gain — must not offset each other
+        self._persist_note(
+            '15/06/2025', 'n16',
+            [
+                _op('op1', 'C', 'PETR4', 100, 20.0, '01/06/2025'),
+                _op('op2', 'V', 'PETR4', 100, 15.0, '15/06/2025', ordem=2),
+                _op('op3', 'C', 'HGLG11', 10, 100.0, '01/06/2025'),
+                _op('op4', 'V', 'HGLG11', 10, 120.0, '15/06/2025', ordem=4),
+            ],
+        )
+        report = CapitalGainsService.compute_capital_gains_report(self.user_id, 2025)
+        acoes_month = self._acoes_months(report)[0]
+        fii_month = self._fii_months(report)[0]
+        self.assertEqual(acoes_month['month'], 6)
+        self.assertEqual(fii_month['month'], 6)
+        self.assertEqual(acoes_month['net_result'], -500.0)
+        self.assertEqual(fii_month['taxable_gain'], 200.0)
+        self.assertEqual(fii_month['tax_due'], 30.0)

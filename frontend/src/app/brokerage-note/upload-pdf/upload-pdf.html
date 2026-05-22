@@ -1,26 +1,78 @@
-<div class="file-input-container">
-  <input 
-    type="file" 
-    id="pdf-file" 
-    accept=".pdf" 
-    (change)="onFileSelected($event)"
-    [disabled]="isProcessing"
-    #fileInput
-  />
-  <button 
-    type="button"
-    class="btn-primary"
-    (click)="fileInput.click()"
-    [disabled]="isProcessing"
-  >
-    Carregar Nota de Corretagem
-  </button>
+<div
+  class="upload-zone"
+  (drop)="onDrop($event)"
+  (dragover)="onDragOver($event)"
+  [class.upload-zone--processing]="isProcessing"
+>
+  <div class="file-input-container">
+    <input
+      type="file"
+      id="pdf-file"
+      accept=".pdf,application/pdf"
+      multiple
+      (change)="onFileSelected($event)"
+      [disabled]="isProcessing"
+      #fileInput
+    />
+    <button
+      type="button"
+      class="btn-primary"
+      (click)="fileInput.click()"
+      [disabled]="isProcessing"
+    >
+      @if (isProcessing) {
+        Processando…
+      } @else {
+        Carregar notas de corretagem
+      }
+    </button>
+    <span class="upload-hint">PDF · um ou vários arquivos · arraste para cá</span>
+  </div>
+
+  @if (batchProgress) {
+    <div class="batch-progress" role="status" aria-live="polite">
+      <div class="batch-progress-header">
+        <span>Processando {{ batchProgress.current }} de {{ batchProgress.total }}</span>
+        <span class="batch-progress-pct">{{ progressPercent }}%</span>
+      </div>
+      <div class="batch-progress-bar">
+        <div class="batch-progress-fill" [style.width.%]="progressPercent"></div>
+      </div>
+      <div class="batch-progress-file" [title]="batchProgress.fileName">{{ batchProgress.fileName }}</div>
+    </div>
+  }
+
+  @if (batchResults && batchResults.length > 1) {
+    <div class="batch-results">
+      <div class="batch-results-header">
+        <strong>Resultado do lote</strong>
+        <button type="button" class="btn-close" (click)="clearBatchResults()" title="Fechar">×</button>
+      </div>
+      <ul class="batch-results-list">
+        @for (item of batchResults; track item.fileName) {
+          <li [class]="'batch-result batch-result--' + item.status">
+            <span class="batch-result-icon">
+              @switch (item.status) {
+                @case ('success') { ✓ }
+                @case ('error') { ✕ }
+                @case ('skipped') { − }
+              }
+            </span>
+            <span class="batch-result-name">{{ item.fileName }}</span>
+            @if (item.message) {
+              <span class="batch-result-msg">{{ item.message }}</span>
+            }
+          </li>
+        }
+      </ul>
+    </div>
+  }
 </div>
 
 @if (errorMessage) {
   <div class="message error">
     <div class="error-header">
-      <strong>Erro:</strong>
+      <strong>Erro</strong>
       <button type="button" class="btn-close" (click)="clearMessages()" title="Fechar">×</button>
     </div>
     <div class="error-content">{{ errorMessage }}</div>
@@ -28,8 +80,11 @@
 }
 
 @if (successMessage) {
-  <div class="message success" (click)="clearMessages()">
-    {{ successMessage }}
+  <div class="message success">
+    <div class="success-header">
+      <span>{{ successMessage }}</span>
+      <button type="button" class="btn-close" (click)="clearMessages()" title="Fechar">×</button>
+    </div>
   </div>
 }
 
@@ -41,4 +96,3 @@
     (cancel)="onTickerCancel()"
   />
 }
-

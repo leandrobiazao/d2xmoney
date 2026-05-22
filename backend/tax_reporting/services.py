@@ -1,5 +1,5 @@
 """
-Capital gains (IRPF) reporting for Brazilian stocks (ações à vista) and BDRs.
+Capital gains (IRPF) reporting for ações, FIIs, ETFs, and BDRs.
 """
 from __future__ import annotations
 
@@ -24,7 +24,14 @@ MONTH_LABELS = {
 EXEMPT_SALES_LIMIT = Decimal('20000.00')
 TAX_RATE = Decimal('0.15')
 
-AssetClass = str  # 'acoes' | 'bdr'
+AssetClass = str  # 'acoes' | 'fii' | 'etf' | 'bdr'
+
+ASSET_CLASS_LABELS = {
+    'acoes': 'Ação',
+    'fii': 'FII',
+    'etf': 'ETF',
+    'bdr': 'BDR',
+}
 
 
 def _money(value: Decimal | float) -> float:
@@ -37,6 +44,31 @@ def _empty_bucket() -> Dict[str, Any]:
         'gross_gain': Decimal('0'),
         'gross_loss': Decimal('0'),
         'sales_count': 0,
+    }
+
+
+def _empty_carryforward_report() -> Dict[str, Any]:
+    return {
+        'months_with_sales_count': 0,
+        'months': [],
+        'year_summary': {
+            'total_taxable_gain': 0.0,
+            'total_tax_due': 0.0,
+            'total_irrf': 0.0,
+            'remaining_loss_carryforward': 0.0,
+        },
+    }
+
+
+def _empty_etf_bdr_report() -> Dict[str, Any]:
+    return {
+        'months_with_sales_count': 0,
+        'months': [],
+        'year_summary': {
+            'total_taxable_gain': 0.0,
+            'total_tax_due': 0.0,
+            'total_irrf': 0.0,
+        },
     }
 
 
@@ -97,8 +129,44 @@ def _compute_taxable_for_bucket(
     return Decimal('0'), loss_carryforward
 
 
+def _compute_tax_no_carryforward(bucket: Dict[str, Any]) -> Decimal:
+    """ETF/BDR: 15% on positive monthly net; losses are not carried forward."""
+    if bucket['sales_count'] == 0:
+        return Decimal('0')
+    net_result = bucket['gross_gain'] + bucket['gross_loss']
+    return max(Decimal('0'), net_result)
+
+
+def _allocate_irrf_proportional(
+    total_irrf: Decimal,
+    tax_dues: Dict[str, Decimal],
+) -> Dict[str, Decimal]:
+    """Split note IRRF across report sections proportional to tax due."""
+    keys = list(tax_dues.keys())
+    if total_irrf <= 0:
+        return {k: Decimal('0') for k in keys}
+
+    total_tax = sum(tax_dues.values())
+    if total_tax <= 0:
+        return {k: Decimal('0') for k in keys}
+
+    positive_keys = [k for k in keys if tax_dues[k] > 0]
+    result: Dict[str, Decimal] = {k: Decimal('0') for k in keys}
+    allocated = Decimal('0')
+    for i, key in enumerate(positive_keys):
+        if i == len(positive_keys) - 1:
+            result[key] = total_irrf - allocated
+        else:
+            share = (total_irrf * tax_dues[key] / total_tax).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+            result[key] = share
+            allocated += share
+    return result
+
+
 class CapitalGainsService:
-    """Monthly capital gains report for ações à vista and BDRs."""
+    """Monthly capital gains report for ações, FIIs, ETFs, and BDRs."""
 
     @staticmethod
     def _get_investment_type(code: str, name_contains: str) -> Optional[InvestmentType]:
@@ -111,17 +179,45 @@ class CapitalGainsService:
         ).first()
 
     @staticmethod
+    def get_etf_tickers() -> Set[str]:
+        return {
+            t.upper()
+            for t in Stock.objects.filter(is_active=True).filter(
+                Q(stock_class='ETF') | Q(investment_subtype__code='ETF_RENDA_FIXA')
+            ).values_list('ticker', flat=True)
+        }
+
+    @staticmethod
+    def get_fii_tickers() -> Set[str]:
+        etf_tickers = CapitalGainsService.get_etf_tickers()
+        fiis_type = CapitalGainsService._get_investment_type('FIIS', 'Fundos Imobiliários')
+        qs = Stock.objects.filter(is_active=True)
+        if fiis_type:
+            qs = qs.filter(Q(investment_type=fiis_type) | Q(stock_class='FII'))
+        else:
+            qs = qs.filter(stock_class='FII')
+        return {
+            t.upper()
+            for t in qs.values_list('ticker', flat=True)
+            if t.upper() not in etf_tickers
+        }
+
+    @staticmethod
     def get_acoes_reais_tickers() -> Set[str]:
         acoes_reais_type = CapitalGainsService._get_investment_type(
             'RENDA_VARIAVEL_REAIS', 'Renda Variável em Reais'
         )
         if not acoes_reais_type:
             return set()
+        etf_tickers = CapitalGainsService.get_etf_tickers()
+        fii_tickers = CapitalGainsService.get_fii_tickers()
+        excluded = etf_tickers | fii_tickers
         return {
             t.upper()
             for t in Stock.objects.filter(
                 investment_type=acoes_reais_type, is_active=True
-            ).values_list('ticker', flat=True)
+            ).exclude(stock_class='ETF').values_list('ticker', flat=True)
+            if t.upper() not in excluded
         }
 
     @staticmethod
@@ -132,22 +228,32 @@ class CapitalGainsService:
         if not dolares_type:
             return set()
         qs = Stock.objects.filter(investment_type=dolares_type, is_active=True)
-        bdr_tickers = {
+        return {
             t.upper()
             for t in qs.filter(
                 Q(investment_subtype__code='BDRS') | Q(stock_class='BDR')
             ).values_list('ticker', flat=True)
         }
-        return bdr_tickers
 
     @staticmethod
     def get_tax_report_tickers() -> Tuple[Set[str], Dict[str, AssetClass]]:
-        acoes = CapitalGainsService.get_acoes_reais_tickers()
         bdrs = CapitalGainsService.get_bdr_tickers()
-        ticker_class: Dict[str, AssetClass] = {t: 'acoes' for t in acoes}
+        etfs = CapitalGainsService.get_etf_tickers()
+        fiis = CapitalGainsService.get_fii_tickers()
+        acoes = CapitalGainsService.get_acoes_reais_tickers()
+
+        ticker_class: Dict[str, AssetClass] = {}
+        for t in acoes:
+            ticker_class[t] = 'acoes'
+        for t in fiis:
+            ticker_class[t] = 'fii'
+        for t in etfs:
+            ticker_class[t] = 'etf'
         for t in bdrs:
             ticker_class[t] = 'bdr'
-        return acoes | bdrs, ticker_class
+
+        all_tickers = acoes | fiis | etfs | bdrs
+        return all_tickers, ticker_class
 
     @staticmethod
     def _load_operations_as_dicts(user_id: str, allowed_tickers: Set[str]) -> List[Dict]:
@@ -191,25 +297,164 @@ class CapitalGainsService:
         return irrf_by_month
 
     @staticmethod
+    def _prelim_tax_by_month(
+        monthly_data: Dict[int, Dict[str, Any]],
+        apply_exemption: bool,
+    ) -> Dict[int, Decimal]:
+        loss_cf = Decimal('0')
+        tax_by_month: Dict[int, Decimal] = {}
+        for month in range(1, 13):
+            if month not in monthly_data:
+                continue
+            bucket = monthly_data[month]
+            if bucket['sales_count'] == 0:
+                continue
+            taxable, loss_cf = _compute_taxable_for_bucket(
+                bucket, loss_cf, apply_exemption=apply_exemption
+            )
+            tax_by_month[month] = (taxable * TAX_RATE).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+        return tax_by_month
+
+    @staticmethod
+    def _build_carryforward_months(
+        monthly_data: Dict[int, Dict[str, Any]],
+        irrf_for_section_by_month: Dict[int, Decimal],
+        year: int,
+        apply_exemption: bool,
+    ) -> Tuple[List[Dict[str, Any]], Decimal, Decimal, Decimal, Decimal]:
+        loss_cf = Decimal('0')
+        months_out: List[Dict[str, Any]] = []
+        year_taxable = Decimal('0')
+        year_tax_due = Decimal('0')
+        year_irrf = Decimal('0')
+
+        for month in range(1, 13):
+            if month not in monthly_data:
+                continue
+
+            bucket = monthly_data[month]
+            if bucket['sales_count'] == 0:
+                continue
+
+            loss_carryforward_in = loss_cf
+            taxable_gain, loss_cf = _compute_taxable_for_bucket(
+                bucket, loss_cf, apply_exemption=apply_exemption
+            )
+            tax_due = (taxable_gain * TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            net_result = bucket['gross_gain'] + bucket['gross_loss']
+            is_exempt = apply_exemption and (
+                bucket['total_sales'] <= EXEMPT_SALES_LIMIT or tax_due == 0
+            )
+            if not apply_exemption:
+                is_exempt = tax_due == 0
+
+            irrf = irrf_for_section_by_month.get(month, Decimal('0'))
+            darf_amount = max(Decimal('0'), tax_due - irrf)
+
+            year_taxable += taxable_gain
+            year_tax_due += tax_due
+            year_irrf += irrf
+
+            months_out.append({
+                'month': month,
+                'label': f'{MONTH_LABELS[month]}/{year}',
+                'total_sales': _money(bucket['total_sales']),
+                'is_exempt': is_exempt,
+                'gross_gain': _money(bucket['gross_gain']),
+                'gross_loss': _money(bucket['gross_loss']),
+                'net_result': _money(net_result),
+                'loss_carryforward_in': _money(loss_carryforward_in),
+                'loss_carryforward_out': _money(loss_cf),
+                'taxable_gain': _money(taxable_gain),
+                'tax_rate': float(TAX_RATE),
+                'tax_due': _money(tax_due),
+                'irrf_withheld': _money(irrf),
+                'darf_amount': _money(darf_amount),
+                'darf_due_date': _darf_due_date(year, month),
+                'sales_count': bucket['sales_count'],
+            })
+
+        return months_out, year_taxable, year_tax_due, year_irrf, loss_cf
+
+    @staticmethod
+    def _build_etf_bdr_months(
+        monthly_data: Dict[int, Dict[str, Dict[str, Any]]],
+        irrf_for_section_by_month: Dict[int, Decimal],
+        year: int,
+    ) -> Tuple[List[Dict[str, Any]], Decimal, Decimal, Decimal]:
+        months_out: List[Dict[str, Any]] = []
+        year_taxable = Decimal('0')
+        year_tax_due = Decimal('0')
+        year_irrf = Decimal('0')
+
+        for month in range(1, 13):
+            if month not in monthly_data:
+                continue
+
+            data = monthly_data[month]
+            etf = data['etf']
+            bdr = data['bdr']
+
+            if etf['sales_count'] + bdr['sales_count'] == 0:
+                continue
+
+            etf_taxable = _compute_tax_no_carryforward(etf)
+            bdr_taxable = _compute_tax_no_carryforward(bdr)
+            taxable_gain = etf_taxable + bdr_taxable
+            tax_due = (taxable_gain * TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+            total_sales = etf['total_sales'] + bdr['total_sales']
+            gross_gain = etf['gross_gain'] + bdr['gross_gain']
+            gross_loss = etf['gross_loss'] + bdr['gross_loss']
+            net_result = gross_gain + gross_loss
+            sales_count = etf['sales_count'] + bdr['sales_count']
+
+            month_irrf_total = irrf_for_section_by_month.get(month, Decimal('0'))
+            darf_amount = max(Decimal('0'), tax_due - month_irrf_total)
+
+            year_taxable += taxable_gain
+            year_tax_due += tax_due
+            year_irrf += month_irrf_total
+
+            months_out.append({
+                'month': month,
+                'label': f'{MONTH_LABELS[month]}/{year}',
+                'total_sales': _money(total_sales),
+                'etf_sales': _money(etf['total_sales']),
+                'bdr_sales': _money(bdr['total_sales']),
+                'gross_gain': _money(gross_gain),
+                'gross_loss': _money(gross_loss),
+                'net_result': _money(net_result),
+                'taxable_gain': _money(taxable_gain),
+                'tax_rate': float(TAX_RATE),
+                'tax_due': _money(tax_due),
+                'irrf_withheld': _money(month_irrf_total),
+                'darf_amount': _money(darf_amount),
+                'darf_due_date': _darf_due_date(year, month),
+                'sales_count': sales_count,
+            })
+
+        return months_out, year_taxable, year_tax_due, year_irrf
+
+    @staticmethod
     def compute_capital_gains_report(user_id: str, year: int) -> Dict[str, Any]:
         allowed_tickers, ticker_class = CapitalGainsService.get_tax_report_tickers()
         if not allowed_tickers:
             return {
                 'year': year,
-                'months_with_sales_count': 0,
-                'months': [],
-                'year_summary': {
-                    'total_taxable_gain': 0.0,
-                    'total_tax_due': 0.0,
-                    'total_irrf': 0.0,
-                    'remaining_loss_carryforward': 0.0,
-                },
+                'acoes': _empty_carryforward_report(),
+                'fii': _empty_carryforward_report(),
+                'etf_bdr': _empty_etf_bdr_report(),
                 'position_at_year_end': [],
             }
 
         operations = CapitalGainsService._load_operations_as_dicts(user_id, allowed_tickers)
 
-        monthly_sales: Dict[int, Dict[str, Dict[str, Any]]] = {}
+        monthly_acoes: Dict[int, Dict[str, Any]] = {}
+        monthly_fii: Dict[int, Dict[str, Any]] = {}
+        monthly_etf_bdr: Dict[int, Dict[str, Dict[str, Any]]] = {}
 
         def on_sale(operation: Dict, realized_profit: float, operation_date: date) -> None:
             if operation_date.year != year:
@@ -217,10 +462,20 @@ class CapitalGainsService:
             ticker = operation.get('titulo', '').strip().upper()
             asset_class = ticker_class.get(ticker, 'acoes')
             month = operation_date.month
-            if month not in monthly_sales:
-                monthly_sales[month] = {'acoes': _empty_bucket(), 'bdr': _empty_bucket()}
 
-            bucket = monthly_sales[month][asset_class]
+            if asset_class == 'acoes':
+                if month not in monthly_acoes:
+                    monthly_acoes[month] = _empty_bucket()
+                bucket = monthly_acoes[month]
+            elif asset_class == 'fii':
+                if month not in monthly_fii:
+                    monthly_fii[month] = _empty_bucket()
+                bucket = monthly_fii[month]
+            else:
+                if month not in monthly_etf_bdr:
+                    monthly_etf_bdr[month] = {'etf': _empty_bucket(), 'bdr': _empty_bucket()}
+                bucket = monthly_etf_bdr[month][asset_class]
+
             sale_value = Decimal(str(abs(operation.get('valorOperacao', 0))))
             profit = Decimal(str(realized_profit))
             bucket['total_sales'] += sale_value
@@ -241,78 +496,50 @@ class CapitalGainsService:
 
         irrf_by_month = CapitalGainsService._irrf_by_month(user_id, year)
 
-        loss_cf_acoes = Decimal('0')
-        loss_cf_bdr = Decimal('0')
-        months_out: List[Dict[str, Any]] = []
-        year_taxable = Decimal('0')
-        year_tax_due = Decimal('0')
-        year_irrf = Decimal('0')
+        acoes_prelim = CapitalGainsService._prelim_tax_by_month(monthly_acoes, apply_exemption=True)
+        fii_prelim = CapitalGainsService._prelim_tax_by_month(monthly_fii, apply_exemption=False)
 
-        for month in range(1, 13):
-            if month not in monthly_sales:
-                continue
-
-            data = monthly_sales[month]
-            acoes = data['acoes']
-            bdr = data['bdr']
-
-            if acoes['sales_count'] + bdr['sales_count'] == 0:
-                continue
-
-            loss_carryforward_in = loss_cf_acoes + loss_cf_bdr
-
-            acoes_taxable, loss_cf_acoes = _compute_taxable_for_bucket(
-                acoes, loss_cf_acoes, apply_exemption=True
-            )
-            bdr_taxable, loss_cf_bdr = _compute_taxable_for_bucket(
-                bdr, loss_cf_bdr, apply_exemption=False
+        etf_bdr_prelim: Dict[int, Decimal] = {}
+        for month, data in monthly_etf_bdr.items():
+            etf_taxable = _compute_tax_no_carryforward(data['etf'])
+            bdr_taxable = _compute_tax_no_carryforward(data['bdr'])
+            combined = etf_taxable + bdr_taxable
+            etf_bdr_prelim[month] = (combined * TAX_RATE).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
             )
 
-            taxable_gain = acoes_taxable + bdr_taxable
-            tax_due = (taxable_gain * TAX_RATE).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            loss_carryforward_out = loss_cf_acoes + loss_cf_bdr
-
-            total_sales = acoes['total_sales'] + bdr['total_sales']
-            gross_gain = acoes['gross_gain'] + bdr['gross_gain']
-            gross_loss = acoes['gross_loss'] + bdr['gross_loss']
-            net_result = gross_gain + gross_loss
-            sales_count = acoes['sales_count'] + bdr['sales_count']
-
-            acoes_exempt = (
-                acoes['sales_count'] == 0
-                or acoes['total_sales'] <= EXEMPT_SALES_LIMIT
+        all_months = set(monthly_acoes) | set(monthly_fii) | set(monthly_etf_bdr)
+        irrf_acoes_by_month: Dict[int, Decimal] = {}
+        irrf_fii_by_month: Dict[int, Decimal] = {}
+        irrf_etf_bdr_by_month: Dict[int, Decimal] = {}
+        for month in all_months:
+            split = _allocate_irrf_proportional(
+                irrf_by_month.get(month, Decimal('0')),
+                {
+                    'acoes': acoes_prelim.get(month, Decimal('0')),
+                    'fii': fii_prelim.get(month, Decimal('0')),
+                    'etf_bdr': etf_bdr_prelim.get(month, Decimal('0')),
+                },
             )
-            # Month is "exempt" only when no IR is due (ações isentas e BDR sem base tributável)
-            is_exempt = tax_due == 0
+            irrf_acoes_by_month[month] = split['acoes']
+            irrf_fii_by_month[month] = split['fii']
+            irrf_etf_bdr_by_month[month] = split['etf_bdr']
 
-            irrf = irrf_by_month.get(month, Decimal('0'))
-            darf_amount = max(Decimal('0'), tax_due - irrf)
-
-            year_taxable += taxable_gain
-            year_tax_due += tax_due
-            year_irrf += irrf
-
-            months_out.append({
-                'month': month,
-                'label': f'{MONTH_LABELS[month]}/{year}',
-                'total_sales': _money(total_sales),
-                'acoes_sales': _money(acoes['total_sales']),
-                'bdr_sales': _money(bdr['total_sales']),
-                'is_exempt': is_exempt,
-                'acoes_exempt': acoes_exempt,
-                'gross_gain': _money(gross_gain),
-                'gross_loss': _money(gross_loss),
-                'net_result': _money(net_result),
-                'loss_carryforward_in': _money(loss_carryforward_in),
-                'loss_carryforward_out': _money(loss_carryforward_out),
-                'taxable_gain': _money(taxable_gain),
-                'tax_rate': float(TAX_RATE),
-                'tax_due': _money(tax_due),
-                'irrf_withheld': _money(irrf),
-                'darf_amount': _money(darf_amount),
-                'darf_due_date': _darf_due_date(year, month),
-                'sales_count': sales_count,
-            })
+        acoes_months, ac_taxable, ac_tax_due, ac_irrf, loss_cf_acoes = (
+            CapitalGainsService._build_carryforward_months(
+                monthly_acoes, irrf_acoes_by_month, year, apply_exemption=True
+            )
+        )
+        fii_months, fii_taxable, fii_tax_due, fii_irrf, loss_cf_fii = (
+            CapitalGainsService._build_carryforward_months(
+                monthly_fii, irrf_fii_by_month, year, apply_exemption=False
+            )
+        )
+        etf_bdr_months, eb_taxable, eb_tax_due, eb_irrf = (
+            CapitalGainsService._build_etf_bdr_months(
+                monthly_etf_bdr, irrf_etf_bdr_by_month, year
+            )
+        )
 
         position_at_year_end = []
         for ticker, summary in sorted(summaries.items()):
@@ -323,7 +550,7 @@ class CapitalGainsService:
             position_at_year_end.append({
                 'ticker': ticker,
                 'asset_class': asset_class,
-                'asset_class_label': 'BDR' if asset_class == 'bdr' else 'Ação',
+                'asset_class_label': ASSET_CLASS_LABELS.get(asset_class, 'Ação'),
                 'quantidade': int(qty),
                 'preco_medio': round(float(summary.get('precoMedio', 0)), 2),
                 'valor_total_investido': round(float(summary.get('valorTotalInvestido', 0)), 2),
@@ -331,13 +558,34 @@ class CapitalGainsService:
 
         return {
             'year': year,
-            'months_with_sales_count': len(months_out),
-            'months': months_out,
-            'year_summary': {
-                'total_taxable_gain': _money(year_taxable),
-                'total_tax_due': _money(year_tax_due),
-                'total_irrf': _money(year_irrf),
-                'remaining_loss_carryforward': _money(loss_cf_acoes + loss_cf_bdr),
+            'acoes': {
+                'months_with_sales_count': len(acoes_months),
+                'months': acoes_months,
+                'year_summary': {
+                    'total_taxable_gain': _money(ac_taxable),
+                    'total_tax_due': _money(ac_tax_due),
+                    'total_irrf': _money(ac_irrf),
+                    'remaining_loss_carryforward': _money(loss_cf_acoes),
+                },
+            },
+            'fii': {
+                'months_with_sales_count': len(fii_months),
+                'months': fii_months,
+                'year_summary': {
+                    'total_taxable_gain': _money(fii_taxable),
+                    'total_tax_due': _money(fii_tax_due),
+                    'total_irrf': _money(fii_irrf),
+                    'remaining_loss_carryforward': _money(loss_cf_fii),
+                },
+            },
+            'etf_bdr': {
+                'months_with_sales_count': len(etf_bdr_months),
+                'months': etf_bdr_months,
+                'year_summary': {
+                    'total_taxable_gain': _money(eb_taxable),
+                    'total_tax_due': _money(eb_tax_due),
+                    'total_irrf': _money(eb_irrf),
+                },
             },
             'position_at_year_end': position_at_year_end,
         }

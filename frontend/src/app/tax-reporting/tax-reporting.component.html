@@ -1,10 +1,10 @@
 <section class="tax-reporting-section">
   <div class="section-header">
-    <h3>IRPF — Ganho de Capital (Ações e BDRs)</h3>
+    <h3>{{ pageTitle }}</h3>
     <div class="header-actions">
       <div class="year-selector">
-        <label for="irpf-year">Ano:</label>
-        <select id="irpf-year" [ngModel]="selectedYear" (ngModelChange)="onYearChange($event)">
+        <label [for]="yearSelectorId">Ano:</label>
+        <select [id]="yearSelectorId" [ngModel]="selectedYear" (ngModelChange)="onYearChange($event)">
           @for (y of availableYears; track y) {
             <option [value]="y">{{ y }}</option>
           }
@@ -30,82 +30,216 @@
   }
 
   @if (!isLoading && report) {
-    <div class="report-block">
-      <h4>Meses com vendas em {{ report.year }}</h4>
-      <p class="hint">
-        Meses com vendas de ações à vista ou BDRs. Ações: isenção até R$ 20.000/mês em vendas. BDRs: 15% sobre ganho em toda venda (sem isenção mensal).
-      </p>
-
-      @if (report.months.length === 0) {
-        <p class="empty-state">
-          Nenhuma venda de ações em {{ report.year }} — nada a declarar de ganho de capital.
+    @if (section === 'acoes') {
+      <div class="report-block">
+        <h4>Meses com vendas em {{ report.year }}</h4>
+        <p class="hint">
+          Isenção até R$ 20.000/mês em vendas de ações, com compensação de prejuízo acumulado.
         </p>
-      } @else {
-        <div class="table-container">
-          <table class="tax-table">
-            <thead>
-              <tr>
-                <th>Mês</th>
-                <th>Vendas ações</th>
-                <th>Vendas BDR</th>
-                <th>Isento?</th>
-                <th>Lucro</th>
-                <th>Prejuízo</th>
-                <th>Resultado</th>
-                <th>Base tributável</th>
-                <th>IR 15%</th>
-                <th>IRRF</th>
-                <th>DARF</th>
-                <th>Vencimento</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (m of report.months; track m.month) {
-                <tr [class.exempt-row]="m.is_exempt" [class.taxable-row]="!m.is_exempt">
-                  <td>{{ m.label }}</td>
-                  <td>{{ formatCurrency(m.acoes_sales) }}</td>
-                  <td>{{ formatCurrency(m.bdr_sales) }}</td>
-                  <td>{{ m.is_exempt ? 'Sim' : 'Não' }}</td>
-                  <td class="positive">{{ formatCurrency(m.gross_gain) }}</td>
-                  <td class="negative">{{ formatCurrency(m.gross_loss) }}</td>
-                  <td [class.positive]="m.net_result > 0" [class.negative]="m.net_result < 0">
-                    {{ formatCurrency(m.net_result) }}
-                  </td>
-                  <td>{{ formatCurrency(m.taxable_gain) }}</td>
-                  <td>{{ formatCurrency(m.tax_due) }}</td>
-                  <td>{{ formatCurrency(m.irrf_withheld) }}</td>
-                  <td>{{ formatCurrency(m.darf_amount) }}</td>
-                  <td>{{ m.darf_due_date }}</td>
-                </tr>
-              }
-            </tbody>
-            <tfoot>
-              <tr class="totals-row">
-                <td>Totais</td>
-                <td colspan="6"></td>
-                <td>{{ formatCurrency(report.year_summary.total_taxable_gain) }}</td>
-                <td>{{ formatCurrency(report.year_summary.total_tax_due) }}</td>
-                <td>{{ formatCurrency(report.year_summary.total_irrf) }}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        @if (report.year_summary.remaining_loss_carryforward > 0) {
-          <p class="carryforward-note">
-            Prejuízo acumulado para compensar em meses futuros:
-            {{ formatCurrency(report.year_summary.remaining_loss_carryforward) }}
+
+        @if (report.acoes.months.length === 0) {
+          <p class="empty-state">
+            Nenhuma venda de ações em {{ report.year }} — nada a declarar de ganho de capital.
           </p>
+        } @else {
+          <div class="table-container">
+            <table class="tax-table">
+              <thead>
+                <tr>
+                  <th>Mês</th>
+                  <th>Vendas</th>
+                  <th>Isento?</th>
+                  <th>Lucro</th>
+                  <th>Prejuízo</th>
+                  <th>Resultado</th>
+                  <th>Base tributável</th>
+                  <th>IR 15%</th>
+                  <th>IRRF</th>
+                  <th>DARF</th>
+                  <th>Vencimento</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of report.acoes.months; track m.month) {
+                  <tr [class.exempt-row]="m.is_exempt" [class.taxable-row]="!m.is_exempt">
+                    <td>{{ m.label }}</td>
+                    <td>{{ formatCurrency(m.total_sales) }}</td>
+                    <td>{{ m.is_exempt ? 'Sim' : 'Não' }}</td>
+                    <td class="positive">{{ formatCurrency(m.gross_gain) }}</td>
+                    <td class="negative">{{ formatCurrency(m.gross_loss) }}</td>
+                    <td [class.positive]="m.net_result > 0" [class.negative]="m.net_result < 0">
+                      {{ formatCurrency(m.net_result) }}
+                    </td>
+                    <td>{{ formatCurrency(m.taxable_gain) }}</td>
+                    <td>{{ formatCurrency(m.tax_due) }}</td>
+                    <td>{{ formatCurrency(m.irrf_withheld) }}</td>
+                    <td>{{ formatCurrency(m.darf_amount) }}</td>
+                    <td>{{ m.darf_due_date }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td>Totais</td>
+                  <td colspan="5"></td>
+                  <td>{{ formatCurrency(report.acoes.year_summary.total_taxable_gain) }}</td>
+                  <td>{{ formatCurrency(report.acoes.year_summary.total_tax_due) }}</td>
+                  <td>{{ formatCurrency(report.acoes.year_summary.total_irrf) }}</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          @if (report.acoes.year_summary.remaining_loss_carryforward > 0) {
+            <p class="carryforward-note">
+              Prejuízo acumulado para compensar em meses futuros:
+              {{ formatCurrency(report.acoes.year_summary.remaining_loss_carryforward) }}
+            </p>
+          }
         }
-      }
-    </div>
+      </div>
+    } @else if (section === 'fii') {
+      <div class="report-block">
+        <h4>Meses com vendas em {{ report.year }}</h4>
+        <p class="hint">
+          FIIs: 15% sobre ganho tributável após compensação de prejuízo acumulado (sem isenção mensal).
+        </p>
+
+        @if (report.fii.months.length === 0) {
+          <p class="empty-state">
+            Nenhuma venda de FIIs em {{ report.year }} — nada a declarar de ganho de capital.
+          </p>
+        } @else {
+          <div class="table-container">
+            <table class="tax-table">
+              <thead>
+                <tr>
+                  <th>Mês</th>
+                  <th>Vendas</th>
+                  <th>Lucro</th>
+                  <th>Prejuízo</th>
+                  <th>Resultado</th>
+                  <th>Base tributável</th>
+                  <th>IR 15%</th>
+                  <th>IRRF</th>
+                  <th>DARF</th>
+                  <th>Vencimento</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of report.fii.months; track m.month) {
+                  <tr [class.taxable-row]="m.tax_due > 0">
+                    <td>{{ m.label }}</td>
+                    <td>{{ formatCurrency(m.total_sales) }}</td>
+                    <td class="positive">{{ formatCurrency(m.gross_gain) }}</td>
+                    <td class="negative">{{ formatCurrency(m.gross_loss) }}</td>
+                    <td [class.positive]="m.net_result > 0" [class.negative]="m.net_result < 0">
+                      {{ formatCurrency(m.net_result) }}
+                    </td>
+                    <td>{{ formatCurrency(m.taxable_gain) }}</td>
+                    <td>{{ formatCurrency(m.tax_due) }}</td>
+                    <td>{{ formatCurrency(m.irrf_withheld) }}</td>
+                    <td>{{ formatCurrency(m.darf_amount) }}</td>
+                    <td>{{ m.darf_due_date }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td>Totais</td>
+                  <td colspan="4"></td>
+                  <td>{{ formatCurrency(report.fii.year_summary.total_taxable_gain) }}</td>
+                  <td>{{ formatCurrency(report.fii.year_summary.total_tax_due) }}</td>
+                  <td>{{ formatCurrency(report.fii.year_summary.total_irrf) }}</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          @if (report.fii.year_summary.remaining_loss_carryforward > 0) {
+            <p class="carryforward-note">
+              Prejuízo acumulado para compensar em meses futuros:
+              {{ formatCurrency(report.fii.year_summary.remaining_loss_carryforward) }}
+            </p>
+          }
+        }
+      </div>
+    } @else {
+      <div class="report-block">
+        <h4>Meses com vendas em {{ report.year }}</h4>
+        <p class="hint">
+          ETF e BDR: 15% sobre o lucro do mês quando positivo. Prejuízo não é compensado em meses futuros.
+        </p>
+
+        @if (report.etf_bdr.months.length === 0) {
+          <p class="empty-state">
+            Nenhuma venda de ETF ou BDR em {{ report.year }} — nada a declarar de ganho de capital.
+          </p>
+        } @else {
+          <div class="table-container">
+            <table class="tax-table">
+              <thead>
+                <tr>
+                  <th>Mês</th>
+                  <th>Vendas ETF</th>
+                  <th>Vendas BDR</th>
+                  <th>Lucro</th>
+                  <th>Prejuízo</th>
+                  <th>Resultado</th>
+                  <th>Base tributável</th>
+                  <th>IR 15%</th>
+                  <th>IRRF</th>
+                  <th>DARF</th>
+                  <th>Vencimento</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of report.etf_bdr.months; track m.month) {
+                  <tr [class.taxable-row]="m.tax_due > 0">
+                    <td>{{ m.label }}</td>
+                    <td>{{ formatCurrency(m.etf_sales) }}</td>
+                    <td>{{ formatCurrency(m.bdr_sales) }}</td>
+                    <td class="positive">{{ formatCurrency(m.gross_gain) }}</td>
+                    <td class="negative">{{ formatCurrency(m.gross_loss) }}</td>
+                    <td [class.positive]="m.net_result > 0" [class.negative]="m.net_result < 0">
+                      {{ formatCurrency(m.net_result) }}
+                    </td>
+                    <td>{{ formatCurrency(m.taxable_gain) }}</td>
+                    <td>{{ formatCurrency(m.tax_due) }}</td>
+                    <td>{{ formatCurrency(m.irrf_withheld) }}</td>
+                    <td>{{ formatCurrency(m.darf_amount) }}</td>
+                    <td>{{ m.darf_due_date }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td>Totais</td>
+                  <td colspan="5"></td>
+                  <td>{{ formatCurrency(report.etf_bdr.year_summary.total_taxable_gain) }}</td>
+                  <td>{{ formatCurrency(report.etf_bdr.year_summary.total_tax_due) }}</td>
+                  <td>{{ formatCurrency(report.etf_bdr.year_summary.total_irrf) }}</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        }
+      </div>
+    }
 
     <div class="report-block">
       <h4>Posição em 31/12/{{ report.year }}</h4>
-      <p class="hint">Dados para Bens e Direitos — Grupo 03 (Ações) e BDRs</p>
+      @if (section === 'acoes') {
+        <p class="hint">Dados para Bens e Direitos — Ações</p>
+      } @else if (section === 'fii') {
+        <p class="hint">Dados para Bens e Direitos — FIIs</p>
+      } @else {
+        <p class="hint">Dados para Bens e Direitos — ETF e BDRs</p>
+      }
 
-      @if (report.position_at_year_end.length === 0) {
-        <p class="empty-state">Nenhuma ação em carteira no fim do ano.</p>
+      @if (filteredPositions.length === 0) {
+        <p class="empty-state">Nenhuma posição em carteira no fim do ano.</p>
       } @else {
         <div class="table-container">
           <table class="tax-table positions-table">
@@ -119,7 +253,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (p of report.position_at_year_end; track p.ticker) {
+              @for (p of filteredPositions; track p.ticker) {
                 <tr>
                   <td>{{ p.ticker }}</td>
                   <td>{{ p.asset_class_label }}</td>

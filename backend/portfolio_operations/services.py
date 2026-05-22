@@ -973,6 +973,10 @@ class PortfolioService:
             if modified:
                 note.operations = operations
                 note.save()
+
+        from brokerage_notes.models import Operation
+        db_ops_updated = Operation.objects.filter(titulo__iexact=old_ticker).update(titulo=new_ticker)
+        operations_updated += db_ops_updated
         
         return {
             'success': True,

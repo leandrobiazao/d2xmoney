@@ -26,7 +26,13 @@
       Fundos Imobiliários
     </button>
     <button class="tab-button" [class.active]="activeTab === 'irpf'" (click)="activeTab = 'irpf'">
-      IRPF
+      IRPF Ações
+    </button>
+    <button class="tab-button" [class.active]="activeTab === 'irpf-fii'" (click)="activeTab = 'irpf-fii'">
+      IRPF FIIs
+    </button>
+    <button class="tab-button" [class.active]="activeTab === 'irpf-etf-bdr'" (click)="activeTab = 'irpf-etf-bdr'">
+      ETF / BDR
     </button>
   </div>
 
@@ -149,9 +155,19 @@
   <app-fiis-list [userId]="userId" />
   }
 
-  <!-- IRPF Tab Content -->
+  <!-- IRPF Ações Tab Content -->
   @if (activeTab === 'irpf') {
-  <app-tax-reporting [userId]="userId" [userName]="userName" />
+  <app-tax-reporting [userId]="userId" [userName]="userName" section="acoes" />
+  }
+
+  <!-- IRPF FIIs Tab Content -->
+  @if (activeTab === 'irpf-fii') {
+  <app-tax-reporting [userId]="userId" [userName]="userName" section="fii" />
+  }
+
+  <!-- ETF / BDR Tab Content -->
+  @if (activeTab === 'irpf-etf-bdr') {
+  <app-tax-reporting [userId]="userId" [userName]="userName" section="etf_bdr" />
   }
 </div>
 } @else {

@@ -177,6 +177,22 @@ test.describe('Brokerage Note Processing', () => {
     }
   });
 
+  test('upload input accepts multiple PDF files', async ({ page }) => {
+    await page.waitForSelector('app-user-list', { state: 'visible' });
+    const userItems = page.locator('app-user-item');
+    if (await userItems.count() === 0) {
+      test.skip(true, 'Requires at least one user');
+      return;
+    }
+    await userItems.first().click();
+    await expect(page.locator('app-portfolio')).toBeVisible();
+    await page.locator('button.tab-button:has-text("Histórico de Notas")').click();
+
+    const fileInput = page.locator('app-upload-pdf input[type="file"]').first();
+    await expect(fileInput).toHaveAttribute('multiple', '');
+    await expect(page.locator('app-upload-pdf .upload-hint')).toContainText('vários arquivos');
+  });
+
   test('Multi-note PDF: when fixture exists, two notes are created', async ({ page }) => {
     const fixturePath = path.resolve(process.cwd(), 'e2e', 'fixtures', 'multi-note.pdf');
     test.skip(!fs.existsSync(fixturePath), `Fixture not found: e2e/fixtures/multi-note.pdf. See e2e/fixtures/README-multi-note.md.`);

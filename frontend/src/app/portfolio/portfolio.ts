@@ -5,7 +5,11 @@ import { PortfolioService } from './portfolio.service';
 import { Operation } from '../brokerage-note/operation.model';
 import { FinancialSummary } from '../brokerage-note/financial-summary.model';
 import { Position } from './position.model';
-import { UploadPdfComponent, OperationsAddedEvent } from '../brokerage-note/upload-pdf/upload-pdf';
+import {
+  UploadPdfComponent,
+  OperationsAddedEvent,
+  FileSaveResult,
+} from '../brokerage-note/upload-pdf/upload-pdf';
 import { BrokerageHistoryService } from '../brokerage-history/history.service';
 import { BrokerageNote } from '../brokerage-history/note.model';
 import { DebugService } from '../shared/services/debug.service';
@@ -55,7 +59,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
 
   // View settings
   showPositions = true;
-  activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' | 'irpf' = 'acoes';
+  activeTab: 'acoes' | 'renda-fixa' | 'historico' | 'allocation-strategy' | 'crypto' | 'fiis' | 'irpf' | 'irpf-fii' | 'irpf-etf-bdr' = 'acoes';
 
   // Store bound event handler for cleanup
   private noteDeletedHandler = (event: Event) => this.onNoteDeleted(event);
@@ -411,22 +415,34 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onOperationsAdded(event: OperationsAddedEvent): void {
-    const { notes, fileName, accountNumber } = event;
+    const { notes, fileName, accountNumber, batch, resolveSave } = event;
+    const isBatch = !!batch;
+    const finishBatchFile = (result: FileSaveResult): void => {
+      resolveSave?.(result);
+    };
 
     this.debug.log('📊 Notes received:', notes.length, notes);
     this.debug.log('📊 Account Number from PDF:', accountNumber);
 
     if (!this.userId || !notes || notes.length === 0) {
+      finishBatchFile({ ok: false, savedNoteNumbers: [], error: 'Nenhuma operação para salvar.' });
       return;
     }
 
     const hasAnyOperations = notes.some(n => n.operations.length > 0);
     if (!hasAnyOperations) {
+      finishBatchFile({ ok: false, savedNoteNumbers: [], error: 'Nenhuma operação para salvar.' });
       return;
     }
 
+    const saveOpts = {
+      suppressAlerts: isBatch,
+      suppressRefresh: isBatch && !batch?.isLast,
+      onComplete: (result: FileSaveResult) => finishBatchFile(result),
+    };
+
     const doSave = (): void => {
-      this.saveMultipleNotes(notes, fileName);
+      this.saveMultipleNotes(notes, fileName, saveOpts);
     };
 
     if (accountNumber && accountNumber.trim().length > 0) {
@@ -439,9 +455,21 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
           const userDigits = normalizeAcct(user.account_number.trim());
 
           if (pdfDigits.length > 0 && userDigits.length > 0 && pdfDigits !== userDigits) {
-            const errorMsg = `❌ Erro de validação: O número da conta no PDF (${accountNumber}) não corresponde à conta do usuário selecionado (${user.account_number}).\n\nPor favor, verifique se você está fazendo upload da nota correta para o usuário correto.\n\nOperações não serão salvas.`;
+            const errorMsg =
+              `Conta do PDF (${accountNumber}) não corresponde ao usuário (${user.account_number}).`;
             this.debug.error(errorMsg);
-            alert(errorMsg);
+            if (isBatch) {
+              finishBatchFile({
+                ok: false,
+                savedNoteNumbers: [],
+                skipped: true,
+                error: errorMsg,
+              });
+            } else {
+              alert(
+                `❌ Erro de validação: O número da conta no PDF (${accountNumber}) não corresponde à conta do usuário selecionado (${user.account_number}).\n\nPor favor, verifique se você está fazendo upload da nota correta para o usuário correto.\n\nOperações não serão salvas.`
+              );
+            }
             return;
           }
           doSave();
@@ -458,30 +486,65 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  private saveMultipleNotes(notes: OperationsAddedEvent['notes'], fileName: string | undefined): void {
+  private saveMultipleNotes(
+    notes: OperationsAddedEvent['notes'],
+    fileName: string | undefined,
+    opts?: {
+      suppressAlerts?: boolean;
+      suppressRefresh?: boolean;
+      onComplete?: (result: FileSaveResult) => void;
+    }
+  ): void {
     const notesToSave = notes.filter(n => n.operations.length > 0);
     const total = notesToSave.length;
     const savedNoteNumbers: string[] = [];
-    let hadError = false;
+    const errors: string[] = [];
+
+    const finish = (hadError: boolean): void => {
+      const result: FileSaveResult = {
+        ok: savedNoteNumbers.length > 0,
+        savedNoteNumbers: [...savedNoteNumbers],
+        error: hadError && savedNoteNumbers.length === 0
+          ? errors.join('; ')
+          : hadError
+            ? errors.join('; ')
+            : undefined,
+      };
+
+      if (opts?.onComplete) {
+        opts.onComplete(result);
+      }
+
+      if (opts?.suppressRefresh) {
+        return;
+      }
+
+      this.loadData();
+      setTimeout(() => {
+        if (this.historyListComponent) {
+          this.historyListComponent.loadHistory();
+        }
+      }, 100);
+
+      if (opts?.suppressAlerts) {
+        return;
+      }
+
+      if (hadError) {
+        alert('Uma ou mais notas não puderam ser importadas.');
+        return;
+      }
+      if (savedNoteNumbers.length === 1) {
+        this.debug.log('✅ Nota importada:', savedNoteNumbers[0]);
+      } else if (savedNoteNumbers.length > 1) {
+        this.debug.log('✅ Notas importadas:', savedNoteNumbers.join(', '));
+        alert(`Notas ${savedNoteNumbers.join(' e ')} importadas com sucesso.`);
+      }
+    };
 
     const saveNext = (index: number): void => {
       if (index >= total) {
-        if (hadError) {
-          alert('Uma ou mais notas não puderam ser importadas.');
-          return;
-        }
-        this.loadData();
-        setTimeout(() => {
-          if (this.historyListComponent) {
-            this.historyListComponent.loadHistory();
-          }
-        }, 100);
-        if (savedNoteNumbers.length === 1) {
-          this.debug.log('✅ Nota importada:', savedNoteNumbers[0]);
-        } else if (savedNoteNumbers.length > 1) {
-          this.debug.log('✅ Notas importadas:', savedNoteNumbers.join(', '));
-          alert(`Notas ${savedNoteNumbers.join(' e ')} importadas com sucesso.`);
-        }
+        finish(errors.length > 0);
         return;
       }
 
@@ -492,20 +555,30 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         noteResult.financialSummary,
         fileName,
         (savedNote) => {
-          if (savedNote?.note_number) savedNoteNumbers.push(savedNote.note_number);
+          if (savedNote?.note_number) {
+            savedNoteNumbers.push(savedNote.note_number);
+          }
           saveNext(index + 1);
         },
         (err: unknown) => {
-          hadError = true;
           const e = err as { status?: number; error?: { message?: string }; message?: string };
           const msg = e?.error?.message || e?.message || 'Erro ao salvar nota.';
-          alert(`⚠️ ${msg}\n\nAs demais notas serão processadas.`);
+          errors.push(msg);
+          if (!opts?.suppressAlerts) {
+            alert(`⚠️ ${msg}\n\nAs demais notas serão processadas.`);
+          }
           saveNext(index + 1);
         },
         noteResult.noteNumber,
-        noteResult.noteDate
+        noteResult.noteDate,
+        opts?.suppressAlerts
       );
     };
+
+    if (total === 0) {
+      finish(true);
+      return;
+    }
 
     saveNext(0);
   }
@@ -518,13 +591,16 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
     onSuccess?: (savedNote: BrokerageNote) => void,
     onError?: (err: unknown) => void,
     parsedNoteNumber?: string,
-    parsedNoteDate?: string
+    parsedNoteDate?: string,
+    suppressAlerts = false
   ): void {
     // Validate operations count if expected count is available
     if (expectedOperationsCount !== null && operations.length !== expectedOperationsCount) {
       const errorMsg = `Validação falhou: O PDF contém ${expectedOperationsCount} operação(ões), mas apenas ${operations.length} foram processadas. Operações não serão salvas.`;
       this.debug.error(`❌ ${errorMsg}`);
-      alert(errorMsg);
+      if (!suppressAlerts) {
+        alert(errorMsg);
+      }
       if (onError) {
         onError(new Error(errorMsg));
       }
@@ -605,18 +681,27 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
             this.historyService.deleteNote(savedNote.id).subscribe({
               next: () => {
                 this.debug.log('✅ Note deleted due to validation failure');
-                if (!onError) alert(errorMsg);
-                else onError(new Error(errorMsg));
+                if (!suppressAlerts && !onError) {
+                  alert(errorMsg);
+                } else {
+                  onError?.(new Error(errorMsg));
+                }
               },
               error: (deleteError) => {
                 this.debug.error('❌ Error deleting note during rollback:', deleteError);
-                if (!onError) alert(`${errorMsg}\n\nErro ao remover a nota. Por favor, remova manualmente a nota ${savedNote.note_number} de ${savedNote.note_date}.`);
-                else onError(deleteError);
+                if (!suppressAlerts && !onError) {
+                  alert(`${errorMsg}\n\nErro ao remover a nota. Por favor, remova manualmente a nota ${savedNote.note_number} de ${savedNote.note_date}.`);
+                } else {
+                  onError?.(deleteError);
+                }
               }
             });
           } else {
-            if (!onError) alert(errorMsg);
-            else onError(new Error(errorMsg));
+            if (!suppressAlerts && !onError) {
+              alert(errorMsg);
+            } else {
+              onError?.(new Error(errorMsg));
+            }
           }
           return;
         }
@@ -639,7 +724,7 @@ export class PortfolioComponent implements OnInit, OnChanges, OnDestroy {
         this.debug.error('❌ Error saving brokerage note:', error);
         if (onError) {
           onError(error);
-        } else {
+        } else if (!suppressAlerts) {
           if (error?.status === 409) {
             const errorMessage = error?.error?.message || 'This brokerage note has already been processed.';
             alert(`⚠️ ${errorMessage}\n\nOperations were NOT added to portfolio.`);

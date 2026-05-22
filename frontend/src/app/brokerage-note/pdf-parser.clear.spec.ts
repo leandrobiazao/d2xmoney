@@ -8,6 +8,7 @@ class TickerMappingServiceStub {
   private mappings: Record<string, string> = {
     'FII LOURDES NSLU11 CI': 'NSLU11',
     'AERIS ON NM': 'AERI3',
+    'ASSAI ON NM': 'ASAI3',
     'BEMOBI TECH ON NM': 'BMOB3',
     'CSNMINERACAO ON N2': 'CMIN3',
     'ENAUTA PART ON NM': 'ENAT3'
@@ -111,5 +112,17 @@ describe('PdfParserService CLEAR (XPINC)', () => {
     expect(fs?.vendas_a_vista).toBeCloseTo(273.39, 2);
     expect(fs?.irrf_operacoes).toBeCloseTo(0.01, 2);
     expect(fs?.irrf_base).toBeCloseTo(273.39, 2);
+  });
+
+  it('parses CLEAR classic 1-BOVESPA layout (Jan 2025 note)', async () => {
+    const file = await loadFixturePdf('XPINC_NOTA_NEGOCIACAO_B3_22_1_2025.pdf');
+    const result = await service.parsePdf(file, undefined, 'clear');
+
+    expect(result.notes.length).toBe(1);
+    expect(result.notes[0].operations.length).toBe(30);
+    expect(result.notes[0].noteNumber).toBe('104230895');
+    expect(result.notes[0].noteDate).toBe('22/01/2025');
+    expect(result.notes[0].operations[0].notaTipo).toBe('1-BOVESPA');
+    expect(result.notes[0].operations.some(o => o.titulo === 'ASAI3')).toBeTrue();
   });
 });

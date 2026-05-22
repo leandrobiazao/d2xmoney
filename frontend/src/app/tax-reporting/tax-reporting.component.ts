@@ -2,7 +2,13 @@ import { Component, Input, OnChanges, OnInit, SimpleChanges } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TaxReportingService } from './tax-reporting.service';
-import { CapitalGainsReport } from './tax-reporting.models';
+import {
+  AssetClass,
+  CapitalGainsReport,
+  CarryforwardMonth,
+  TaxReportSection,
+  YearEndPosition,
+} from './tax-reporting.models';
 import { exportCapitalGainsReportToExcel } from './tax-reporting-excel';
 import { formatCurrency } from '../shared/utils/common-utils';
 
@@ -16,6 +22,7 @@ import { formatCurrency } from '../shared/utils/common-utils';
 export class TaxReportingComponent implements OnInit, OnChanges {
   @Input() userId!: string;
   @Input() userName = '';
+  @Input() section: TaxReportSection = 'acoes';
 
   selectedYear = 2025;
   availableYears: number[] = [];
@@ -39,11 +46,59 @@ export class TaxReportingComponent implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['userId'] && this.userId) {
+    if ((changes['userId'] || changes['section']) && this.userId) {
       this.report = null;
       this.errorMessage = null;
       this.loadReport();
     }
+  }
+
+  get isCarryforwardSection(): boolean {
+    return this.section === 'acoes' || this.section === 'fii';
+  }
+
+  get pageTitle(): string {
+    switch (this.section) {
+      case 'acoes':
+        return 'IRPF — Ganho de Capital (Ações)';
+      case 'fii':
+        return 'IRPF — Ganho de Capital (FIIs)';
+      default:
+        return 'IRPF — Ganho de Capital (ETF e BDR)';
+    }
+  }
+
+  get yearSelectorId(): string {
+    return `irpf-${this.section}-year`;
+  }
+
+  get carryforwardMonths(): CarryforwardMonth[] {
+    if (!this.report || !this.isCarryforwardSection) {
+      return [];
+    }
+    return this.section === 'acoes' ? this.report.acoes.months : this.report.fii.months;
+  }
+
+  get remainingLossCarryforward(): number {
+    if (!this.report || !this.isCarryforwardSection) {
+      return 0;
+    }
+    return this.section === 'acoes'
+      ? this.report.acoes.year_summary.remaining_loss_carryforward
+      : this.report.fii.year_summary.remaining_loss_carryforward;
+  }
+
+  get filteredPositions(): YearEndPosition[] {
+    if (!this.report) {
+      return [];
+    }
+    const classesBySection: Record<TaxReportSection, AssetClass[]> = {
+      acoes: ['acoes'],
+      fii: ['fii'],
+      etf_bdr: ['etf', 'bdr'],
+    };
+    const classes = classesBySection[this.section];
+    return this.report.position_at_year_end.filter((p) => classes.includes(p.asset_class));
   }
 
   onYearChange(year: number | string): void {
@@ -74,7 +129,7 @@ export class TaxReportingComponent implements OnInit, OnChanges {
       return;
     }
     try {
-      exportCapitalGainsReportToExcel(this.report, this.userName || 'Cliente');
+      exportCapitalGainsReportToExcel(this.report, this.userName || 'Cliente', this.section);
     } catch {
       this.errorMessage = 'Erro ao exportar arquivo Excel.';
     }
