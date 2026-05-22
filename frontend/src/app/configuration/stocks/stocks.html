@@ -67,7 +67,17 @@
               <td>{{ stock.name }}</td>
               <td>{{ stock.cnpj || '-' }}</td>
               <td>{{ stock.financial_market }}</td>
-              <td>{{ stock.stock_class }}</td>
+              <td>
+                <select
+                  [ngModel]="stock.stock_class"
+                  (ngModelChange)="onStockClassChange(stock, $event)"
+                  class="investment-type-select"
+                >
+                  @for (cls of stockClassOptions; track cls) {
+                    <option [ngValue]="cls">{{ cls }}</option>
+                  }
+                </select>
+              </td>
               <td class="price-cell">{{ formatCurrency(stock.current_price) }}</td>
               <td class="date-cell">{{ formatDate(stock.last_updated) }}</td>
               <td class="investment-type-cell">

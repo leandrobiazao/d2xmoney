@@ -21,6 +21,7 @@ export class StocksComponent implements OnInit {
   errorMessage: string | null = null;
   searchTerm: string = '';
   syncMessage: string | null = null;
+  readonly stockClassOptions = ['ON', 'PN', 'ETF', 'BDR', 'FII'] as const;
 
   constructor(
     private stocksService: StocksService,
@@ -186,6 +187,27 @@ export class StocksComponent implements OnInit {
         console.error('Error details:', error.error);
         alert('Erro ao atualizar tipo de investimento: ' + (error.error?.error || error.message || 'Erro desconhecido'));
         // Reload to revert changes and get correct state from server
+        this.loadStocks();
+      }
+    });
+  }
+
+  onStockClassChange(stock: Stock, value: string): void {
+    const stockClass = value?.trim() || stock.stock_class;
+    const index = this.stocks.findIndex(s => s.id === stock.id);
+    if (index !== -1) {
+      this.stocks[index] = { ...this.stocks[index], stock_class: stockClass };
+    }
+    this.stocksService.updateStock(stock.id, { stock_class: stockClass }).subscribe({
+      next: (updatedStock) => {
+        const i = this.stocks.findIndex(s => s.id === stock.id);
+        if (i !== -1) {
+          this.stocks[i] = updatedStock;
+        }
+      },
+      error: (error) => {
+        console.error('Error updating stock class:', error);
+        alert('Erro ao atualizar classe: ' + (error.error?.error || error.message || 'Erro desconhecido'));
         this.loadStocks();
       }
     });
