@@ -15,8 +15,43 @@ class AMBBStrategyService:
     """Service for implementing AMBB programmable strategy."""
     
     MAX_STOCKS = 20
-    RANK_THRESHOLD = 30
+    RANK_THRESHOLD = 20  # MDIV keep/sell cutoff (never complete-sell rank <= 20)
+    EQUAL_WEIGHT_DIVISOR = 10  # Buy/top-up target = RV Reais meta / 10
     SALES_LIMIT = Decimal('19000.00')  # 19,000 Reais per month
+    MDIV_BUY_RANK_LIMIT = 10  # New names and equal-weight top-up
+    MDIV_BUY_STRATEGY = 'MDIV'
+
+    @staticmethod
+    def _filter_reais_stocks_from_strategy(
+        strategy_stocks: List[Dict],
+        acoes_reais_type: InvestmentType,
+    ) -> tuple:
+        """
+        Filter Clube do Valor strategy rows to active Ações em Reais catalog entries.
+        Returns (filtered list, ticker -> stock_data map).
+        """
+        from stocks.services import StockService
+
+        reais_stocks: List[Dict] = []
+        ticker_map: Dict[str, Dict] = {}
+        for stock_data in strategy_stocks:
+            ticker = stock_data['codigo']
+            try:
+                stock = Stock.objects.get(ticker=ticker, is_active=True)
+                if stock.investment_type == acoes_reais_type:
+                    reais_stocks.append(stock_data)
+                    ticker_map[ticker] = stock_data
+            except Stock.DoesNotExist:
+                try:
+                    fetched_stock = StockService.fetch_and_create_stock(
+                        ticker, 'RENDA_VARIAVEL_REAIS'
+                    )
+                    if fetched_stock and fetched_stock.investment_type == acoes_reais_type:
+                        reais_stocks.append(stock_data)
+                        ticker_map[ticker] = stock_data
+                except Exception as e:
+                    print(f"Could not fetch {ticker} from yFinance: {e}")
+        return reais_stocks, ticker_map
 
     @staticmethod
     def _apply_rank_priority_buy_cap(
@@ -26,9 +61,10 @@ class AMBBStrategyService:
         formatted_buys: List[Dict],
     ) -> None:
         """
-        When recommended buys exceed buy_budget, allocate budget to best AMBB ranks first
-        (lowest rank number = highest priority). Lower-ranked tickers get quantity 0 once
-        the cap is exhausted — total spend never exceeds buy_budget.
+        When recommended buys exceed buy_budget, water-fill so ending position values
+        among MDIV names that still need a buy are as even as possible (whole shares),
+        capped at the strategic 1/10 target. Empty or small holdings get more of the
+        cash; names already close to target get little. Total spend never exceeds buy_budget.
         """
         purchases = []
         for i, item in enumerate(stocks_to_balance):
@@ -50,59 +86,64 @@ class AMBBStrategyService:
                 'price': price,
                 'headroom': headroom,
                 'requested': requested,
+                'cv': cv,
+                'end': cv,
+                'qty': 0,
+                'spent': Decimal('0'),
             })
 
-        purchases.sort(key=lambda p: (p['ranking'], p['ticker']))
+        remaining = buy_budget
+        while remaining > Decimal('0.01') and purchases:
+            candidates = []
+            for p in purchases:
+                next_spent = p['spent'] + p['price']
+                if remaining < p['price']:
+                    continue
+                if next_spent > p['requested'] or next_spent > p['headroom']:
+                    continue
+                candidates.append(p)
+            if not candidates:
+                break
+            chosen = min(candidates, key=lambda p: (p['end'], p['ranking'], p['ticker']))
+            chosen['qty'] += 1
+            chosen['spent'] += chosen['price']
+            chosen['end'] += chosen['price']
+            remaining -= chosen['price']
 
         formatted_by_ticker = {fb['ticker']: fb for fb in formatted_buys}
-        remaining = buy_budget
-
         for p in purchases:
             item = stocks_to_balance[p['index']]
-            cv = Decimal(str(item.get('current_value', 0)))
+            cv = p['cv']
             item['target_value'] = float(strategic)
             item['difference'] = float(strategic - cv)
-
-            if remaining <= Decimal('0.01'):
-                item['quantity_to_adjust'] = 0
-                ticker = p['ticker']
-                if ticker in formatted_by_ticker:
-                    formatted_by_ticker[ticker]['target_value'] = float(strategic)
-                    formatted_by_ticker[ticker]['target_quantity'] = 0
-                continue
-
-            spend_cap = min(p['requested'], p['headroom'], remaining)
-            qty = int(spend_cap / p['price']) if p['price'] > 0 else 0
-            cost = Decimal(str(qty)) * p['price']
-            item['quantity_to_adjust'] = qty
-            remaining -= cost
-
+            item['quantity_to_adjust'] = p['qty']
             ticker = p['ticker']
             if ticker in formatted_by_ticker:
                 formatted_by_ticker[ticker]['target_value'] = float(strategic)
-                formatted_by_ticker[ticker]['target_quantity'] = qty
+                formatted_by_ticker[ticker]['target_quantity'] = p['qty']
     
     @staticmethod
     def generate_rebalancing_recommendations(user: User, remaining_monthly_limit: Decimal = None) -> Dict:
         """
-        Generate AMBB rebalancing recommendations for "Ações em Reais" stocks only.
+        Generate MDIV rebalancing recommendations for "Ações em Reais" stocks only.
         
         Rules:
         1. Filter to only "Ações em Reais" investment type stocks
         2. Target: Maximum 20 stocks total in final allocation
-        3. Keep existing portfolio stocks if they are in AMBB 2.0 ranking AND rank <= 30
+        3. Keep existing portfolio stocks if they are in MDIV ranking AND rank <= 20
         4. Sell priority:
-           - First: Stocks NOT in AMBB 2.0 ranking
-           - Second: Stocks with rank > 30 (sell highest rank/worst first)
+           - First: Stocks NOT in MDIV ranking (includes leftover AMBB 2.0 names)
+           - Second: Stocks with MDIV rank > 20 (sell highest rank/worst first)
         5. Sales limit: Maximum 19,000 Reais per month (including partial sales from rebalancing)
-        6. Buy: AMBB 2.0 stocks not in portfolio with ranking <= 30 (NEVER buy ranking > 30)
-           - Prioritize lower rankings (better stocks first)
+        6. Buy: MDIV ranks 1-10 not already in portfolio
+           - Prioritize lower MDIV rankings (best first)
            - Maximum 20 stocks total in final portfolio
-        7. Equal nominal slice among up to 20 lines: target per name =
+        7. Equal nominal slice for MDIV ranks 1-10: target per name =
            («Meta» para Renda Variável em Reais no cartão de alocação = tipo % × valor total carteira)
-           divided by MAX_STOCKS (20).
-        8. Buy-budget cap: fund purchases by best AMBB rank first; skip lower ranks when cap is exhausted.
-        9. Priority: Balance existing portfolio stocks over selling bad stocks completely
+           divided by EQUAL_WEIGHT_DIVISOR (10).
+        8. MDIV ranks 11-20 already held: keep, no additional buys, no complete sell.
+        9. Buy-budget cap: water-fill so MDIV 1-10 ending weights are as even as possible
+           (not equal ticket sizes). Names already near the 1/10 slot get smaller buys.
         
         Returns:
         {
@@ -152,43 +193,25 @@ class AMBBStrategyService:
                 'error': 'Renda Variável em Reais investment type not found'
             }
         
-        # Get current AMBB 2.0 recommendations
-        current_stocks = ClubeDoValorService.get_current_stocks('AMBB2')
-        if not current_stocks:
-            current_stocks = ClubeDoValorService.get_current_stocks()
-        
-        # Filter AMBB stocks to only "Ações em Reais" type
-        # Auto-fetch missing stocks from yFinance
-        from stocks.services import StockService
-        
-        ambb_reais_stocks = []
-        current_ambb_tickers = {}
-        for stock_data in current_stocks:
-            ticker = stock_data['codigo']
-            try:
-                stock = Stock.objects.get(ticker=ticker, is_active=True)
-                if stock.investment_type == acoes_reais_type:
-                    ambb_reais_stocks.append(stock_data)
-                    current_ambb_tickers[ticker] = stock_data
-            except Stock.DoesNotExist:
-                # Stock not in catalog - try to fetch from yFinance
-                try:
-                    fetched_stock = StockService.fetch_and_create_stock(ticker, 'RENDA_VARIAVEL_REAIS')
-                    if fetched_stock and fetched_stock.investment_type == acoes_reais_type:
-                        ambb_reais_stocks.append(stock_data)
-                        current_ambb_tickers[ticker] = stock_data
-                except Exception as e:
-                    # Failed to fetch - skip this stock
-                    print(f"Could not fetch {ticker} from yFinance: {e}")
-                    pass
+        # MDIV ranking drives keep, sell, and buy
+        mdiv_stocks_raw = ClubeDoValorService.get_current_stocks(
+            AMBBStrategyService.MDIV_BUY_STRATEGY
+        ) or []
+        mdiv_reais_stocks, current_mdiv_tickers = AMBBStrategyService._filter_reais_stocks_from_strategy(
+            mdiv_stocks_raw, acoes_reais_type
+        )
         
         # Get user's portfolio positions
         positions = PortfolioPosition.objects.filter(user_id=str(user.id))
         portfolio_tickers = {pos.ticker: pos for pos in positions if pos.quantidade > 0}
         
-        # Refresh current prices from yfinance for all tickers involved (portfolio + AMBB candidates)
+        # Refresh current prices from yfinance for all tickers involved (portfolio + MDIV candidates)
         # so recommended quantities use up-to-date prices
-        all_tickers = set(portfolio_tickers.keys()) | {s['codigo'] for s in ambb_reais_stocks}
+        all_tickers = (
+            set(portfolio_tickers.keys())
+            | {s['codigo'] for s in mdiv_reais_stocks}
+        )
+        from stocks.services import StockService
         StockService.refresh_prices_for_tickers(all_tickers, 'B3')
         
         # Filter portfolio stocks to only "Ações em Reais" type
@@ -238,20 +261,20 @@ class AMBBStrategyService:
             # Default to 30% if not configured
             acoes_reais_target_total = total_portfolio_value * Decimal('0.30')
         
-        # Identify stocks to keep (in AMBB 2.0 with rank <= 30)
+        # Identify stocks to keep (in MDIV with rank <= 20)
         stocks_to_keep = {}
         for ticker, stock_data in portfolio_stocks.items():
-            if ticker in current_ambb_tickers:
-                ranking = current_ambb_tickers[ticker].get('ranking', 999)
+            if ticker in current_mdiv_tickers:
+                ranking = current_mdiv_tickers[ticker].get('ranking', 999)
                 if ranking <= AMBBStrategyService.RANK_THRESHOLD:
                     stocks_to_keep[ticker] = {
                         'stock_data': stock_data,
                         'ranking': ranking,
-                        'ambb_data': current_ambb_tickers[ticker]
+                        'mdiv_data': current_mdiv_tickers[ticker]
                     }
         
-        # NEW PRIORITY: Sell bad stocks (ranking > 30) COMPLETELY FIRST, then partially if limit allows.
-        # Any remaining limit may rebalance good stocks (rank <= 30) that are above target.
+        # Sell bad stocks (not in MDIV or ranking > 20) completely first, then partially if limit allows.
+        # Remaining limit may trim MDIV ranks 1-10 that are above the equal-weight target.
         
         # Use ALL remaining monthly limit to sell bad stocks completely
         # We prioritize selling bad stocks completely over rebalancing good stocks
@@ -261,43 +284,35 @@ class AMBBStrategyService:
         remaining_limit_for_complete_sales = remaining_monthly_limit
         
         # Identify stocks to sell (prioritized)
-        # CRITICAL: Only sell stocks that should NOT be kept
-        # Keep stocks with ranking <= 30 (better stocks)
-        # Sell stocks with ranking > 30 (worse stocks), ordered by highest ranking first
+        # Keep stocks with MDIV ranking <= 20
+        # Sell stocks not in MDIV, then MDIV ranking > 20 (worst first)
         stocks_to_sell_list = []
         
-        # Priority 1: Stocks NOT in AMBB ranking (no ranking = worst, sell first)
+        # Priority 1: Stocks NOT in MDIV ranking (no ranking = worst, sell first)
         stocks_not_in_ranking = []
         for ticker, stock_data in portfolio_stocks.items():
-            # Only add to sell list if NOT in stocks_to_keep
-            if ticker not in current_ambb_tickers and ticker not in stocks_to_keep:
+            if ticker not in current_mdiv_tickers and ticker not in stocks_to_keep:
                 stocks_not_in_ranking.append({
                     'ticker': ticker,
                     'name': stock_data['stock'].name,
                     'current_value': stock_data['current_value'],
                     'quantity': stock_data['position'].quantidade,
                     'current_price': float(stock_data['current_price']),
-                    'ranking': 9999,  # Assign very high ranking to stocks not in AMBB (worst)
+                    'ranking': 9999,
                     'priority': 1,
-                    'reason': 'Not in AMBB 2.0 ranking'
+                    'reason': 'Not in MDIV ranking'
                 })
         
-        # Priority 2: Stocks with rank > 30 ONLY (sort by highest rank/worst first)
-        # IMPORTANT: Only include stocks that are NOT in stocks_to_keep
-        # stocks_to_keep contains stocks with ranking <= 30, so we should never sell those
-        # CRITICAL: Also check if stock is in stocks_to_keep - if it is, it shouldn't be here
-        rank_over_30 = []
+        # Priority 2: Stocks with MDIV rank > 20 (sort by highest rank/worst first)
+        rank_over_threshold = []
         for ticker, stock_data in portfolio_stocks.items():
-            # Skip if already in stocks_to_keep (these are good stocks with ranking <= 30)
             if ticker in stocks_to_keep:
                 continue
             
-            # Only consider stocks in AMBB that are NOT in stocks_to_keep
-            if ticker in current_ambb_tickers:
-                ranking = current_ambb_tickers[ticker].get('ranking', 999)
-                # Double-check: only add if ranking > 30 (should already be excluded by stocks_to_keep check)
+            if ticker in current_mdiv_tickers:
+                ranking = current_mdiv_tickers[ticker].get('ranking', 999)
                 if ranking > AMBBStrategyService.RANK_THRESHOLD:
-                    rank_over_30.append({
+                    rank_over_threshold.append({
                         'ticker': ticker,
                         'name': stock_data['stock'].name,
                         'current_value': stock_data['current_value'],
@@ -305,21 +320,16 @@ class AMBBStrategyService:
                         'current_price': float(stock_data['current_price']),
                         'ranking': ranking,
                         'priority': 2,
-                        'reason': f'Rank {ranking} > 30'
+                        'reason': f'Rank {ranking} > {AMBBStrategyService.RANK_THRESHOLD}'
                     })
         
-        # Sort stocks with rank > 30 by highest ranking (worst first)
-        rank_over_30.sort(key=lambda x: x['ranking'], reverse=True)
-        
-        # Combine lists: FIRST stocks not in ranking, THEN stocks with ranking > 30
-        # This ensures correct order: outside ranking first, then highest ranking first
-        stocks_to_sell_list = stocks_not_in_ranking + rank_over_30
+        rank_over_threshold.sort(key=lambda x: x['ranking'], reverse=True)
+        stocks_to_sell_list = stocks_not_in_ranking + rank_over_threshold
         
         # Apply ALL available limit to sell bad stocks COMPLETELY first
         # Priority order:
-        # 1. First: Stocks NOT in AMBB ranking (priority 1, ranking 9999)
-        # 2. Second: Stocks with ranking > 30, ordered by highest ranking (worst) first (priority 2)
-        # Process in this exact order, respecting the limit
+        # 1. First: Stocks NOT in MDIV ranking (priority 1, ranking 9999)
+        # 2. Second: Stocks with MDIV ranking > 20, worst rank first (priority 2)
         total_sales_value = Decimal('0')
         final_stocks_to_sell = []
         sales_limit_reached = False
@@ -354,69 +364,56 @@ class AMBBStrategyService:
                 final_stock_tickers.add(ticker)
                 stocks_kept_due_to_limit.add(ticker)
         
-        # Get ALL AMBB 2.0 stocks sorted by ranking (lower = better)
-        # Sort from lowest ranking (best) to highest ranking (worst)
-        all_ambb_sorted = sorted(ambb_reais_stocks, key=lambda x: x.get('ranking', 999))
-        
+        # Get MDIV buy candidates sorted by ranking (lower = better)
+        all_mdiv_buy_sorted = sorted(mdiv_reais_stocks, key=lambda x: x.get('ranking', 999))
+
         # Identify stocks to buy:
-        # 1. Must be in AMBB 2.0 ranking
-        # 2. Must NOT be in current portfolio (or in stocks to keep)
-        # 3. Must have ranking <= 30 (RANK_THRESHOLD) - NEVER buy stocks with ranking > 30
-        # 4. Prioritize lower rankings (better stocks first)
-        # 5. Maximum 20 stocks total in final portfolio
+        # 1. Must be in MDIV ranking with rank <= MDIV_BUY_RANK_LIMIT (top 10)
+        # 2. Must NOT already be in the portfolio
+        # 3. Prioritize lower MDIV rankings first
+        # 4. Maximum 20 stocks total in final portfolio
         stocks_to_buy = []
         available_slots = AMBBStrategyService.MAX_STOCKS - len(final_stock_tickers)
-        
+
         # Only recommend buying if we have available slots
         if available_slots > 0:
-            for stock_data in all_ambb_sorted:
+            for stock_data in all_mdiv_buy_sorted:
                 if len(stocks_to_buy) >= available_slots:
                     break  # We've filled all available slots
-                
+
                 ticker = stock_data['codigo']
                 ranking = stock_data.get('ranking', 999)
-                
-                # Skip if already in current portfolio (we already own it)
-                # Check portfolio_stocks directly, not final_stock_tickers
-                # because final_stock_tickers includes stocks we want to keep
+
                 if ticker in portfolio_stocks:
                     continue  # Already in portfolio, skip
-                
-                # NEVER recommend stocks with ranking > 30
-                # This is a hard limit - we should never buy stocks above rank 30
-                if ranking > AMBBStrategyService.RANK_THRESHOLD:
-                    continue  # Skip stocks with ranking > 30
-                
-                # Try to get stock from catalog
+
+                if ranking > AMBBStrategyService.MDIV_BUY_RANK_LIMIT:
+                    continue  # Only MDIV top 10
+
                 try:
                     stock = Stock.objects.get(ticker=ticker, is_active=True)
-                    
-                    # Verify investment type matches
+
                     if stock.investment_type != acoes_reais_type:
-                        # Stock exists but wrong investment type - skip it
                         continue
-                    
-                    # All checks passed - recommend buying
+
                     final_stock_tickers.add(ticker)
                     stocks_to_buy.append({
                         'ticker': ticker,
                         'name': stock_data['nome'],
                         'ranking': ranking,
-                        'current_price': float(stock.current_price) if stock.current_price > 0 else 0
+                        'current_price': float(stock.current_price) if stock.current_price > 0 else 0,
+                        'buy_source': AMBBStrategyService.MDIV_BUY_STRATEGY,
                     })
-                    
+
                 except Stock.DoesNotExist:
-                    # Stock not in catalog - skip it
-                    # This means the ticker from AMBB 2.0 is not in our stock catalog
                     continue
                 except Exception as e:
-                    # Log any other errors but continue
-                    print(f"Error processing stock {ticker} (ranking {ranking}): {e}")
+                    print(f"Error processing MDIV buy candidate {ticker} (ranking {ranking}): {e}")
                     continue
         
         # Matches allocation panel «Meta» (getTargetTypeValue) for Renda Variável em Reais —
         # same as acoes_reais_target_total (= total portfolio × type target %).
-        divisor = Decimal(AMBBStrategyService.MAX_STOCKS)
+        divisor = Decimal(AMBBStrategyService.EQUAL_WEIGHT_DIVISOR)
         final_stock_count = len(final_stock_tickers)
         if acoes_reais_target_total > Decimal('0'):
             target_value_per_stock = acoes_reais_target_total / divisor
@@ -445,140 +442,89 @@ class AMBBStrategyService:
             
             # Get ranking for this stock
             stock_ranking = stocks_to_keep[ticker]['ranking']
+            eligible_for_top_up = stock_ranking <= AMBBStrategyService.MDIV_BUY_RANK_LIMIT
+
+            if not eligible_for_top_up:
+                # MDIV ranks 11-20: hold as-is (no buy, no complete sell)
+                stocks_to_balance.append({
+                    'ticker': ticker,
+                    'name': stock.name,
+                    'ranking': stock_ranking,
+                    'current_value': float(current_value),
+                    'target_value': float(current_value),
+                    'difference': 0.0,
+                    'quantity_to_adjust': 0,
+                    'current_price': float(current_price)
+                })
+                continue
             
             if difference < Decimal('0'):  # Need to sell (current value > target)
-                # Partial sell for good stocks is applied after bad-stock sales (see good_above_target pass)
+                # Partial sell for ranks 1-10 is applied after bad-stock sales (see good_above_target pass)
                 quantity_diff = 0
             elif difference > Decimal('0.01'):  # Need to buy
-                # NEVER recommend buying more of stocks with ranking > 30
-                # Stocks in stocks_to_keep should have ranking <= 30, but double-check
-                if stock_ranking <= AMBBStrategyService.RANK_THRESHOLD:
-                    quantity_diff = int(difference / current_price)
-                else:
-                    # Ranking > 30: don't recommend buying more
-                    quantity_diff = 0
-                    # Keep the original difference (positive) to show it's still below target
-                    # Don't zero it out - the difference should reflect the actual gap
-                    # difference remains as is (positive, showing need to buy, but we won't recommend it)
+                quantity_diff = int(difference / current_price)
+            else:
+                quantity_diff = 0
             
-            # Include ALL stocks to keep, even if difference is small
-            # This ensures all 20 stocks appear in the balance list
-            # CRITICAL: Always recalculate difference as target - current to ensure correct sign
-            # Never use a recalculated difference that might have wrong sign
-            # The difference should always reflect: target_value - current_value
             final_difference = target_value_per_stock - current_value
             
             stocks_to_balance.append({
                 'ticker': ticker,
                 'name': stock.name,
-                'ranking': stocks_to_keep[ticker]['ranking'],
+                'ranking': stock_ranking,
                 'current_value': float(current_value),
                 'target_value': float(target_value_per_stock),
-                'difference': float(final_difference),  # Always target - current
-                'quantity_to_adjust': quantity_diff,  # Will be 0 if no adjustment needed
+                'difference': float(final_difference),
+                'quantity_to_adjust': quantity_diff,
                 'current_price': float(current_price)
             })
         
         # For stocks that couldn't be sold COMPLETELY due to 19K limit - try to sell them PARTIALLY
-        # These stocks are bad (not in ranking or ranking > 30) and should be sold, even if partially
-        # Use the remaining limit after complete sales (remaining_limit_after_complete_sales) to sell as much as possible
+        # These stocks are bad (not in MDIV or ranking > 20) and should be sold, even if partially
         # IMPORTANT: Process in the SAME order as complete sales:
         # 1. First: stocks not in ranking (priority 1)
         # 2. Second: stocks with highest ranking (priority 2, worst first)
         
         for sell_item in stocks_to_sell_list:
             if sell_item not in final_stocks_to_sell:
-                # This stock couldn't be sold completely due to limit - try to sell PARTIALLY
+                # Exit name that did not fit as a complete sale — use leftover limit
+                # even if current value is below the 1/10 strategic slot.
                 ticker = sell_item['ticker']
                 if ticker in portfolio_stocks:
                     stock_data = portfolio_stocks[ticker]
                     current_value = stock_data['current_value']
-                    difference = target_value_per_stock - current_value
-                    
                     stock = stock_data['stock']
                     current_price = stock.current_price if stock.current_price > 0 else Decimal('1')
-                    
-                    # Calculate quantity adjustment
                     quantity_diff = 0
-                    
-                    if difference < Decimal('0'):  # Need to sell (but we already couldn't sell completely)
-                        # These are bad stocks (ranking > 30) that couldn't be sold completely
-                        # Try to sell PARTIALLY using remaining sales limit
-                        # Use remaining_limit_after_complete_sales (which tracks the limit after complete sales)
-                        if remaining_limit_after_complete_sales > 0:
-                            # Calculate how much we can sell with remaining limit
-                            # IMPORTANT: Only sell PARTIALLY if the remaining limit is LESS than current_value
-                            # If remaining limit >= current_value, it should have been sold completely already
-                            if remaining_limit_after_complete_sales < current_value:
-                                # True partial sale: sell only what fits in the remaining limit
-                                max_sale_value = remaining_limit_after_complete_sales
-                                quantity_to_sell = int(max_sale_value / current_price)
-                                if quantity_to_sell > 0:
-                                    partial_sale_value = quantity_to_sell * current_price
-                                    quantity_diff = -quantity_to_sell
-                                    remaining_limit_after_complete_sales -= partial_sale_value
-                                    # Note: total_partial_sales_value is calculated at the end from stocks_to_balance
-                                else:
-                                    # Can't sell even 1 share with remaining limit - mark for future sale
-                                    # Set quantity_diff to a small negative value to indicate need to sell
-                                    quantity_diff = 0  # No partial sale possible now
-                            else:
-                                # This shouldn't happen - if limit >= current_value, should have been sold completely
-                                # But if it did, don't sell partially (keep quantity_diff = 0)
-                                quantity_diff = 0
-                        else:
-                            # No remaining limit - can't sell now, but should still show as needing to sell
-                            # For stocks with ranking > 30 and negative difference, we want to sell but can't due to limit
-                            # Calculate how much we WOULD sell if we had limit (for display purposes)
-                            # This helps the user understand these stocks need to be sold
-                            if current_price > 0:
-                                # Calculate quantity based on the difference (how much over target)
-                                quantity_to_sell_if_possible = int(abs(difference) / current_price)
-                                # Set a small negative value to indicate need to sell, even if we can't now
-                                # This will show as "Vender X" in the UI, indicating the stock should be sold
-                                quantity_diff = -quantity_to_sell_if_possible if quantity_to_sell_if_possible > 0 else 0
-                            else:
-                                quantity_diff = 0
-                        # Difference remains as target - current (negative, showing need to sell)
-                        # The negative difference and quantity_diff will show the need to sell
-                    elif difference > Decimal('0.01'):  # Need to buy
-                        # NEVER recommend buying more of stocks with ranking > 30
-                        # If ranking > 30, we should not buy more, only sell if needed
-                        if ranking <= AMBBStrategyService.RANK_THRESHOLD:
-                            quantity_diff = int(difference / current_price)
-                        else:
-                            # Ranking > 30: don't recommend buying more
-                            quantity_diff = 0
-                            # Keep the original difference (positive) to show it's still below target
-                            # Don't zero it out - the difference should reflect the actual gap
-                            # difference remains as is (positive, showing need to buy, but we won't recommend it)
-                    
-                    # Get ranking from AMBB 2.0 if available, otherwise use a high number
-                    ranking = 999
-                    for ambb_stock in ambb_reais_stocks:
-                        if ambb_stock.get('codigo') == ticker:
-                            ranking = ambb_stock.get('ranking', 999)
-                            break
-                    
-                    # CRITICAL: Always recalculate difference as target - current to ensure correct sign
-                    final_difference = target_value_per_stock - current_value
-                    
+
+                    if remaining_limit_after_complete_sales > Decimal('0.01') and current_price > 0:
+                        max_sale_value = min(remaining_limit_after_complete_sales, current_value)
+                        quantity_to_sell = int(max_sale_value / current_price)
+                        if quantity_to_sell > 0:
+                            partial_sale_value = Decimal(str(quantity_to_sell)) * current_price
+                            quantity_diff = -quantity_to_sell
+                            remaining_limit_after_complete_sales -= partial_sale_value
+
+                    ranking = sell_item.get('ranking', 999)
+                    if ticker in current_mdiv_tickers:
+                        ranking = current_mdiv_tickers[ticker].get('ranking', ranking)
+
                     stocks_to_balance.append({
                         'ticker': ticker,
                         'name': stock.name,
                         'ranking': ranking,
                         'current_value': float(current_value),
-                        'target_value': float(target_value_per_stock),
-                        'difference': float(final_difference),  # Always target - current
+                        'target_value': 0.0,
+                        'difference': float(-current_value),
                         'quantity_to_adjust': quantity_diff,
                         'current_price': float(current_price)
                     })
         
-        # Use remaining sales limit to rebalance good stocks (rank <= 30) above target.
-        # Bad stocks are processed first; then fund partial sells by best rank until limit is gone.
+        # Use remaining sales limit to trim MDIV ranks 1-10 above equal-weight target.
         good_above_target = [
             item for item in stocks_to_balance
             if item.get('ticker') in stocks_to_keep
+            and int(item.get('ranking', 999)) <= AMBBStrategyService.MDIV_BUY_RANK_LIMIT
             and Decimal(str(item.get('difference', 0))) < Decimal('-0.01')
             and int(item.get('quantity_to_adjust') or 0) == 0
         ]
@@ -604,13 +550,11 @@ class AMBBStrategyService:
             item['quantity_to_adjust'] = -qty_to_sell
             remaining_limit_after_complete_sales -= Decimal(str(qty_to_sell)) * current_price
         
-        # For new stocks to buy
-        # Double-check: NEVER add stocks with ranking > 30 to balance list
+        # For new stocks to buy (MDIV ranks 1-10 only)
         for buy_item in stocks_to_buy:
             ranking = buy_item.get('ranking', 999)
-            # Safety check: skip if ranking > 30 (shouldn't happen due to earlier check, but just in case)
-            if ranking > AMBBStrategyService.RANK_THRESHOLD:
-                continue  # Skip stocks with ranking > 30
+            if ranking > AMBBStrategyService.MDIV_BUY_RANK_LIMIT:
+                continue
             
             stocks_to_balance.append({
                 'ticker': buy_item['ticker'],
@@ -670,17 +614,17 @@ class AMBBStrategyService:
         target_stocks_info = []
         for ticker in target_tickers:
             in_portfolio = ticker in portfolio_stocks
-            in_ambb = ticker in current_ambb_tickers
+            in_mdiv = ticker in current_mdiv_tickers
             in_stocks_to_keep = ticker in stocks_to_keep
             in_stocks_to_sell_list = any(s['ticker'] == ticker for s in stocks_to_sell_list)
             in_final_stocks_to_sell = any(s['ticker'] == ticker for s in final_stocks_to_sell)
-            ranking = current_ambb_tickers.get(ticker, {}).get('ranking', None) if in_ambb else None
+            ranking = current_mdiv_tickers.get(ticker, {}).get('ranking', None) if in_mdiv else None
             current_value = portfolio_stocks.get(ticker, {}).get('current_value', Decimal('0')) if in_portfolio else Decimal('0')
             
             target_stocks_info.append({
                 'ticker': ticker,
                 'in_portfolio': in_portfolio,
-                'in_ambb': in_ambb,
+                'in_mdiv': in_mdiv,
                 'ranking': ranking,
                 'in_stocks_to_keep': in_stocks_to_keep,
                 'in_stocks_to_sell_list': in_stocks_to_sell_list,
@@ -713,15 +657,27 @@ class AMBBStrategyService:
                 }
                 for s in stocks_to_sell_list
             ],
-            'top_10_ambb_rankings': [
+            'top_10_mdiv_rankings': [
                 {
                     'ticker': s['codigo'],
                     'ranking': s.get('ranking', 999),
                     'in_portfolio': s['codigo'] in portfolio_stocks,
                     'in_catalog': Stock.objects.filter(ticker=s['codigo'], is_active=True).exists()
                 }
-                for s in all_ambb_sorted[:10]
-            ]
+                for s in sorted(mdiv_reais_stocks, key=lambda x: x.get('ranking', 999))[:10]
+            ],
+            'mdiv_buy_rank_limit': AMBBStrategyService.MDIV_BUY_RANK_LIMIT,
+            'top_mdiv_buy_candidates': [
+                {
+                    'ticker': s['codigo'],
+                    'ranking': s.get('ranking', 999),
+                    'in_portfolio': s['codigo'] in portfolio_stocks,
+                    'in_catalog': Stock.objects.filter(ticker=s['codigo'], is_active=True).exists(),
+                    'eligible_for_buy': s.get('ranking', 999) <= AMBBStrategyService.MDIV_BUY_RANK_LIMIT
+                    and s['codigo'] not in portfolio_stocks,
+                }
+                for s in all_mdiv_buy_sorted[:10]
+            ],
         }
         
         # Calculate total sales including partial sales from rebalancing
@@ -766,7 +722,7 @@ class AMBBStrategyService:
                         balance_item['target_value'] = 0.0
                         balance_item['difference'] = 0.0
         elif total_recommended_buys > buy_budget and buy_budget > 0:
-            # Scale quantities only; Valor Alvo / Dif. stay strategic. Best ranks funded first.
+            # Scale quantities only; Valor Alvo / Dif. stay strategic. Water-fill toward even ending weights.
             AMBBStrategyService._apply_rank_priority_buy_cap(
                 buy_budget,
                 target_value_per_stock,

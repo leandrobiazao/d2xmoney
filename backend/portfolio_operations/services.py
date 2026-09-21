@@ -552,9 +552,18 @@ class PortfolioService:
                             }
                         
                         # Apply corporate event adjustment
-                        PortfolioService._apply_corporate_event_to_summary(
-                            ticker_summaries[ticker], event
-                        )
+                        if event.event_type == 'TICKER_CHANGE':
+                            PortfolioService._apply_ticker_change_to_summaries(
+                                ticker_summaries, event
+                            )
+                        elif event.event_type == 'FUND_CONVERSION':
+                            PortfolioService._apply_fund_conversion_to_summaries(
+                                ticker_summaries, event
+                            )
+                        else:
+                            PortfolioService._apply_corporate_event_to_summary(
+                                ticker_summaries[ticker], event
+                            )
                         
                         # Mark event as applied
                         if ticker not in applied_events:
@@ -730,6 +739,24 @@ class PortfolioService:
                     }
                     ticker_in_summary = ticker_upper
                 
+                if event.event_type == 'TICKER_CHANGE':
+                    PortfolioService._apply_ticker_change_to_summaries(
+                        ticker_summaries, event
+                    )
+                    if ticker_upper not in applied_events:
+                        applied_events[ticker_upper] = []
+                    applied_events[ticker_upper].append(event.id)
+                    continue
+
+                if event.event_type == 'FUND_CONVERSION':
+                    PortfolioService._apply_fund_conversion_to_summaries(
+                        ticker_summaries, event
+                    )
+                    if ticker_upper not in applied_events:
+                        applied_events[ticker_upper] = []
+                    applied_events[ticker_upper].append(event.id)
+                    continue
+
                 if not ticker_in_summary:
                     continue
                 
@@ -787,6 +814,176 @@ class PortfolioService:
             allowed_tickers=allowed_tickers,
         )
     
+    @staticmethod
+    def _find_summary_ticker(ticker_summaries: Dict[str, Dict], ticker: str) -> Optional[str]:
+        """Return the key in ticker_summaries matching ticker (case-insensitive), if any."""
+        ticker_upper = ticker.upper()
+        if ticker_upper in ticker_summaries:
+            return ticker_upper
+        for existing_ticker in ticker_summaries.keys():
+            if existing_ticker.upper() == ticker_upper:
+                return existing_ticker
+        return None
+
+    @staticmethod
+    def _apply_ticker_change_to_summaries(
+        ticker_summaries: Dict[str, Dict], event: CorporateEvent
+    ) -> None:
+        """
+        Merge the previous ticker's accumulated position into the new ticker during replay.
+        Used when rebuilding portfolio from brokerage notes (TRPL4 -> ISAE4, etc.).
+        """
+        if event.event_type != 'TICKER_CHANGE' or not event.previous_ticker:
+            return
+
+        old_ticker = event.previous_ticker.upper()
+        new_ticker = event.ticker.upper()
+        old_key = PortfolioService._find_summary_ticker(ticker_summaries, old_ticker)
+        if not old_key:
+            return
+
+        old_summary = ticker_summaries[old_key]
+        if old_summary['quantidade'] == 0:
+            del ticker_summaries[old_key]
+            return
+
+        new_key = PortfolioService._find_summary_ticker(ticker_summaries, new_ticker)
+        if not new_key:
+            ticker_summaries[new_ticker] = {
+                'quantidade': 0,
+                'precoMedio': 0.0,
+                'valorTotalInvestido': 0.0,
+                'lucroRealizado': 0.0,
+            }
+            new_key = new_ticker
+
+        new_summary = ticker_summaries[new_key]
+        old_qty = old_summary['quantidade']
+        new_qty = new_summary['quantidade']
+        total_qty = new_qty + old_qty
+        total_invested = new_summary['valorTotalInvestido'] + old_summary['valorTotalInvestido']
+        total_lucro = new_summary['lucroRealizado'] + old_summary['lucroRealizado']
+
+        new_summary['quantidade'] = total_qty
+        new_summary['valorTotalInvestido'] = total_invested
+        new_summary['lucroRealizado'] = total_lucro
+
+        if total_qty > 0:
+            new_summary['precoMedio'] = total_invested / total_qty if total_invested > 0 else new_summary['precoMedio']
+        elif total_qty < 0:
+            old_abs_qty = abs(new_qty) if new_qty < 0 else 0
+            old_price = new_summary['precoMedio'] if new_qty < 0 else 0.0
+            if old_abs_qty > 0 and old_qty > 0:
+                new_abs_qty = abs(total_qty)
+                total_short_value = old_abs_qty * old_price + old_qty * old_summary['precoMedio']
+                new_summary['precoMedio'] = total_short_value / new_abs_qty if new_abs_qty > 0 else old_summary['precoMedio']
+            elif new_qty < 0:
+                new_summary['precoMedio'] = new_summary['precoMedio']
+            else:
+                new_summary['precoMedio'] = old_summary['precoMedio']
+            new_summary['valorTotalInvestido'] = 0.0
+        else:
+            new_summary['precoMedio'] = 0.0
+            new_summary['valorTotalInvestido'] = 0.0
+
+        del ticker_summaries[old_key]
+
+        if new_key != new_ticker:
+            merged = ticker_summaries.pop(new_key)
+            if new_ticker in ticker_summaries:
+                existing = ticker_summaries[new_ticker]
+                combined_qty = existing['quantidade'] + merged['quantidade']
+                combined_invested = existing['valorTotalInvestido'] + merged['valorTotalInvestido']
+                existing['quantidade'] = combined_qty
+                existing['valorTotalInvestido'] = combined_invested
+                existing['lucroRealizado'] += merged['lucroRealizado']
+                if combined_qty > 0 and combined_invested > 0:
+                    existing['precoMedio'] = combined_invested / combined_qty
+            else:
+                ticker_summaries[new_ticker] = merged
+
+    @staticmethod
+    def _apply_fund_conversion_to_summaries(
+        ticker_summaries: Dict[str, Dict], event: CorporateEvent
+    ) -> None:
+        """
+        Convert an extinct fund position into the new fund during portfolio replay.
+        Mirrors apply_fund_conversion() but operates on in-memory ticker summaries.
+        """
+        if event.event_type != 'FUND_CONVERSION' or not event.previous_ticker or not event.ratio:
+            return
+
+        try:
+            numerator, denominator = event.parse_ratio()
+        except ValueError:
+            return
+
+        if denominator == 0:
+            return
+
+        conversion_factor = float(numerator) / float(denominator)
+        old_ticker = event.previous_ticker.upper()
+        new_ticker = event.ticker.upper()
+        old_key = PortfolioService._find_summary_ticker(ticker_summaries, old_ticker)
+        if not old_key:
+            return
+
+        old_summary = ticker_summaries[old_key]
+        old_qty = old_summary['quantidade']
+        if old_qty <= 0:
+            del ticker_summaries[old_key]
+            return
+
+        new_qty = int(old_qty * numerator / denominator)
+        old_invested = old_summary['valorTotalInvestido']
+        old_lucro = old_summary['lucroRealizado']
+
+        new_key = PortfolioService._find_summary_ticker(ticker_summaries, new_ticker)
+        if not new_key:
+            ticker_summaries[new_ticker] = {
+                'quantidade': 0,
+                'precoMedio': 0.0,
+                'valorTotalInvestido': 0.0,
+                'lucroRealizado': 0.0,
+            }
+            new_key = new_ticker
+
+        new_summary = ticker_summaries[new_key]
+        total_qty = new_summary['quantidade'] + new_qty
+        total_invested = new_summary['valorTotalInvestido'] + old_invested
+        total_lucro = new_summary['lucroRealizado'] + old_lucro
+
+        new_summary['quantidade'] = total_qty
+        new_summary['valorTotalInvestido'] = total_invested
+        new_summary['lucroRealizado'] = total_lucro
+
+        if total_qty > 0:
+            new_summary['precoMedio'] = (
+                total_invested / total_qty if total_invested > 0 else new_summary['precoMedio']
+            )
+        elif total_qty < 0:
+            new_summary['precoMedio'] = new_summary['precoMedio'] or old_summary['precoMedio']
+            new_summary['valorTotalInvestido'] = 0.0
+        else:
+            new_summary['precoMedio'] = 0.0
+            new_summary['valorTotalInvestido'] = 0.0
+
+        del ticker_summaries[old_key]
+
+        if new_key != new_ticker:
+            merged = ticker_summaries.pop(new_key)
+            if new_ticker in ticker_summaries:
+                existing = ticker_summaries[new_ticker]
+                combined_qty = existing['quantidade'] + merged['quantidade']
+                combined_invested = existing['valorTotalInvestido'] + merged['valorTotalInvestido']
+                existing['quantidade'] = combined_qty
+                existing['valorTotalInvestido'] = combined_invested
+                existing['lucroRealizado'] += merged['lucroRealizado']
+                if combined_qty > 0 and combined_invested > 0:
+                    existing['precoMedio'] = combined_invested / combined_qty
+            else:
+                ticker_summaries[new_ticker] = merged
+
     @staticmethod
     def _apply_corporate_event_to_summary(summary: Dict, event: CorporateEvent) -> None:
         """

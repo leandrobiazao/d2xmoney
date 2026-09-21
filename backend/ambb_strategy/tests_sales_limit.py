@@ -33,11 +33,12 @@ class RebalancingSalesLimitTestCase(TestCase):
             account_number="12345-6"
         )
         
-        # Create investment type "Ações em Reais"
-        self.acoes_reais_type = InvestmentType.objects.create(
-            code="ACOES_REAIS",
-            name="Ações em Reais",
-            is_active=True
+        self.acoes_reais_type, _ = InvestmentType.objects.get_or_create(
+            code="RENDA_VARIAVEL_REAIS",
+            defaults={
+                "name": "Renda Variável em Reais",
+                "is_active": True,
+            },
         )
         
         # Create test stocks
@@ -158,7 +159,7 @@ class RebalancingSalesLimitTestCase(TestCase):
                 if stock_info['ticker'] in ['VAMO3', 'LAVV3', 'IGTI11']:
                     print(f"\n   {stock_info['ticker']}:")
                     print(f"      in_portfolio: {stock_info['in_portfolio']}")
-                    print(f"      in_ambb: {stock_info['in_ambb']}")
+                    print(f"      in_mdiv: {stock_info.get('in_mdiv')}")
                     print(f"      ranking: {stock_info['ranking']}")
                     print(f"      in_stocks_to_keep: {stock_info['in_stocks_to_keep']}")
                     print(f"      in_stocks_to_sell_list: {stock_info['in_stocks_to_sell_list']}")
@@ -199,10 +200,10 @@ class RebalancingSalesLimitTestCase(TestCase):
             if stock_info['ticker'] in ['VAMO3', 'LAVV3', 'IGTI11']:
                 self.assertTrue(stock_info['in_portfolio'], 
                                f"{stock_info['ticker']} should be in portfolio")
-                self.assertTrue(stock_info['in_ambb'],
-                               f"{stock_info['ticker']} should be in AMBB 2.0")
-                self.assertGreater(stock_info['ranking'], 30,
-                                  f"{stock_info['ticker']} should have ranking > 30")
+                self.assertTrue(stock_info['in_mdiv'],
+                               f"{stock_info['ticker']} should be in MDIV")
+                self.assertGreater(stock_info['ranking'], 20,
+                                  f"{stock_info['ticker']} should have ranking > 20")
                 self.assertFalse(stock_info['in_stocks_to_keep'],
                                 f"{stock_info['ticker']} should NOT be in stocks_to_keep")
                 self.assertTrue(stock_info['in_stocks_to_sell_list'],
@@ -309,8 +310,8 @@ class RebalancingSalesLimitTestCase(TestCase):
         # Verify rankings
         for stock_detail in stocks_to_sell_list_details:
             if stock_detail['ticker'] in ['VAMO3', 'LAVV3', 'IGTI11']:
-                self.assertGreater(stock_detail['ranking'], 30,
-                                  f"{stock_detail['ticker']} should have ranking > 30")
+                self.assertGreater(stock_detail['ranking'], 20,
+                                  f"{stock_detail['ticker']} should have ranking > 20")
         
         print("\nTest passed: All stocks with ranking > 30 are in stocks_to_sell_list")
         print(f"   Stocks in sell list: {sell_list_tickers}")

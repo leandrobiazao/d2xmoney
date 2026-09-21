@@ -621,6 +621,15 @@ class AllocationStrategyService:
         except Exception:
             pass
 
+        # Enrich with investment type code for frontend matching (API uses investment_type_name)
+        for type_id, type_data in type_values.items():
+            if 'investment_type_code' not in type_data:
+                try:
+                    it = InvestmentType.objects.only('code').get(id=type_id)
+                    type_data['investment_type_code'] = it.code
+                except InvestmentType.DoesNotExist:
+                    pass
+
         # Calculate percentages for types and subtypes
         investment_types = []
         for type_id, type_data in type_values.items():

@@ -95,7 +95,7 @@ class RebalancingAction(models.Model):
     quantity_to_buy = models.IntegerField(null=True, blank=True)
     quantity_to_sell = models.IntegerField(null=True, blank=True)
     display_order = models.IntegerField(default=0)
-    reason = models.CharField(max_length=255, null=True, blank=True, help_text='Reason for this action (e.g., "Not in AMBB 2.0" or "Rank X > 30")')
+    reason = models.CharField(max_length=255, null=True, blank=True, help_text='Reason for this action (e.g., "Not in MDIV ranking" or "Rank X > 20")')
 
     class Meta:
         db_table = 'rebalancing_actions'

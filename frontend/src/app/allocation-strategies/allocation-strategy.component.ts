@@ -2258,10 +2258,10 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
       );
       
       // Get current allocation data for Renda Fixa
-      const rendaFixaCurrentData = this.currentAllocation.current.investment_types?.find(
-        (type: any) => type.code === 'RENDA_FIXA' || 
-                       type.name?.toLowerCase().includes('renda fixa')
-      );
+      const rendaFixaCurrentData = this.findCurrentInvestmentTypeData({
+        typeCode: 'RENDA_FIXA',
+        nameIncludes: 'renda fixa',
+      });
       
       const totalValue = this.currentAllocation.current.total_value || 0;
       
@@ -2444,6 +2444,87 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
   // Expose Math for template
   Math = Math;
 
+  /** Match current-allocation type bucket (API uses investment_type_name / investment_type_code). */
+  private findCurrentInvestmentTypeData(options: {
+    typeId?: number;
+    typeCode?: string;
+    nameIncludes?: string;
+  }): any | undefined {
+    const types = this.currentAllocation?.current?.investment_types;
+    if (!types?.length) {
+      return undefined;
+    }
+    const nameNeedle = options.nameIncludes?.toLowerCase();
+    return types.find((t: any) => {
+      if (options.typeId != null && t.investment_type_id == options.typeId) {
+        return true;
+      }
+      const code = t.investment_type_code || t.code;
+      if (options.typeCode && code === options.typeCode) {
+        return true;
+      }
+      const name = (t.investment_type_name || t.name || '').toLowerCase();
+      return !!(nameNeedle && name.includes(nameNeedle));
+    });
+  }
+
+  private getRendaFixaTypeAllocation(): InvestmentTypeAllocation | undefined {
+    return this.strategy?.type_allocations?.find(
+      (ta) =>
+        ta.investment_type?.code === 'RENDA_FIXA' ||
+        ta.investment_type?.name?.toLowerCase().includes('renda fixa')
+    );
+  }
+
+  /**
+   * Valor Atual for rebalancing rows: always prefer live portfolio data over stored action snapshot.
+   * Fixes stale Caixa / Renda Fixa values after fixed-income imports.
+   */
+  getRebalancingDisplayCurrentValue(action: RebalancingAction): number {
+    const typeAlloc = this.getRendaFixaTypeAllocation();
+    const typeId = typeAlloc?.investment_type?.id;
+    if (typeId && this.currentAllocation?.current) {
+      if (!action.stock && !action.investment_subtype) {
+        const rf = this.findCurrentInvestmentTypeData({
+          typeCode: 'RENDA_FIXA',
+          nameIncludes: 'renda fixa',
+        });
+        if (rf) {
+          return Number(rf.current_value || 0);
+        }
+      }
+      if (action.investment_subtype && !action.stock) {
+        return this.getCurrentSubTypeValue(
+          typeId,
+          action.investment_subtype.id,
+          action.subtype_display_name || action.investment_subtype.name || action.subtype_name
+        );
+      }
+      const subtypeLabel = action.subtype_display_name || action.subtype_name;
+      if (!action.stock && subtypeLabel) {
+        return this.getCurrentSubTypeValue(typeId, 0, subtypeLabel);
+      }
+      const subtypeCode = action.investment_subtype?.code || action.stock?.investment_subtype?.code || '';
+      if (
+        action.stock &&
+        (subtypeCode === 'ETF_RENDA_FIXA' ||
+          (action.stock.stock_class === 'ETF' && action.stock.investment_type?.code === 'RENDA_FIXA'))
+      ) {
+        const etfSub = typeAlloc?.sub_type_allocations?.find(
+          (sa) => sa.sub_type?.code === 'ETF_RENDA_FIXA'
+        );
+        if (etfSub?.sub_type?.id) {
+          return this.getCurrentSubTypeValue(typeId, etfSub.sub_type.id, 'ETF Renda Fixa');
+        }
+      }
+    }
+    return Number(action.current_value || 0);
+  }
+
+  getRebalancingDisplayDifference(action: RebalancingAction): number {
+    return Number(action.target_value || 0) - this.getRebalancingDisplayCurrentValue(action);
+  }
+
   // Helper methods to get current values for allocation configuration
   getCurrentTypeValue(typeId: number): number {
     if (!this.currentAllocation?.current?.investment_types) {
@@ -2605,33 +2686,30 @@ export class AllocationStrategyComponent implements OnInit, OnChanges {
 
   // Helper methods for Summary Card portfolio totals
   getRendaFixaTotal(): { value: number; percentage: number } | null {
-    // First try to get from type-level actions (most reliable source)
+    const totalValue = this.currentAllocation?.current?.total_value || 0;
+    const rendaFixa = this.findCurrentInvestmentTypeData({
+      typeCode: 'RENDA_FIXA',
+      nameIncludes: 'renda fixa',
+    });
+    if (rendaFixa) {
+      const currentValue = Number(rendaFixa.current_value || 0);
+      const percentage =
+        rendaFixa.current_percentage != null
+          ? Number(rendaFixa.current_percentage)
+          : totalValue > 0
+            ? (currentValue / totalValue) * 100
+            : 0;
+      return { value: currentValue, percentage };
+    }
+
     const typeActions = this.getRendaFixaTypeActions();
     if (typeActions.length > 0 && typeActions[0].current_value) {
-      const totalValue = this.currentAllocation?.current?.total_value || 0;
       const currentValue = Number(typeActions[0].current_value);
       const percentage = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
-      return {
-        value: currentValue,
-        percentage: percentage
-      };
+      return { value: currentValue, percentage };
     }
-    
-    // Fallback to currentAllocation data
-    if (!this.currentAllocation?.current?.investment_types) {
-      return null;
-    }
-    const rendaFixa = this.currentAllocation.current.investment_types.find(
-      (type: any) => type.code === 'RENDA_FIXA' || 
-                     type.name?.toLowerCase().includes('renda fixa')
-    );
-    if (!rendaFixa) {
-      return null;
-    }
-    return {
-      value: Number(rendaFixa.current_value || 0),
-      percentage: Number(rendaFixa.current_percentage || 0)
-    };
+
+    return null;
   }
 
   getRendaVarDolaresTotal(): { value: number; percentage: number } | null {

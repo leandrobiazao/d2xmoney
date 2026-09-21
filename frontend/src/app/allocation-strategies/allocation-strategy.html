@@ -524,19 +524,19 @@
                           @for (action of getRendaFixaTypeActions(); track action.id) {
                             <tr>
                               <td><strong>Renda Fixa</strong></td>
-                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ getRebalancingDisplayCurrentValue(action) | number:'1.2-2' }}</td>
                               <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                R$ {{ action.difference | number:'1.2-2' }}
+                              <td [class.positive]="getRebalancingDisplayDifference(action) > 0" [class.negative]="getRebalancingDisplayDifference(action) < 0">
+                                R$ {{ getRebalancingDisplayDifference(action) | number:'1.2-2' }}
                               </td>
                               <td>
                                 @if (action.quantity_to_buy) {
                                   <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                 } @else if (action.quantity_to_sell) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
-                                } @else if (action.difference > 0) {
+                                } @else if (getRebalancingDisplayDifference(action) > 0) {
                                   <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
-                                } @else if (action.difference < 0) {
+                                } @else if (getRebalancingDisplayDifference(action) < 0) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else {
                                   <span class="badge badge-maintain">Manter</span>
@@ -565,19 +565,19 @@
                                 @for (action of subtypeGroup.subtypeActions; track action.id) {
                                   <tr>
                                     <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
-                                    <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                    <td>R$ {{ getRebalancingDisplayCurrentValue(action) | number:'1.2-2' }}</td>
                                     <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                                    <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                      R$ {{ action.difference | number:'1.2-2' }}
+                                    <td [class.positive]="getRebalancingDisplayDifference(action) > 0" [class.negative]="getRebalancingDisplayDifference(action) < 0">
+                                      R$ {{ getRebalancingDisplayDifference(action) | number:'1.2-2' }}
                                     </td>
                                     <td>
                                       @if (action.quantity_to_buy) {
                                         <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                       } @else if (action.quantity_to_sell) {
                                         <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
-                                      } @else if (action.difference > 0) {
+                                      } @else if (getRebalancingDisplayDifference(action) > 0) {
                                         <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
-                                      } @else if (action.difference < 0) {
+                                      } @else if (getRebalancingDisplayDifference(action) < 0) {
                                         <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                       } @else {
                                         <span class="badge badge-maintain">Manter</span>
@@ -609,19 +609,19 @@
                             @for (action of subtypeGroup.subtypeActions; track action.id) {
                               <tr>
                                 <td>{{ action.subtype_display_name || action.investment_subtype?.name || action.subtype_name || 'Renda Fixa' }}</td>
-                                <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                                <td>R$ {{ getRebalancingDisplayCurrentValue(action) | number:'1.2-2' }}</td>
                                 <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                                <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                  R$ {{ action.difference | number:'1.2-2' }}
+                                <td [class.positive]="getRebalancingDisplayDifference(action) > 0" [class.negative]="getRebalancingDisplayDifference(action) < 0">
+                                  R$ {{ getRebalancingDisplayDifference(action) | number:'1.2-2' }}
                                 </td>
                                 <td>
                                   @if (action.quantity_to_buy) {
                                     <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
                                   } @else if (action.quantity_to_sell) {
                                     <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
-                                  } @else if (action.difference > 0) {
+                                  } @else if (getRebalancingDisplayDifference(action) > 0) {
                                     <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
-                                  } @else if (action.difference < 0) {
+                                  } @else if (getRebalancingDisplayDifference(action) < 0) {
                                     <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                   } @else {
                                     <span class="badge badge-maintain">Manter</span>
@@ -655,19 +655,19 @@
                             <tr>
                               <td><strong>{{ action.stock?.ticker }}</strong></td>
                               <td>{{ action.stock?.name }}</td>
-                              <td>R$ {{ action.current_value | number:'1.2-2' }}</td>
+                              <td>R$ {{ getRebalancingDisplayCurrentValue(action) | number:'1.2-2' }}</td>
                               <td>R$ {{ action.target_value | number:'1.2-2' }}</td>
-                              <td [class.positive]="action.difference > 0" [class.negative]="action.difference < 0">
-                                R$ {{ action.difference | number:'1.2-2' }}
+                              <td [class.positive]="getRebalancingDisplayDifference(action) > 0" [class.negative]="getRebalancingDisplayDifference(action) < 0">
+                                R$ {{ getRebalancingDisplayDifference(action) | number:'1.2-2' }}
                               </td>
                               <td>
                                 @if (action.quantity_to_buy && action.quantity_to_buy > 0) {
                                   <span class="badge badge-buy">Comprar {{ action.quantity_to_buy }}</span>
                                 } @else if (action.quantity_to_sell && action.quantity_to_sell > 0) {
                                   <span class="badge badge-sell">Vender {{ action.quantity_to_sell }}</span>
-                                } @else if (action.difference > 0) {
+                                } @else if (getRebalancingDisplayDifference(action) > 0) {
                                   <span [class]="rebalanceBuyBadgeClass(action)">{{ rebalanceBuyLabel(action) }}</span>
-                                } @else if (action.difference < 0) {
+                                } @else if (getRebalancingDisplayDifference(action) < 0) {
                                   <span class="badge badge-sell">{{ rebalanceSellLabel(action) }}</span>
                                 } @else {
                                   <span class="badge badge-maintain">Manter</span>
@@ -980,9 +980,9 @@
                                       {{ action.reason }}
                                     } @else {
                                       @if (action.display_order && action.display_order < 9999) {
-                                        Rank {{ action.display_order }} > 30
+                                        Rank {{ action.display_order }} > 20
                                       } @else {
-                                        Não está no AMBB 2.0
+                                        Não está no MDIV
                                       }
                                     }
                                   </span>

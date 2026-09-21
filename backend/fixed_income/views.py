@@ -148,15 +148,19 @@ class FixedIncomePositionViewSet(viewsets.ModelViewSet):
         result = []
         for pos in positions:
             stock = stock_by_ticker.get(pos.ticker)
+            qty = float(pos.quantidade or 0)
+            cost = float(pos.valor_total_investido or 0)
+            current_price = float(stock.current_price) if stock and stock.current_price else 0.0
+            position_value = qty * current_price if current_price > 0 and qty > 0 else cost
             result.append({
                 'id': f'etf-rf-{pos.ticker}-{user_id}',
                 'user_id': user_id,
                 'asset_name': stock.name if stock else pos.ticker,
                 'asset_code': pos.ticker,
                 'quantity': pos.quantidade,
-                'applied_value': float(pos.valor_total_investido),
-                'position_value': float(pos.valor_total_investido),
-                'net_value': float(pos.valor_total_investido),
+                'applied_value': cost,
+                'position_value': position_value,
+                'net_value': position_value,
                 'investment_type_name': 'Renda Fixa',
                 'investment_sub_type_name': 'ETF Renda Fixa',
                 'source': 'portfolio',

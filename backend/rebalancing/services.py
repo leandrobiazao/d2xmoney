@@ -63,6 +63,12 @@ class RebalancingService:
             ).get(user=user)
         except UserAllocationStrategy.DoesNotExist:
             raise ValueError("User does not have an allocation strategy")
+
+        # Supersede stale pending recommendations so the UI does not show outdated values
+        RebalancingRecommendation.objects.filter(
+            user=user,
+            status='pending',
+        ).update(status='dismissed')
         
         # Create recommendation
         recommendation = RebalancingRecommendation.objects.create(
@@ -625,7 +631,7 @@ class RebalancingService:
                     difference=-Decimal(str(stock_data['current_value'])),
                     quantity_to_sell=stock_data.get('quantity', 0),
                     display_order=display_order_value,
-                    reason=stock_data.get('reason', 'Not in AMBB 2.0 or Rank > 30')
+                    reason=stock_data.get('reason', 'Not in MDIV ranking or Rank > 20')
                 )
                 action_order += 1
             except Stock.DoesNotExist:
@@ -661,7 +667,7 @@ class RebalancingService:
                         target_value=tv,
                         difference=tv,
                         quantity_to_buy=qty_buy,
-                        display_order=stock_data.get('ranking', 999)  # Use ranking from AMBB 2.0
+                        display_order=stock_data.get('ranking', 999)  # MDIV rank for new buys
                     )
                     action_order += 1
                 except Stock.DoesNotExist:
@@ -679,7 +685,7 @@ class RebalancingService:
             try:
                 stock = Stock.objects.get(ticker=ticker, is_active=True)
                 quantity_to_adjust = int(stock_data.get('quantity_to_adjust') or 0)
-                # Get ranking from stock_data (AMBB 2.0 ranking) - this is the source of truth
+                # Get ranking from stock_data (MDIV rank)
                 ranking = stock_data.get('ranking', 999)
                 
                 # Determine action type: 'buy' if current_value is 0, otherwise 'rebalance'
@@ -687,24 +693,18 @@ class RebalancingService:
                 # Use <= 0.01 to handle floating point precision issues
                 action_type = 'buy' if current_value <= Decimal('0.01') else 'rebalance'
                 
-                # NEVER create 'buy' actions for stocks with ranking > 30
-                # This is a hard limit - we should never buy stocks above rank 30
-                # If ranking > 30 and it's trying to be a 'buy' action, skip it entirely
-                # If ranking > 30 and it's a 'rebalance' action, allow it (stock already in portfolio)
-                if ranking > 30 and action_type == 'buy':
-                    # This is trying to be a buy action for a stock with ranking > 30 - skip it
+                # NEVER create 'buy' actions for stocks with MDIV ranking > 10
+                # If ranking > 10 and it's trying to be a 'buy' action, skip it entirely
+                # If ranking > 10 and it's a 'rebalance' action, allow it (stock already in portfolio)
+                if ranking > AMBBStrategyService.MDIV_BUY_RANK_LIMIT and action_type == 'buy':
                     continue
                 
-                # Also, if ranking > 30 and we need to buy more (quantity_to_adjust > 0),
+                # Also, if ranking > 10 and we need to buy more (quantity_to_adjust > 0),
                 # we should NOT recommend buying more - only allow rebalancing (selling)
-                if ranking > 30 and quantity_to_adjust > 0:
-                    # Don't recommend buying more of a stock with ranking > 30
-                    # Set quantity_to_adjust to 0 (no buy recommendation)
+                if ranking > AMBBStrategyService.MDIV_BUY_RANK_LIMIT and quantity_to_adjust > 0:
                     quantity_to_adjust = 0
-                    # If there's no current value and we can't buy, skip this action entirely
                     if current_value <= Decimal('0.01'):
                         continue
-                    # Otherwise, it becomes a rebalance action with no buy
                     action_type = 'rebalance'
 
                 # Recompute whole-share buy qty from BRL bands using catalog price now.
